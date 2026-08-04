@@ -1,0 +1,1075 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Campus Visitor Access: A UX Research Study | Bhargavaram Krishnapur</title>
+<meta name="description" content="An end-to-end product ideation study of the visitor entry system at Vijaybhoomi University. Research, sensemaking and information architecture.">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<a class="skip" href="#main">Skip to content</a>
+
+<header class="masthead">
+  <div class="wrap">
+    <p class="eyebrow">Product Ideation &middot; Mid-term Examination &middot; Vijaybhoomi University</p>
+    <h1>The hour of silence</h1>
+    <p class="standfirst">A visitor cannot get onto campus because nobody is obliged to answer.
+      An end-to-end study of the visitor entry system: research, sensemaking, and information
+      architecture.</p>
+    <dl class="meta">
+      <div><dt>Researcher</dt><dd>Bhargavaram Krishnapur</dd></div>
+      <div><dt>Fieldwork</dt><dd>31 July &ndash; 5 August 2026</dd></div>
+      <div><dt>Participants</dt><dd>3 interviews &middot; 8 card sorts &middot; 5 tree tests</dd></div>
+      <div><dt>Source</dt><dd><a href="#">GitHub Pages URL</a></dd></div>
+    </dl>
+  </div>
+</header>
+
+<nav class="toc" aria-label="Section navigation">
+  <div class="wrap">
+    <ul>
+      <li><a href="#problem">Problem</a></li>
+      <li><a href="#method">Method</a></li>
+      <li><a href="#persona">Persona</a></li>
+      <li><a href="#maps">Maps</a></li>
+      <li><a href="#pain">Pain point</a></li>
+      <li><a href="#stories">Stories</a></li>
+      <li><a href="#cardsort">Card sort</a></li>
+      <li><a href="#treetest">Tree test</a></li>
+      <li><a href="#moscow">MoSCoW</a></li>
+      <li><a href="#dfv">DFV</a></li>
+    </ul>
+  </div>
+</nav>
+
+<main id="main">
+
+<!-- ============================== HERO ============================== -->
+<section class="register-block" aria-labelledby="register-h">
+  <div class="wrap">
+    <h2 id="register-h" class="section-label">What happened on 31 July 2026</h2>
+    <p class="lede">P1 travelled three hours to visit her son. She knew the system existed, had the
+      form in advance, and started an hour early so she would not have to wait outside in the rain.
+      She stood in it for twenty minutes anyway.</p>
+
+    <ol class="register">
+      <li>
+        <span class="clock">T&minus;60</span>
+        <span class="entry">Starts the check-in form from the car, an hour before arrival</span>
+        <span class="score pos">+2</span>
+      </li>
+      <li>
+        <span class="clock">T&minus;55</span>
+        <span class="entry">Enters name, phone, selfie and the last four digits of her Aadhaar</span>
+        <span class="score">&minus;1</span>
+      </li>
+      <li>
+        <span class="clock">T&minus;50</span>
+        <span class="entry">Submits. No confirmation that anyone has seen it</span>
+        <span class="score">&minus;2</span>
+      </li>
+      <li>
+        <span class="clock">T&minus;20</span>
+        <span class="entry">Told the approver is wrong. Re-applies. The first request is cancelled
+          because nobody acted on it</span>
+        <span class="score">&minus;3</span>
+      </li>
+      <li>
+        <span class="clock">T&minus;15</span>
+        <span class="entry">Still waiting. The hour of buffer is gone</span>
+        <span class="score">&minus;4</span>
+      </li>
+      <li class="trough">
+        <span class="clock">T&#43;0</span>
+        <span class="entry">Stands at the gate for twenty minutes in the rain. Nobody with
+          authority is reachable</span>
+        <span class="score">&minus;5</span>
+      </li>
+      <li>
+        <span class="clock">T&#43;20</span>
+        <span class="entry">Her son walks to the gate. A guard telephones a different approver</span>
+        <span class="score">&minus;2</span>
+      </li>
+      <li>
+        <span class="clock">T&#43;25</span>
+        <span class="entry">Approved. She enters the campus</span>
+        <span class="score pos">+1</span>
+      </li>
+    </ol>
+
+    <p class="register-note">Two applications. Over an hour. Resolved by a phone call made outside
+      the product entirely.</p>
+  </div>
+</section>
+
+<!-- ============================== PROBLEM ============================== -->
+<section id="problem" aria-labelledby="problem-h">
+  <div class="wrap">
+    <p class="section-label">01 &middot; Problem space</p>
+    <h2 id="problem-h">A digital gate that cannot run at the gate</h2>
+
+    <p>Vijaybhoomi University uses a third-party visitor management system for all campus entry. A
+      visitor completes a six-screen self check-in at the gate, then waits for host-side approval
+      before a QR pass is issued over WhatsApp.</p>
+
+    <p>Four conditions make it structurally fragile at the point of use.</p>
+
+    <div class="finding-grid">
+      <article class="finding">
+        <h3>No network where it is needed</h3>
+        <p>The campus is remote with no public mobile data. WiFi requires a coupon obtainable only
+          from <em>inside</em> the campus. Guards previously allowed visitors to use a hotspot to
+          complete the form. That was withdrawn.</p>
+      </article>
+      <article class="finding">
+        <h3>No category for the common visitor</h3>
+        <p>Purpose of visit offers four options: Meeting Appointment, AMC and Services, Admission
+          Walk In, Alumni Students. A parent fits none, and the resulting flow demands a
+          <em>required</em> Company Name.</p>
+      </article>
+      <article class="finding">
+        <h3>The approver pool changed quietly</h3>
+        <p>Approval rights moved from teaching faculty to a small number of administrators. The
+          form still accepts a request routed to someone with no authority, and returns no error.
+          P1 still calls approvers &ldquo;the professors&rdquo;.</p>
+      </article>
+      <article class="finding">
+        <h3>No owner, no time bound, no failure path</h3>
+        <p>If the named approver does not act, the request is not rejected. It is held, then
+          silently cancelled, and the visitor starts again.</p>
+      </article>
+    </div>
+
+    <blockquote class="pull">
+      <p>The digital system collects more information than the paper register it replaced, and
+        every surplus field is one the visitor objects to.</p>
+    </blockquote>
+  </div>
+</section>
+
+<!-- ============================== ARTEFACT ============================== -->
+<section id="artefact" class="alt" aria-labelledby="artefact-h">
+  <div class="wrap">
+    <p class="section-label">02 &middot; Artefact analysis</p>
+    <h2 id="artefact-h">The existing flow, screen by screen</h2>
+
+    <p class="warn"><strong>These are screenshots of the live third-party system, captured as
+      research evidence. They are not proposed designs.</strong> No interface was designed in this
+      project.</p>
+
+    <figure class="shots">
+      <img src="images/current-01-phone.png" width="520" height="745"
+           alt="Existing system screen 1 of 6: phone number entry with a terms of use checkbox. Captured as research evidence, not a proposed design.">
+      <img src="images/current-02-otp.png" width="520" height="734"
+           alt="Existing system screen 2 of 6: one-time password verification. Captured as research evidence, not a proposed design.">
+      <img src="images/current-03-selfie.png" width="520" height="729"
+           alt="Existing system screen 3 of 6: mandatory selfie capture. Captured as research evidence, not a proposed design.">
+      <img src="images/current-04-details.png" width="520" height="734"
+           alt="Existing system screen 4 of 6: personal details form requiring name, address, email, ID proof type and the last four digits of an ID document. Captured as research evidence, not a proposed design.">
+      <img src="images/current-05-purpose.png" width="520" height="719"
+           alt="Existing system screen 5 of 6: purpose of visit, offering only Meeting Appointment, AMC and Services, Admission Walk In, and Alumni Students. Captured as research evidence, not a proposed design.">
+      <img src="images/current-06-company.png" width="520" height="724"
+           alt="Existing system screen 6 of 6: additional details demanding a required company name and a point of contact name. Captured as research evidence, not a proposed design.">
+      <figcaption>Six screens, eleven or more required inputs, all completed standing at a gate
+        with no mobile data. Screen 6 demands a company name from a parent visiting their child,
+        and a point of contact whose registered name only an insider would know.</figcaption>
+    </figure>
+
+    <h3>What the gate actually uses</h3>
+    <p>Both guards were asked what information they genuinely need to admit someone. Their answer,
+      describing the physical register they maintain regardless:</p>
+    <blockquote class="quote">
+      <p>The fields that remain constant are name, phone number, address, reason of visit, and
+        signature.</p>
+      <footer>P2 and P3, gate staff</footer>
+    </blockquote>
+    <p>Five fields. Every additional item the digital system demands, meaning the selfie,
+      email, ID proof type, ID digits and company name, is collected but not used to decide who
+      enters.</p>
+  </div>
+</section>
+
+<!-- ============================== METHOD ============================== -->
+<section id="method" aria-labelledby="method-h">
+  <div class="wrap">
+    <p class="section-label">03 &middot; Method</p>
+    <h2 id="method-h">Who was studied, and how</h2>
+
+    <table class="data">
+      <caption>Research participants. All anonymised.</caption>
+      <thead>
+        <tr><th scope="col">ID</th><th scope="col">Role</th><th scope="col">Method</th><th scope="col">Language</th></tr>
+      </thead>
+      <tbody>
+        <tr><th scope="row">P1</th><td>Visiting parent, mother of a resident student</td><td>Recorded retrospective account and written follow-up</td><td>English</td></tr>
+        <tr><th scope="row">P2</th><td>Security guard, main gate, shift A</td><td>Semi-structured interview, 8 questions</td><td>Hindi, translated</td></tr>
+        <tr><th scope="row">P3</th><td>Security guard, main gate, shift B</td><td>Semi-structured interview, 8 questions</td><td>Hindi, translated</td></tr>
+        <tr><th scope="row">R2&ndash;R9</th><td>Students, visitors and one non-affiliate</td><td>Hybrid card sort, 20 items</td><td>English</td></tr>
+        <tr><th scope="row">TT1&ndash;TT5</th><td>Students, none of whom did the card sort</td><td>Moderated paper tree test, 8 tasks</td><td>English</td></tr>
+      </tbody>
+    </table>
+
+    <p>P2 and P3 work different shifts and were interviewed separately. Their answers converged so
+      closely that they are reported as a single gate-staff account. <strong>That convergence is
+      itself a finding:</strong> the failure pattern is routine and structural, not shift-specific.</p>
+
+    <details class="disclosure">
+      <summary>Declared limitations</summary>
+      <ul>
+        <li><strong>The researcher is a participant.</strong> The host student in P1&rsquo;s account
+          is the researcher. This is recorded as participant observation and is not counted toward
+          the three-participant requirement.</li>
+        <li><strong>Card sort is two short of ten.</strong> Nine responses were collected, one
+          excluded for non-differentiation under a criterion set before analysis, leaving eight.</li>
+        <li><strong>Convenience sample.</strong> Recruitment ran through the researcher&rsquo;s own
+          networks and skews heavily toward students of one university. Only one card sort
+          respondent had experience solely as a visitor rather than as a host, which matters
+          because the study&rsquo;s clearest conflict is between those two positions.</li>
+        <li><strong>Guard interviews were translated by the researcher</strong> from Hindi. Quotes
+          attributed to P2 and P3 are translations, not verbatim English.</li>
+        <li><strong>Tree test participants were all students</strong> answering several tasks
+          written from a visiting parent&rsquo;s point of view.</li>
+      </ul>
+    </details>
+  </div>
+</section>
+
+<!-- ============================== PERSONA ============================== -->
+<section id="persona" class="alt" aria-labelledby="persona-h">
+  <div class="wrap">
+    <p class="section-label">04 &middot; Persona</p>
+    <h2 id="persona-h">What I assumed, and what I found</h2>
+
+    <div class="two-col">
+      <article class="card proto">
+        <p class="card-tag">Proto-persona &middot; before research</p>
+        <h3>&ldquo;The Frustrated Visiting Parent&rdquo;</h3>
+        <ul class="ticks">
+          <li>Finds the check-in form long and invasive</li>
+          <li>Main objection is being asked for Aadhaar digits and a selfie</li>
+          <li>The problem is waiting time at the gate, roughly 20 minutes</li>
+          <li>Is not especially comfortable with apps, and struggles with the process</li>
+          <li>Would be satisfied if the form were shorter and loaded faster</li>
+          <li><strong>Goal:</strong> get through the gate quickly</li>
+        </ul>
+      </article>
+
+      <article class="card real">
+        <p class="card-tag">User persona &middot; evidence based</p>
+        <h3>P1, &ldquo;The Prepared Visitor&rdquo;</h3>
+        <p class="vitals">Homemaker, 40 to 50 &middot; three-hour journey each way &middot; repeat
+          visitor &middot; visits Fridays around lunchtime, because that is when her son is free</p>
+        <ul class="ticks">
+          <li>Anticipates institutional delay and plans around it. Started the form an hour early,
+            from the car</li>
+          <li>Completed a six-screen flow correctly, twice, unassisted, while travelling</li>
+          <li>Saves the QR pass and reuses the flow on later visits</li>
+          <li>Has stopped making unannounced visits entirely</li>
+          <li><strong>Goal:</strong> certainty before travelling, not speed</li>
+        </ul>
+        <p class="why">A three-hour journey each way means being refused entry costs a full day and
+          a six-hour round trip. That is why the goal is certainty.</p>
+      </article>
+    </div>
+
+    <h3>The four assumptions that broke</h3>
+    <table class="data">
+      <thead>
+        <tr><th scope="col">I assumed</th><th scope="col">The research showed</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>She is slow or unfamiliar with the app</td><td>She was <strong>more prepared than the system expected</strong>, pre-submitting with an hour of buffer</td></tr>
+        <tr><td>The pain is the form</td><td>The form was tolerable. <strong>The silence after it was not</strong></td></tr>
+        <tr><td>The wait is about 20 minutes</td><td>Over <strong>an hour</strong>, two applications, one silent cancellation</td></tr>
+        <tr><td>Her goal is speed</td><td>Her goal is <strong>certainty</strong>. She would accept a slow process that told her the outcome in advance</td></tr>
+      </tbody>
+    </table>
+
+    <blockquote class="pull">
+      <p>She was the best-case visitor. She knew the system existed, had the QR in advance because
+        her son fetched it, built in an hour of buffer, and had somebody on campus who could
+        intervene. It still failed. Per the guards, visitors without an insider
+        <em>&ldquo;just keep waiting.&rdquo;</em></p>
+    </blockquote>
+  </div>
+</section>
+
+<!-- ============================== MAPS ============================== -->
+<section id="maps" aria-labelledby="maps-h">
+  <div class="wrap">
+    <p class="section-label">05 &middot; Empathy and journey</p>
+    <h2 id="maps-h">What she did, and what she felt</h2>
+
+    <figure class="map">
+      <img src="images/empathy-map.png" width="1382" height="1128"
+           alt="Empathy map for P1, the visiting parent, in four quadrants. Says: verbatim quotes including expecting that the professors would be busy, half an hour passed forty five minutes passed, none of the professors or the authority was not reachable, and the last four digits of Aadhaar card simply not wanted. Thinks: will I be allowed in at all today, who is actually supposed to approve this, has anyone even seen my request. Does: starts the form an hour early from the car, re-applies after the first request is silently cancelled, saves the QR pass, stops making unplanned visits, relies on her son to negotiate with the guard. Feels: a sequence running prepared, resentful, uncertain, anxious, dependent at minus five, then relieved. Pains and gains are listed below the quadrants.">
+      <figcaption>Empathy map. The <strong>Says</strong> quadrant is verbatim from the recorded
+        account. <strong>Dependent</strong> is the emotion that matters: resolution required an
+        insider, which is a feeling no visitor should have at a gate.</figcaption>
+    </figure>
+
+    <figure class="map">
+      <img src="images/journey-map.png" width="1400" height="924"
+           alt="User journey map across five phases: Anticipate, Apply, Wait, Stranded, and Resolve. Eleven numbered actions run from starting the form an hour early through to a guard telephoning a different approver. The emotion line begins at plus two, falls through minus one, minus two, minus three and minus four, reaches its lowest dip of minus five in the Stranded phase where she waits twenty minutes in the rain, then recovers to minus two and plus one on entry. Quote bubbles mark each stage.">
+      <figcaption>User journey map with the emotion line. The line starts <em>positive</em>,
+        because she felt prepared. The distance between that and the trough is the finding.</figcaption>
+    </figure>
+
+    <div class="callout">
+      <h3>The mitigation that failed is the proof</h3>
+      <p>She began the form an hour early <em>specifically so she would not have to wait outside in
+        the rain.</em> She stood in it for twenty minutes anyway. Every safeguard available to a
+        well-prepared, well-connected visitor was deployed, and none of them touched the actual
+        failure. The bottleneck is not preparation, information, or timing.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============================== PAIN POINT ============================== -->
+<section id="pain" class="alt" aria-labelledby="pain-h">
+  <div class="wrap">
+    <p class="section-label">06 &middot; Core pain point</p>
+    <h2 id="pain-h">Located at the lowest dip</h2>
+
+    <blockquote class="statement">
+      <p>The approval step has <strong>no accountable owner, no time bound, and no failure
+        path.</strong> The visitor guesses at an approver from an outdated mental model, receives
+        no confirmation that anyone with authority has seen the request, is silently penalised when
+        nobody acts, and can only escape by finding a human inside the institution.</p>
+    </blockquote>
+
+    <h3>Why this and not the form</h3>
+    <p>The form is a real irritation and it appears at stage 2 of the journey. Fixing it moves the
+      emotion line from &minus;1 to 0. <strong>The trough stays at &minus;5.</strong> A shorter
+      form, a faster OTP or better microcopy would not have changed the outcome by a single
+      minute.</p>
+
+    <h3>Triangulated three ways</h3>
+    <table class="data">
+      <thead><tr><th scope="col">Source</th><th scope="col">Evidence</th></tr></thead>
+      <tbody>
+        <tr><th scope="row">P1, visitor</th><td>&ldquo;Very difficult to figure out whom to ask approval for, especially when a parent is visiting&rdquo;</td></tr>
+        <tr><th scope="row">P2 &amp; P3, gate staff</th><td>&ldquo;Who should I ask approval from?&rdquo; is one of the three most common questions at the gate</td></tr>
+        <tr><th scope="row">P2 &amp; P3, gate staff</th><td>&ldquo;We can call a few people who have the authority. If they lift up the call, all well and good. If not, the guests just keep waiting&rdquo;</td></tr>
+      </tbody>
+    </table>
+    <p>The guards do not know who the correct approver is either. They telephone a shortlist and
+      hope. <strong>The failure mode is silence, and silence has no recovery path.</strong></p>
+
+    <div class="callout tight">
+      <h3>The host has no standing</h3>
+      <p>The person P1 travelled three hours to see cannot admit her. A student can neither approve
+        a visitor nor route a request to someone who can. The system models visitors and approvers,
+        but not the relationship that motivates the visit.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============================== STORIES ============================== -->
+<section id="stories" aria-labelledby="stories-h">
+  <div class="wrap">
+    <p class="section-label">07 &middot; User stories</p>
+    <h2 id="stories-h">Five stories, each traced to a stage</h2>
+
+    <ol class="stories">
+      <li>
+        <p class="story-id">US-1 &middot; fixes stages 3 and 5</p>
+        <p class="story">As a <strong>visiting parent</strong>, I want to see whether my request has
+          been seen and who it is waiting on, so that I know whether to keep waiting or seek another
+          route.</p>
+        <p class="story-why">Answers the gate question &ldquo;how much time will it take?&rdquo;
+          Converts an unbounded silent wait into a bounded, legible one.</p>
+      </li>
+      <li>
+        <p class="story-id">US-2 &middot; fixes stages 4 and 6, the trough</p>
+        <p class="story">As a <strong>visiting parent</strong>, I want my request to move
+          automatically to a backup approver if the first does not respond within a set time, so
+          that one unavailable person cannot strand me at the gate.</p>
+        <p class="story-why">Formalises in software what the guard already does informally by
+          telephone, and removes the requirement to have an insider advocate.</p>
+      </li>
+      <li>
+        <p class="story-id">US-3 &middot; fixes the connectivity precondition</p>
+        <p class="story">As a <strong>student host</strong>, I want to raise a visitor request in
+          advance from inside the campus network, so that my visitor arrives with a valid pass and
+          never needs mobile data at the gate.</p>
+        <p class="story-why">The host <em>raises</em>, not approves. Authority stays where the
+          institution put it.</p>
+      </li>
+      <li>
+        <p class="story-id">US-4 &middot; fixes stage 4</p>
+        <p class="story">As a <strong>visiting parent</strong>, I want the system to determine the
+          correct approver from who I am visiting, so that I never guess a name or get told mid-wait
+          that I chose the wrong person.</p>
+        <p class="story-why">Removes the one decision the visitor is least equipped to make. It
+          requires current internal knowledge of an organisation she does not belong to.</p>
+      </li>
+      <li>
+        <p class="story-id">US-5 &middot; fixes stage 2</p>
+        <p class="story">As a <strong>visiting parent</strong>, I want to provide only the details
+          the gate register actually requires, so that I am not asked for Aadhaar digits and a
+          selfie that serve no operational purpose.</p>
+        <p class="story-why">Defensible against a specific benchmark: the five fields the gate staff
+          say the physical register retains.</p>
+      </li>
+    </ol>
+  </div>
+</section>
+
+<!-- ============================== CARD SORT ============================== -->
+<section id="cardsort" class="alt" aria-labelledby="cardsort-h">
+  <div class="wrap">
+    <p class="section-label">08 &middot; Card sort</p>
+    <h2 id="cardsort-h">Twenty items, eight valid sorts</h2>
+
+    <p>A hybrid card sort with six supplied categories, a &ldquo;doesn&rsquo;t fit&rdquo; option,
+      and a free-text question inviting participants to propose categories of their own. Nine
+      responses collected. <strong>One excluded</strong> for assigning all twenty items to a single
+      category in sixty seconds, under a criterion set before analysis.</p>
+
+    <h3>Five items reached unanimous agreement</h3>
+    <table class="data">
+      <thead><tr><th scope="col">Item</th><th scope="col">Category</th><th scope="col">Agreement</th></tr></thead>
+      <tbody>
+        <tr><td>See whether my request has been opened</td><td>Checking on my request</td><td class="num">8/8</td></tr>
+        <tr><td>See how long a decision usually takes</td><td>Checking on my request</td><td class="num">8/8</td></tr>
+        <tr><td>Show my entry pass at the gate</td><td>Getting in and out</td><td class="num">8/8</td></tr>
+        <tr><td>Show my exit pass when leaving</td><td>Getting in and out</td><td class="num">8/8</td></tr>
+        <tr><td>What to do when there is no phone signal</td><td>Getting help</td><td class="num">8/8</td></tr>
+      </tbody>
+    </table>
+    <p>Participants hold a clear, shared model of &ldquo;the state of my request&rdquo; as a single
+      thing. The concept exists in their heads and does not exist in the product.</p>
+
+    <h3>The escalation features have no conceptual home</h3>
+    <table class="data">
+      <thead><tr><th scope="col">Item</th><th scope="col">Distribution</th><th scope="col">Categories used</th></tr></thead>
+      <tbody>
+        <tr><td>Send a reminder to whoever is deciding</td><td>Apply 2 &middot; Checking 2 &middot; In&nbsp;and&nbsp;out 2 &middot; Help 1 &middot; None 1</td><td class="num bad">5</td></tr>
+        <tr><td>Pass the request to a backup person after a set time</td><td><strong>None 4</strong> &middot; Help 2 &middot; In&nbsp;and&nbsp;out 1 &middot; Checking 1</td><td class="num">4</td></tr>
+      </tbody>
+    </table>
+    <p>These two are the features that directly address the pain point, and they are the least
+      placeable items in the deck. Participants could not file them because no system they have
+      used contains them.</p>
+
+    <div class="quote-pair">
+      <blockquote class="quote">
+        <p>Pass request to backup person, I feel it doesn&rsquo;t fit in the category mentioned.</p>
+        <footer>R3</footer>
+      </blockquote>
+      <blockquote class="quote">
+        <p>Pass the request to the backup person after a set time is still an option that is not yet
+          there.</p>
+        <footer>R5</footer>
+      </blockquote>
+    </div>
+
+    <div class="callout">
+      <h3>One participant invented the feature unprompted</h3>
+      <p>Asked what was missing from a visitor system, R7 wrote:
+        <em>&ldquo;Time to respond. After which the visitor can seek help.&rdquo;</em></p>
+      <p>That is user story US-2, proposed by somebody who had never heard of this project. The
+        concept is wanted, but it has no vocabulary and no category, because it exists in no product
+        these users have encountered. An information architecture cannot inherit a home for it. It
+        has to create one.</p>
+    </div>
+
+    <h3>Agreement is not the same as confidence</h3>
+    <p>&ldquo;Add another visitor to the same request&rdquo; took a clean 5 of 8 majority. It also
+      drew more &ldquo;hardest to place&rdquo; nominations than any other card:</p>
+    <blockquote class="quote">
+      <p>Adding another visitor, I&rsquo;m confused it&rsquo;ll go in which one exactly.</p>
+      <footer>R3</footer>
+    </blockquote>
+    <p>A quantitative majority concealed real uncertainty. Without the free-text prompts this card
+      would have looked settled. It is the strongest argument in the study for not reading a sort
+      from the numbers alone.</p>
+
+    <h3>The host and the visitor want opposite things</h3>
+    <table class="data">
+      <thead><tr><th scope="col">Stakeholder</th><th scope="col">Position</th><th scope="col">Evidence</th></tr></thead>
+      <tbody>
+        <tr><th scope="row">P1, visiting parent</th><td>Wants <em>less</em> data collected</td><td>&ldquo;The last four digits of Aadhaar card, simply not wanted&rdquo;</td></tr>
+        <tr><th scope="row">R9, student host</th><td>Wants <em>more</em> verification</td><td>Listed &ldquo;photo of the visitor and the vehicle number&rdquo; as missing</td></tr>
+      </tbody>
+    </table>
+    <p>Neither is confused. The visitor bears the entire privacy cost and receives no security
+      benefit, because she already knows who she is. The host bears risk from <em>other
+      people&rsquo;s</em> visitors and pays no privacy cost for data collected about them. This is
+      an externality, and it has to be resolved rather than averaged.</p>
+
+    <h3>A participant found a flaw in the instrument</h3>
+    <blockquote class="quote">
+      <p>I think I was a bit confused. You could&rsquo;ve added a &lsquo;not sure&rsquo; option.</p>
+      <footer>R9</footer>
+    </blockquote>
+    <p>Valid, and it cuts both ways. &ldquo;Doesn&rsquo;t fit any of these&rdquo; was intended to
+      mean <em>this belongs nowhere</em>. At least one participant used it to mean <em>I do not
+      know</em>. That weakens the homelessness measure, and it supports the reading that the
+      escalation votes reflect unfamiliarity rather than misplacement. The tree test resolves it by
+      observation instead of by checkbox.</p>
+  </div>
+</section>
+
+<!-- ============================== V1 IA ============================== -->
+<section id="ia-v1" aria-labelledby="ia1-h">
+  <div class="wrap">
+    <p class="section-label">09 &middot; Information architecture, v1</p>
+    <h2 id="ia1-h">Six nodes, built from the sort</h2>
+
+    <div class="tree" role="figure" aria-label="Version 1 information architecture menu tree with six top-level nodes">
+<pre>
+CAMPUS VISITOR ACCESS
+│
+├── <b>Apply for a Visit</b>
+│   ├── Enter my name and phone number            <i>6/8</i>
+│   ├── Enter the reason for my visit             <i>6/8</i>
+│   ├── Choose the person I am visiting           <i>6/8</i>
+│   ├── Add another visitor to the same request   <i>5/8 contested</i>
+│   ├── Reuse details from my last visit          <i>4/8 narrow</i>
+│   └── Campus visiting hours and gate location   <i>3/8 weak</i>
+│
+├── <b>Checking on My Request</b>
+│   ├── See whether my request has been opened    <i>8/8</i>
+│   ├── See who the request is waiting on         <i>7/8</i>
+│   ├── See how long a decision usually takes     <i>8/8</i>
+│   ├── Get an alert when a decision is made      <i>4/8</i>
+│   ├── Send a reminder to whoever is deciding    <i>no majority</i>
+│   └── Pass the request to a backup person       <i>homeless</i>
+│
+├── <b>Getting In and Out</b>
+│   ├── Show my entry pass at the gate            <i>8/8</i>
+│   └── Show my exit pass when leaving            <i>8/8</i>
+│
+├── <b>My Information and Privacy</b>
+│   ├── Upload or enter ID proof details          <i>7/8</i>
+│   └── Read what happens to my personal info     <i>6/8</i>
+│
+├── <b>Getting Help</b>
+│   ├── Call the gate desk for help               <i>7/8</i>
+│   └── What to do when there is no phone signal  <i>8/8</i>
+│
+└── <b>For Hosts</b>
+    ├── Request a visit for my guest              <i>homeless</i>
+    └── See guests expected today                 <i>homeless</i>
+</pre>
+    </div>
+
+    <h3>The four judgement calls</h3>
+    <p>Four placements were not decided by the data. Naming them in advance is what made the tree
+      test worth running.</p>
+    <dl class="calls">
+      <dt>Send a reminder</dt>
+      <dd>A three-way tie. Placed under Checking because the action presupposes a request already
+        exists.</dd>
+      <dt>Pass to a backup person</dt>
+      <dd>&ldquo;Doesn&rsquo;t fit&rdquo; led at 4 of 8. Read as unfamiliarity rather than
+        placement judgement. <strong>Flagged as the weakest placement in the tree and the primary
+        test target.</strong></dd>
+      <dt>For Hosts</dt>
+      <dd>The data established that the two host items belong together and do not belong inside the
+        visitor flow. It did not name the node. <strong>This is the one label not derived from
+        participant vocabulary.</strong></dd>
+      <dt>Campus visiting hours and gate location</dt>
+      <dd>Only 3 of 8, spread across four categories. Placed under Apply because two respondents
+        independently asked for control over visit timing.</dd>
+    </dl>
+  </div>
+</section>
+
+<!-- ============================== TREE TEST ============================== -->
+<section id="treetest" class="alt" aria-labelledby="tt-h">
+  <div class="wrap">
+    <p class="section-label">10 &middot; Tree test</p>
+    <h2 id="tt-h">Where the structure broke</h2>
+
+    <p>Eight tasks, five participants, none of whom did the card sort. Order randomised per
+      participant, one level of the tree revealed at a time, on paper. Every attempt was eventually
+      marked as reached, so <strong>first-click accuracy is the metric that discriminates.</strong></p>
+
+    <div class="fc" role="figure" aria-label="First-click accuracy for eight tree test tasks. T1 request status five of five. T5 privacy five of five. T6 no phone signal five of five. T2 who I am visiting four of five. T7 backup approver four of five. T3 add a second visitor two of five. T4 host pre-registration one of five. T8 visiting hours zero of five.">
+      <div class="fc-row pass">
+        <span class="fc-task">T1</span><span class="fc-what">Request status</span>
+        <span class="fc-dots"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i></span>
+        <span class="fc-num">5/5</span>
+      </div>
+      <div class="fc-row pass">
+        <span class="fc-task">T5</span><span class="fc-what">Privacy policy</span>
+        <span class="fc-dots"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i></span>
+        <span class="fc-num">5/5</span>
+      </div>
+      <div class="fc-row pass">
+        <span class="fc-task">T6</span><span class="fc-what">No phone signal</span>
+        <span class="fc-dots"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i></span>
+        <span class="fc-num">5/5</span>
+      </div>
+      <div class="fc-row">
+        <span class="fc-task">T2</span><span class="fc-what">Who I am visiting</span>
+        <span class="fc-dots"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i></i></span>
+        <span class="fc-num">4/5</span>
+      </div>
+      <div class="fc-row">
+        <span class="fc-task">T7</span><span class="fc-what">Backup approver <em>(predicted to fail)</em></span>
+        <span class="fc-dots"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i></i></span>
+        <span class="fc-num">4/5</span>
+      </div>
+      <div class="fc-row broke">
+        <span class="fc-task">T3</span><span class="fc-what">Add a second visitor</span>
+        <span class="fc-dots"><i class="on"></i><i class="on"></i><i></i><i></i><i></i></span>
+        <span class="fc-num">2/5</span>
+      </div>
+      <div class="fc-row broke">
+        <span class="fc-task">T4</span><span class="fc-what">Host pre-registration</span>
+        <span class="fc-dots"><i class="on"></i><i></i><i></i><i></i><i></i></span>
+        <span class="fc-num">1/5</span>
+      </div>
+      <div class="fc-row broke">
+        <span class="fc-task">T8</span><span class="fc-what">Visiting hours</span>
+        <span class="fc-dots"><i></i><i></i><i></i><i></i><i></i></span>
+        <span class="fc-num">0/5</span>
+      </div>
+    </div>
+    <p class="fc-key">One dot per participant. Filled means the first heading they pointed at was
+      the right one. Thresholds set before testing: 4 to 5 sound, 2 to 3 ambiguous, 0 to 1
+      structurally wrong.</p>
+
+    <table class="data results">
+      <caption>Thresholds set before testing: 4&ndash;5 sound, 2&ndash;3 ambiguous, 0&ndash;1 structurally wrong.</caption>
+      <thead>
+        <tr><th scope="col">Task</th><th scope="col">Tested</th><th scope="col">First click</th><th scope="col">Direct</th><th scope="col">Median</th><th scope="col">Went instead</th></tr>
+      </thead>
+      <tbody>
+        <tr><th scope="row">T1</th><td>Request status</td><td class="num good">5/5</td><td class="num">4/5</td><td class="num">15s</td><td>none</td></tr>
+        <tr><th scope="row">T5</th><td>Privacy policy</td><td class="num good">5/5</td><td class="num">5/5</td><td class="num">10s</td><td>none</td></tr>
+        <tr><th scope="row">T6</th><td>No phone signal</td><td class="num good">5/5</td><td class="num">5/5</td><td class="num">20s</td><td>none</td></tr>
+        <tr><th scope="row">T2</th><td>Who I am visiting</td><td class="num">4/5</td><td class="num">3/5</td><td class="num">20s</td><td>Checking &times;1</td></tr>
+        <tr><th scope="row">T7</th><td>Backup approver</td><td class="num">4/5</td><td class="num">4/5</td><td class="num">32s</td><td>Getting help &times;1</td></tr>
+        <tr class="weak"><th scope="row">T3</th><td>Add a second visitor</td><td class="num bad">2/5</td><td class="num">2/5</td><td class="num">20s</td><td>Checking &times;3</td></tr>
+        <tr class="fail"><th scope="row">T4</th><td>Host pre-registration</td><td class="num bad">1/5</td><td class="num">4/5</td><td class="num">40s</td><td>Apply for a visit &times;4</td></tr>
+        <tr class="fail"><th scope="row">T8</th><td>Visiting hours</td><td class="num bad">0/5</td><td class="num">1/5</td><td class="num">75s</td><td>Help &times;2, In&nbsp;and&nbsp;out &times;2, Checking &times;1</td></tr>
+      </tbody>
+    </table>
+
+    <figure class="evidence card-shot">
+      <img src="images/tree-test-card.jpg" width="1200" height="396"
+           alt="The printed top-level tree card used in the test. It lists six options, Apply for a Visit, Checking on My Request, Getting In and Out, My Information and Privacy, Getting Help and For Hosts, each hand-numbered one to six in blue ink by the facilitator so paths could be recorded quickly.">
+      <figcaption>The top-level card, hand-numbered during sessions so paths could be recorded
+        quickly. Participants saw one level at a time and nothing else. No interface, no icons, no
+        search: a failure here can only be attributed to the categories or their labels.</figcaption>
+    </figure>
+
+    <h3>The prediction I got wrong</h3>
+    <p>Before testing I predicted <strong>T7 would fail</strong>, because &ldquo;pass to a backup
+      person&rdquo; was the most homeless card in the sort at 4 of 8. It passed at 4 of 5, direct,
+      in 32 seconds.</p>
+    <div class="callout">
+      <p>This settles the ambiguity R9 raised. Presented as an abstract card with no context, half
+        the sample could not place automatic escalation. Presented as a concrete situation, <em>&ldquo;it&rsquo;s been an hour and the person deciding
+        still hasn&rsquo;t responded&rdquo;</em>, four of five went straight to the right place.</p>
+      <p><strong>The concept was never mis-categorised. It was unfamiliar.</strong> People have no
+        word for automatic escalation because no system they use has it, but they know exactly where
+        it belongs the moment they need it. Nothing changed.</p>
+    </div>
+
+    <h3>T8 failed completely, and everyone failed the same way</h3>
+    <p>Nobody found visiting hours. It was the slowest task in the study by a factor of five. First
+      clicks split evenly between Getting Help and Getting In and Out, but the quotes converge
+      absolutely.</p>
+    <div class="quote-row">
+      <blockquote class="quote"><p>Call desk for help</p><footer>TT2</footer></blockquote>
+      <blockquote class="quote"><p>Call gate for info</p><footer>TT3</footer></blockquote>
+      <blockquote class="quote"><p>Call for help desk</p><footer>TT4</footer></blockquote>
+      <blockquote class="quote"><p>Calling for desk help</p><footer>TT5</footer></blockquote>
+    </div>
+    <p>Four of five treated visiting hours as <strong>a question you ask a human</strong>, not
+      information you look up. That independently reproduces the guards&rsquo; account of fielding
+      &ldquo;how much time will it take?&rdquo; all day. The gate desk is already the
+      institution&rsquo;s information system, and five participants who had never met those guards
+      assumed the same thing.</p>
+    <p>The even split is the signature of a <strong>compound label</strong> doing two unrelated
+      jobs: hours are a planning question, location is an arrival question.</p>
+
+    <h3>T4 killed my structural pivot</h3>
+    <p>Four of five went to Apply for a Visit instead of For Hosts. Note the trap in the directness
+      column: <strong>T4 scored 4 of 5 direct.</strong> They were confidently wrong and went
+      straight there without hesitating. Success rate alone would have hidden the failure
+      completely.</p>
+    <p><strong>Students do not self-identify as hosts.</strong> Given a concrete situation a student
+      thinks &ldquo;I am arranging a visit&rdquo;, not &ldquo;I am performing a host function&rdquo;.
+      The role label described the system&rsquo;s model of the user, not the user&rsquo;s model of
+      themselves.</p>
+
+    <h3>T3 is where the two methods contradict each other</h3>
+    <p>The card sort said Apply, 5 of 8. The tree test said Checking, 3 of 5. Both are right.</p>
+    <p><strong>The card sort measured the words. The tree test measured the moment.</strong> Read as
+      an abstract card, &ldquo;add another visitor to the same request&rdquo; sounds like part of
+      filling in a form. Given a scenario beginning <em>&ldquo;you have already submitted&rdquo;</em>,
+      it becomes an action performed on a live request. That is exactly why three sorters named it
+      the hardest card in the deck.</p>
+
+    <h3>The raw sheets</h3>
+    <p>All five sessions, recorded live. First click, path, reached, direct, time and quote were
+      captured for every task while the participant was still at the table.</p>
+
+    <figure class="sheets">
+      <a href="images/tt-p1.jpg"><img src="images/tt-p1.jpg" width="880" height="1087"
+           alt="Completed tree test recording sheet for participant P1, a student, dated 2 August 2026. Handwritten entries for all eight tasks in randomised order, including the note opt not found against task T8 and a total time of two minutes for that task."></a>
+      <a href="images/tt-p2.jpg"><img src="images/tt-p2.jpg" width="880" height="1118"
+           alt="Completed tree test recording sheet for participant P2, a student, dated 3 August 2026. Includes the quotes call desk for help against task T8 and send a reminder to the person against task T7, and a closing comment that the questions and answers along with options were user friendly."></a>
+      <a href="images/tt-p3.jpg"><img src="images/tt-p3.jpg" width="880" height="1153"
+           alt="Completed tree test recording sheet for participant P3, a student. Includes the quote call gate for info against task T8, the quote very obvious against task T5, and a closing comment that it felt pretty straightforward and simple."></a>
+      <a href="images/tt-p4.jpg"><img src="images/tt-p4.jpg" width="880" height="1223"
+           alt="Completed tree test recording sheet for participant P4, a student, dated 4 August 2026. Includes the quote add another person for same request against task T3 and call for help desk against task T8, which took over a minute."></a>
+      <a href="images/tt-p5.jpg"><img src="images/tt-p5.jpg" width="880" height="1241"
+           alt="Completed tree test recording sheet for participant P5, a student, dated 5 August 2026. The only participant to find the For Hosts node on task T4, in ten seconds. Includes the quote calling for desk help against task T8 and a closing comment that it was a bit confusing."></a>
+      <figcaption>Five sheets, P1 to P5, in the randomised order each participant received.
+        <strong>P5 is the only participant who found &ldquo;For Hosts&rdquo; on task T4</strong>,
+        and did it in ten seconds. The other four went straight to Apply for a Visit without
+        hesitating, which is why directness had to be scored separately from success. Select any sheet to open it full size.</figcaption>
+    </figure>
+  </div>
+</section>
+
+<!-- ============================== V2 IA ============================== -->
+<section id="ia-v2" aria-labelledby="ia2-h">
+  <div class="wrap">
+    <p class="section-label">11 &middot; Information architecture, v2</p>
+    <h2 id="ia2-h">Five nodes, after the pivot</h2>
+
+    <div class="tree" role="figure" aria-label="Version 2 information architecture menu tree with five top-level nodes after the tree test pivots">
+<pre>
+CAMPUS VISITOR ACCESS  (V2)
+│
+├── <b>Request a Visit</b>                          <i>renamed</i>
+│   ├── Enter my name and phone number
+│   ├── Enter the reason for my visit
+│   ├── Choose the person I am visiting
+│   ├── Request a visit for my guest              <i>moved in</i>
+│   └── Reuse details from my last visit
+│
+├── <b>Checking on My Request</b>
+│   ├── See whether my request has been opened
+│   ├── See who the request is waiting on
+│   ├── See how long a decision usually takes
+│   ├── Get an alert when a decision is made
+│   ├── Send a reminder to whoever is deciding
+│   ├── Pass the request to a backup person       <i>unchanged</i>
+│   ├── Add another visitor to the same request   <i>moved in</i>
+│   └── See guests expected today                 <i>moved in</i>
+│
+├── <b>Getting In and Out</b>
+│   ├── Show my entry pass at the gate
+│   ├── Show my exit pass when leaving
+│   └── Gate location and directions              <i>split</i>
+│
+├── <b>My Information and Privacy</b>
+│   ├── Upload or enter ID proof details
+│   └── Read what happens to my personal info
+│
+└── <b>Getting Help</b>
+    ├── Call the gate desk for help
+    ├── What to do when there is no phone signal
+    └── Campus visiting hours                     <i>split</i>
+
+REMOVED:  For Hosts   <i>1/5 first-click accuracy</i>
+</pre>
+    </div>
+
+    <table class="data">
+      <caption>Every change, and the evidence that forced it.</caption>
+      <thead><tr><th scope="col">Change</th><th scope="col">Type</th><th scope="col">Evidence</th></tr></thead>
+      <tbody>
+        <tr><td>Split &ldquo;visiting hours and gate location&rdquo; across two nodes</td><td>Split</td><td>T8 at 0/5, even split between Help and In and out, 4/5 said they would call the desk</td></tr>
+        <tr><td>Dissolve &ldquo;For Hosts&rdquo;, redistribute both items</td><td>Merge, node removed</td><td>T4 at 1/5, four of five went to the application node</td></tr>
+        <tr><td>Rename &ldquo;Apply for a Visit&rdquo; to &ldquo;Request a Visit&rdquo;</td><td>Rename</td><td>Follows from the merge. The node must now cover host-initiated requests</td></tr>
+        <tr><td>Move &ldquo;add another visitor&rdquo; to Checking</td><td>Move</td><td>T3, three of five went there. The scenario presupposes an existing request</td></tr>
+        <tr><td>Leave the backup approver where it is</td><td>No change</td><td>T7 passed 4/5, contradicting the prediction</td></tr>
+      </tbody>
+    </table>
+
+    <div class="callout tight">
+      <h3>What was deliberately not changed</h3>
+      <p>Checking on My Request now holds eight items and is doing three jobs. That is a real risk,
+        and v1 already flagged the node as potentially overloaded. It is <strong>not</strong> split,
+        because the test gave no evidence to split it: T1 and T7 both passed. Splitting now would be
+        designing on intuition, which is the behaviour this process exists to avoid. It is the first
+        thing to test in a further round.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============================== MOSCOW ============================== -->
+<section id="moscow" class="alt" aria-labelledby="moscow-h">
+  <div class="wrap">
+    <p class="section-label">12 &middot; Prioritisation</p>
+    <h2 id="moscow-h">MoSCoW: four Must-Haves, no more</h2>
+
+    <p class="note-inline"><strong>How a feature is defined here.</strong> A feature is a
+      user-facing capability, not a field or a screen. &ldquo;Submit a request&rdquo; is one
+      feature; the name, phone and reason fields are components of it. Splitting them would let me
+      claim a four-item MVP that quietly contained fifteen things. The test applied to every bundle:
+      would a user describe these as one thing they can do?</p>
+
+    <div class="moscow">
+      <article class="tier must">
+        <h3>Must have <span>4</span></h3>
+        <ol>
+          <li><strong>Submit a request from anywhere, with minimum necessary data.</strong> Name,
+            phone, address, reason, who I am visiting. Reachable from a public URL, not only from a
+            QR code at the gate. The five fields the gate register actually uses.</li>
+          <li><strong>Rule-based approver routing.</strong> The system determines the approver. The
+            visitor never names a person. This is the first break in the chain and it is
+            triangulated three ways.</li>
+          <li><strong>Request status visibility.</strong> Has it been opened, who is it waiting on.
+            The tightest cluster in the card sort and the joint-best tree test result. The concept
+            exists in users&rsquo; heads and not in the product.</li>
+          <li><strong>Time-bound escalation to a backup approver.</strong> The only feature that
+            addresses the lowest point on the emotion line. The others make the wait legible. This
+            one makes it end.</li>
+        </ol>
+      </article>
+
+      <article class="tier should">
+        <h3>Should have <span>7</span></h3>
+        <ul>
+          <li><strong>Host-initiated pre-registration.</strong> Lost the DFV comparison 13 to 7. Top
+            of the queue after MVP</li>
+          <li><strong>Digital entry pass.</strong> Guards maintain a physical register regardless,
+            so approved status visible at the gate is sufficient to admit someone</li>
+          <li><strong>Alert when a decision is made.</strong> A push is an improvement on polling,
+            not a replacement for it</li>
+          <li><strong>Manual reminder to the approver.</strong> Redundant once escalation is
+            automatic, but both R7 and TT2 reached for it</li>
+          <li><strong>Add another visitor to one request.</strong> Two separate requests is
+            inconvenient, not broken</li>
+          <li><strong>Show the gate desk phone number.</strong> Four of five tree test participants
+            said they would call. Near-zero cost</li>
+          <li><strong>Offline-capable pass.</strong> R4: &ldquo;local encoding is what I would
+            want&rdquo;</li>
+        </ul>
+      </article>
+
+      <article class="tier could">
+        <h3>Could have <span>8</span></h3>
+        <ul>
+          <li>Reuse details from my last visit</li>
+          <li>Campus visiting hours <span class="aside">T8 scored 0/5, so fix the structure before building the content</span></li>
+          <li>Gate location and directions <span class="aside">maps already solve this</span></li>
+          <li>Exit pass <span class="aside">no participant reported an exit problem</span></li>
+          <li>See guests expected today <span class="aside">never directly tested</span></li>
+          <li>Published decision-time benchmark <span class="aside">status of the actual request is strictly better</span></li>
+          <li>Choose a visit time slot <span class="aside">a scheduling product bolted onto an access product</span></li>
+          <li>Privacy notice <span class="aside">removing the fields people object to reduces the need to explain them</span></li>
+        </ul>
+      </article>
+
+      <article class="tier wont">
+        <h3>Won&rsquo;t have <span>4</span></h3>
+        <dl>
+          <dt>Selfie, ID digits and vehicle number</dt>
+          <dd><em>Requested by R9.</em> Cut because the institution&rsquo;s own register does not
+            use them; because the person paying the privacy cost is not the person asking for them;
+            and because data you did not collect can be added later, while data you did collect
+            cannot be un-collected.</dd>
+          <dt>Let students approve their own visitors</dt>
+          <dd><em>The most desired structural change, and the deepest fix available.</em> Cut
+            because it is not a product decision. Approval authority was deliberately narrowed from
+            faculty to a few administrators. Building a feature that reverses an explicit
+            institutional decision guarantees rejection rather than adoption.</dd>
+          <dt>Emergency button</dt>
+          <dd><em>Requested by R5.</em> Cut because an escalation channel with no defined responder
+            and no time bound is exactly the mechanism that stranded P1. It would be a second silent
+            queue with a more urgent label.</dd>
+          <dt>In-app messaging to the host</dt>
+          <dd><em>Requested by R7.</em> Cut because it competes with WhatsApp, and because it pushes
+            the burden back onto the personal relationship, which is the informal workaround the
+            product exists to replace. A visitor without an insider still has nobody to message.</dd>
+        </dl>
+      </article>
+    </div>
+  </div>
+</section>
+
+<!-- ============================== DFV ============================== -->
+<section id="dfv" aria-labelledby="dfv-h">
+  <div class="wrap">
+    <p class="section-label">13 &middot; DFV matrix</p>
+    <h2 id="dfv-h">The contested fourth slot</h2>
+
+    <p>Two features competed for the last Must-Have. Both trace to Phase 1 user stories, both have
+      independent supporting evidence, and both fix a different link in the same chain.</p>
+
+    <div class="versus">
+      <div class="side"><span class="tag">Feature A</span><h3>Time-bound escalation to a backup approver</h3><p>US-2</p></div>
+      <div class="vs">vs</div>
+      <div class="side"><span class="tag">Feature B</span><h3>Host-initiated pre-registration</h3><p>US-3</p></div>
+    </div>
+
+    <h3>Scoring anchors, defined before scoring</h3>
+    <table class="data anchors">
+      <thead><tr><th scope="col">Score</th><th scope="col">Desirability</th><th scope="col">Feasibility</th><th scope="col">Viability</th></tr></thead>
+      <tbody>
+        <tr><th scope="row" class="num">1</th><td>Researcher assumption only</td><td>New infrastructure plus external integration</td><td>Reverses an explicit institutional decision</td></tr>
+        <tr><th scope="row" class="num">2</th><td>Inferred from a single source</td><td>New user role, authentication or third-party integration</td><td>Needs new policy and creates new risk</td></tr>
+        <tr><th scope="row" class="num">3</th><td>Stated by one participant</td><td>Extends existing objects moderately</td><td>Needs a policy decision, low risk</td></tr>
+        <tr><th scope="row" class="num">4</th><td>Multiple independent sources, or strong behavioural evidence</td><td>A rule or scheduled job over existing data</td><td>Formalises something already done informally</td></tr>
+        <tr><th scope="row" class="num">5</th><td>Multiple sources, independently invented by a participant, and targets the emotion trough</td><td>Configuration only</td><td>Reduces existing operational cost, no policy change</td></tr>
+      </tbody>
+    </table>
+
+    <table class="data scores">
+      <caption>DFV scores, 1 to 5.</caption>
+      <thead><tr><th scope="col">Dimension</th><th scope="col">A &middot; Escalation</th><th scope="col">B &middot; Host pre-registration</th></tr></thead>
+      <tbody>
+        <tr><th scope="row">Desirability</th><td class="num win">5</td><td class="num">3</td></tr>
+        <tr><th scope="row">Feasibility</th><td class="num win">4</td><td class="num">2</td></tr>
+        <tr><th scope="row">Viability</th><td class="num win">4</td><td class="num">2</td></tr>
+      </tbody>
+      <tfoot>
+        <tr><th scope="row">Total</th><td class="num total win">13</td><td class="num total">7</td></tr>
+      </tfoot>
+    </table>
+
+    <h3>Desirability, 5 against 3</h3>
+    <p><strong>A scores 5.</strong> Four independent lines converge: P1&rsquo;s first request was
+      silently cancelled; the guards confirm no fallback exists; R7 invented the feature unprompted;
+      and it targets stage 6, the lowest point on the emotion line.</p>
+    <p><strong>B scores 3, and this is what decided the comparison.</strong> B&rsquo;s headline
+      justification was always the connectivity precondition: no data at the gate, QR only at the
+      gate, so a visitor cannot begin remotely. <strong>That is already answered by M1 at near-zero
+      cost.</strong> Publishing the form at a reachable URL is a distribution problem, not a
+      feature. Once M1 exists and M2 removes the need to name an approver, B&rsquo;s unique
+      remaining value is that a host can initiate before the visitor thinks to. Useful. Not
+      MVP-defining. B also scored 1 of 5 on tree test task T4.</p>
+
+    <h3>Feasibility, 4 against 2</h3>
+    <p><strong>A is a timer, a routing rule and a notification.</strong> A scheduled job finds
+      requests older than the threshold and reassigns them, operating on the request object that M1
+      and M2 already create. No new user role, no authentication, no external integration. It scores
+      4 rather than 5 only because the backup approver pool must be defined as data first.</p>
+    <p><strong>B is a second product.</strong> It needs a host user role, authentication against the
+      student directory, a guest invitation mechanism, a host-to-guest linkage model, and it must
+      function on the campus network. Every one of those is a dependency A does not have, and the
+      integration surface with the student information system is where the schedule risk lives.</p>
+
+    <h3>Viability, 4 against 2</h3>
+    <p><strong>A formalises something that already happens.</strong> Guards already perform manual
+      escalation by telephone, badly and inconsistently. Automating an existing workflow is the
+      cheapest institutional change to sell: nobody has to agree to a new principle, only to write
+      down the list of people they are already ringing.</p>
+    <p><strong>B pushes against a decision the institution just made.</strong> Approval authority
+      was deliberately centralised. B devolves initiation to students, moving in the opposite
+      direction, and introduces a new abuse surface. Both objections are answerable, but answering
+      them costs political capital an MVP does not have.</p>
+
+    <blockquote class="statement">
+      <p>Feature A wins on every dimension. The decisive argument is not the total: it is that
+        <strong>A&rsquo;s benefit cannot be obtained any other way, while most of B&rsquo;s is
+        already delivered by M1 and M2 at a fraction of the cost.</strong> Nothing except a time
+        bound stops a request from dying in silence.</p>
+    </blockquote>
+  </div>
+</section>
+
+<!-- ============================== CLOSE ============================== -->
+<section id="close" class="alt" aria-labelledby="close-h">
+  <div class="wrap">
+    <p class="section-label">14 &middot; The MVP</p>
+    <h2 id="close-h">What this would have meant for P1</h2>
+
+    <p class="lede">A visitor can raise a request from anywhere with only the information the gate
+      actually uses. It reaches somebody with the authority to act on it. The visitor can see what
+      is happening. And if nobody acts, it moves to somebody who will.</p>
+
+    <h3>The request lifecycle, before and after</h3>
+    <p>The core finding stated as a state machine. Not an interface: what happens to a request
+      after it is submitted, and where it currently dies.</p>
+
+    <div class="lifecycle">
+      <article class="lc lc-now">
+        <h3>How a request behaves now</h3>
+        <p class="lc-sub">Observed on 31 July 2026, and corroborated by both gate staff.</p>
+        <ol>
+          <li>Visitor submits
+            <span>Eleven or more fields, standing at the gate, on a network that does not exist there</span></li>
+          <li>Routed to a name the visitor guessed
+            <span>No check that the person still holds approval authority. No error if they do not</span></li>
+          <li>Waiting
+            <span>No status. No estimate. No confirmation that anyone has seen it</span></li>
+          <li class="dead">Nobody acts
+            <span>There is no time bound and no fallback approver. The failure mode is silence</span></li>
+          <li class="loop">Silently cancelled
+            <span>The visitor re-enters every field and starts again, no better informed than before</span></li>
+        </ol>
+        <p class="lc-escape"><strong>The only escape</strong> is outside the product: a guard
+          telephones a shortlist of people and hopes one answers. A visitor without an insider on
+          campus has no escape at all.</p>
+      </article>
+
+      <article class="lc lc-next">
+        <h3>How it would behave</h3>
+        <p class="lc-sub">The four Must-Have features, expressed as states rather than screens.</p>
+        <ol>
+          <li class="good">Request raised from anywhere
+            <span>Five fields, the ones the gate register actually keeps. Reachable without standing at the gate <strong>(M1)</strong></span></li>
+          <li class="good">Routed by rule
+            <span>Derived from who is being visited. The visitor never names a person <strong>(M2)</strong></span></li>
+          <li class="good">Waiting, and visible
+            <span>Opened or not opened, and who currently holds it <strong>(M3)</strong></span></li>
+          <li class="good">Timer expires
+            <span>No response within the agreed window. This is the state that does not exist today</span></li>
+          <li class="good">Reassigned automatically
+            <span>Handed to a named fallback approver, without the visitor doing anything <strong>(M4)</strong></span></li>
+          <li class="end">Decision
+            <span>The visitor never re-enters anything, and never needs an insider</span></li>
+        </ol>
+        <p class="lc-escape"><strong>No escape hatch is required,</strong> because the loop back to
+          the visitor has been removed. The one new state, the timer, is what the guards already
+          improvise by telephone.</p>
+      </article>
+    </div>
+
+    <h3>What that would have meant for P1</h3>
+
+    <ul class="outcome">
+      <li>She would not have needed to know a professor&rsquo;s name</li>
+      <li>She would not have been asked for her Aadhaar digits</li>
+      <li>She would have seen that her request was waiting, and on whom</li>
+      <li>When the first approver did not respond, it would have moved on by itself, rather than
+        cancelling in silence while she stood in the rain</li>
+    </ul>
+
+    <h3>What I would do differently</h3>
+    <ul class="bullets">
+      <li><strong>Write the proto-persona before interviewing.</strong> Mine was reconstructed
+        afterwards. The assumptions in it are honest, but I cannot prove the sequence.</li>
+      <li><strong>Include a &ldquo;not sure&rdquo; option in the card sort.</strong> R9 was right.
+        The instrument conflated <em>belongs nowhere</em> with <em>I do not know</em>, and I only
+        untangled it by running the tree test.</li>
+      <li><strong>Recruit a visiting parent for the tree test.</strong> All five participants were
+        students answering tasks written from a parent&rsquo;s perspective, and task T4 turns
+        entirely on whether a student self-identifies as a host.</li>
+      <li><strong>Test the eight-item Checking node.</strong> It is the known weakness carried into
+        v2, and I deliberately left it alone because nothing in the data justified touching it.</li>
+    </ul>
+  </div>
+</section>
+
+</main>
+
+<footer class="colophon">
+  <div class="wrap">
+    <p><strong>Campus Visitor Access.</strong> An end-to-end product ideation study.
+      Bhargavaram Krishnapur, Vijaybhoomi University, August 2026.</p>
+    <p class="fine">Built from scratch in HTML and CSS. No JavaScript, no frameworks. Empathy map
+      and journey map produced from the research data and embedded as images. Screenshots of the
+      existing third-party system are reproduced as research evidence and are not proposed designs.
+      All participants anonymised.</p>
+  </div>
+</footer>
+
+</body>
+</html>
