@@ -2,6 +2,8 @@
 
 # Campus Visitor Access
 
+> **Written up in full:** [codex-crusader.github.io/projects/campus-visitor-access/](https://codex-crusader.github.io/projects/campus-visitor-access/) covers the problem, the architecture, the results and what it deliberately does not do.
+
 **An end-to-end product ideation study of the visitor entry system at Vijaybhoomi University**
 
 [![Read the study](https://img.shields.io/badge/read_the_study-live_site-2ea44f?style=for-the-badge&logo=githubpages&logoColor=white)](https://codex-crusader.github.io/visitor-access-project/)
