@@ -376,6 +376,7 @@ figcaption strong { color: var(--ink); }
   .masthead h1, .tree b, .colophon strong { color: #000 !important; }
   .standfirst, .tree pre, .meta dd, .colophon p { color: #333 !important; }
   main > section { padding: 1rem 0; }
+  details::details-content { content-visibility: visible; display: block; }
   figure, table { page-break-inside: avoid; }
   .wf-strip { grid-auto-flow: row; grid-template-columns: repeat(5, 1fr); overflow: visible; }
   a { color: #000; }

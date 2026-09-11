@@ -109,7 +109,7 @@
     <p class="warn">The six screens below are the <strong>existing third-party system</strong>,
       captured as evidence. My proposed design is in <a href="#design">Phase 4</a>.</p>
 
-    <figure class="shots">
+    <figure class="shots" id="artefact">
       <img src="images/current-01-phone.png" width="520" height="745" loading="lazy"
            alt="Existing system, screen 1 of 6: phone number entry with a terms of use checkbox.">
       <img src="images/current-02-otp.png" width="520" height="734" loading="lazy"
@@ -172,11 +172,12 @@
 <!-- ============================== PERSONA / MAPS / PAIN ============================== -->
 <section id="persona" aria-labelledby="persona-h">
   <div class="wrap">
-    <p class="section-label">Phase 1 &middot; What I found</p>
+    <p class="section-label">Phase 1 &middot; Persona</p>
     <h2 id="persona-h">I assumed the form was the problem. It wasn&rsquo;t.</h2>
 
     <div class="table-scroll">
     <table class="data">
+      <caption>Proto-persona (my assumptions) against the evidence-based persona</caption>
       <thead><tr><th scope="col">I assumed</th><th scope="col">The research showed</th></tr></thead>
       <tbody>
         <tr><td>She struggles with apps</td><td>She finished six screens correctly, twice, from a moving car</td></tr>
@@ -257,7 +258,7 @@
 <!-- ============================== CARD SORT ============================== -->
 <section id="cardsort" aria-labelledby="cardsort-h">
   <div class="wrap">
-    <p class="section-label">Phase 2 &middot; Card sort</p>
+    <p class="section-label">Phase 2 &middot; Information architecture &middot; Card sort</p>
     <h2 id="cardsort-h">People already think in &ldquo;the state of my request&rdquo;</h2>
 
     <p>Eight people sorted twenty features into six groups, or none, and could propose their
@@ -301,7 +302,7 @@
 <!-- ============================== TREE TEST ============================== -->
 <section id="treetest" class="alt" aria-labelledby="tt-h">
   <div class="wrap">
-    <p class="section-label">Phase 2 &middot; Tree test</p>
+    <p class="section-label">Phase 2 &middot; Information architecture &middot; Tree test</p>
     <h2 id="tt-h">Where the menu worked, and where it broke</h2>
 
     <p>Five new students got eight real situations on paper and pointed at the menu heading they
@@ -333,6 +334,7 @@
     </table>
     </div>
 
+    <h3>The information architecture, revised</h3>
     <div id="ia-v2" class="tree" role="figure" aria-label="Revised menu with five top-level sections">
 <pre>
 CAMPUS VISITOR ACCESS  (revised)
@@ -354,7 +356,7 @@ REMOVED: For Hosts
       because the test gave no reason to split it. It&rsquo;s the first thing to test next.</p>
 
     <details class="disclosure" id="ia-v1">
-      <summary>The first menu, the full scores table and the five recording sheets</summary>
+      <summary>The first information architecture, the full scores table and the five recording sheets</summary>
       <div class="disclosure-body">
         <div class="tree" role="figure" aria-label="First menu with six top-level sections and card sort agreement">
 <pre>
@@ -410,7 +412,7 @@ CAMPUS VISITOR ACCESS  (first version, from the card sort)
 <!-- ============================== PRIORITISATION ============================== -->
 <section id="moscow" aria-labelledby="moscow-h">
   <div class="wrap">
-    <p class="section-label">Phase 3 &middot; Prioritisation</p>
+    <p class="section-label">Phase 3 &middot; Prioritisation (MoSCoW)</p>
     <h2 id="moscow-h">Four must-haves, no more</h2>
 
     <ol class="musts">
@@ -452,7 +454,7 @@ CAMPUS VISITOR ACCESS  (first version, from the card sort)
     </dl>
 
     <div id="dfv">
-      <h3>The close call: backup hand-off versus host pre-registration</h3>
+      <h3>DFV matrix: backup hand-off versus host pre-registration</h3>
       <div class="table-scroll">
       <table class="data scores">
         <thead><tr><th scope="col">Score, 1&ndash;5</th><th scope="col">Backup hand-off</th><th scope="col">Host pre-registration</th></tr></thead>
