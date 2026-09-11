@@ -308,15 +308,31 @@ figcaption strong { color: var(--ink); }
 }
 .wide-sm { width: min(52rem, calc(100vw - 2.5rem)); }
 
-.map, .evidence { margin: 1.6rem 0 2.4rem; }
+/* every image must fit on one screen: cap height to the viewport, minus the sticky nav */
+.map, .evidence { margin: 1.6rem 0 2rem; }
 .map > a, .evidence > a, .sheets figure > a { display: block; line-height: 0; }
-.map img, .evidence img { width: 100%; height: auto; display: block; border: 1px solid var(--rule); background: #fff; }
+.map img, .evidence img {
+  display: block; width: auto; max-width: 100%; height: auto;
+  max-height: calc(100vh - 7rem); margin: 0 auto;
+  border: 1px solid var(--rule); background: #fff;
+}
 .map a:hover img, .evidence a:hover img, .sheets a:hover img { border-color: var(--signal); }
 .map figcaption, .evidence figcaption { max-width: 44rem; }
 
-.sheets { display: grid; grid-template-columns: repeat(auto-fit, minmax(17rem, 1fr)); gap: 1.4rem; margin: 1.2rem 0; }
+.map-pair { display: grid; grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr)); gap: 1.6rem; align-items: start; }
+.map-pair .map { margin: 1.2rem 0; }
+
+.sheets { display: grid; grid-template-columns: repeat(5, 1fr); gap: .8rem; margin: 1.2rem 0 .8rem; }
 .sheets figure { margin: 0; }
-.sheets img { width: 100%; height: auto; display: block; border: 1px solid var(--rule); background: #fff; }
+.sheets img {
+  display: block; width: auto; max-width: 100%; height: auto; max-height: calc(100vh - 12rem);
+  margin: 0 auto; border: 1px solid var(--rule); background: #fff;
+}
+.sheets figcaption { border: 0; padding: 0; text-align: center; margin-top: .3rem; }
+.sheet-notes { margin: .4rem 0 1rem; padding-left: 1.2rem; }
+.sheet-notes li { font-size: .95rem; line-height: 1.5; margin-bottom: .35rem; }
+
+.hero-shot img, .wf img { max-height: calc(100vh - 7rem); }
 
 .persona-card { border: 1px solid var(--ink); border-left: 4px solid var(--signal); background: var(--card); padding: 1.1rem 1.3rem; margin: 1.6rem 0; }
 .persona-card h3 { margin-top: 0; }
@@ -366,6 +382,7 @@ figcaption strong { color: var(--ink); }
   .summary { grid-template-columns: 1fr; }
   .hero-shot { max-width: 14rem; }
   .shots { grid-template-columns: repeat(3, 1fr); }
+  .sheets { grid-template-columns: repeat(3, 1fr); }
 }
 
 @media (max-width: 30rem) {
