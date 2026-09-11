@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Campus Visitor Access: A UX Study | Bhargavaram Krishnapur</title>
-<meta name="description" content="Why visitors get stranded at the Vijaybhoomi University gate, and a wireframed, heuristically inspected, clickable redesign of the approval step.">
+<meta name="description" content="Why visitors get stuck at the Vijaybhoomi University gate, and a tested, clickable design that fixes the approval step.">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -15,14 +15,14 @@
   <div class="wrap">
     <p class="eyebrow">Product Ideation &middot; Vijaybhoomi University</p>
     <h1>The hour of silence</h1>
-    <p class="standfirst">Visitors get stuck at the campus gate because nobody is obliged to
-      answer their request. This is the research behind that finding and the design that fixes
-      it.</p>
+    <p class="standfirst">Visitors to our campus often wait at the gate for a long time. They are
+      waiting for someone to approve their visit. I studied why this happens, and I designed a
+      fix.</p>
     <dl class="meta">
       <div><dt>By</dt><dd>Bhargavaram Krishnapur</dd></div>
-      <div><dt>Fieldwork</dt><dd>31 July to 5 August 2026</dd></div>
-      <div><dt>Evidence</dt><dd>3 interviews &middot; 8 card sorts &middot; 5 tree tests</dd></div>
-      <div><dt>Design</dt><dd><a href="#design">16 wireframes &middot; clickable prototype</a></dd></div>
+      <div><dt>Research</dt><dd>31 July to 5 August 2026</dd></div>
+      <div><dt>People</dt><dd>3 interviews &middot; 8 card sorts &middot; 5 tree tests</dd></div>
+      <div><dt>Design</dt><dd><a href="#design">16 wireframes &middot; working prototype</a></dd></div>
     </dl>
   </div>
 </header>
@@ -33,6 +33,7 @@
       <li><a href="#summary">Summary</a></li>
       <li><a href="#problem">Problem</a></li>
       <li><a href="#persona">Research</a></li>
+      <li><a href="#maps">Maps</a></li>
       <li><a href="#cardsort">Card sort</a></li>
       <li><a href="#treetest">Tree test</a></li>
       <li><a href="#moscow">Priorities</a></li>
@@ -47,40 +48,40 @@
 <!-- ============================== SUMMARY ============================== -->
 <section id="summary" class="alt" aria-labelledby="summary-h">
   <div class="wrap">
-    <p class="section-label">The study in one minute</p>
-    <h2 id="summary-h">A request can die in silence. The fix is a timer.</h2>
+    <p class="section-label">Summary</p>
+    <h2 id="summary-h">The study in one minute</h2>
 
     <div class="summary">
       <dl class="tldr">
         <div>
-          <dt>What happened</dt>
-          <dd>A parent started the entry form an hour early, from the car. She still stood in the
-            rain at the gate for twenty minutes, and got in only when her son walked out and a guard
-            phoned someone.</dd>
+          <dt>The visit</dt>
+          <dd>A mother drove three hours to see her son. She filled in the entry form an hour
+            early, from the car. She still waited at the gate in the rain for twenty minutes. She got
+            in after a guard phoned someone.</dd>
         </div>
         <div>
-          <dt>The real problem</dt>
-          <dd>Not the form. After you submit, <strong>nobody owns the request, nothing times out,
-            and there is no fallback.</strong> If the approver ignores it, it is quietly cancelled
-            and you start again.</dd>
+          <dt>The problem</dt>
+          <dd>After a visitor sends the form, nobody has to answer it. There is no time limit. If
+            nobody answers, the request is cancelled and the visitor must start again.</dd>
         </div>
         <div>
-          <dt>What I proposed</dt>
-          <dd>Submit from anywhere with five fields. The system picks the approver. You can see who
-            has your request. If nobody answers in 30 minutes, it moves to a backup by itself.</dd>
+          <dt>My solution</dt>
+          <dd>Visitors fill in five fields from anywhere. The system sends the request to the right
+            person. Visitors can see who has their request. If nobody answers in 30 minutes, the
+            request moves to a backup person on its own.</dd>
         </div>
         <div>
-          <dt>What I designed</dt>
-          <dd>Sixteen wireframes, a heuristic inspection that changed three things, and a clickable
-            prototype in Figma. <a href="#design">Jump to the design</a>.</dd>
+          <dt>What I made</dt>
+          <dd>Sixteen wireframes, a heuristic inspection that led to three fixes, and a clickable
+            prototype you can try on this page. <a href="#design">Go to the design</a>.</dd>
         </div>
       </dl>
 
       <figure class="hero-shot">
         <img src="images/wf-waiting.png" width="375" height="700"
-             alt="Wireframe of the proposed status screen. It shows the request stages Submitted, Opened by an approver and Decision, states that the request is with the first approver, and says that if nobody responds by 13:59, 28 minutes from now, the request moves to a backup approver by itself.">
-        <figcaption>The screen that does not exist today: who has your request, and when it moves
-          on.</figcaption>
+             alt="Wireframe of the proposed status screen. It shows three stages: Submitted, Opened by an approver, and Decision. It says the request is with the first approver, and that if nobody responds by 13:59, in 28 minutes, the request moves to a backup approver by itself.">
+        <figcaption>The status screen I designed. The current system has no screen like
+          this.</figcaption>
       </figure>
     </div>
   </div>
@@ -89,42 +90,46 @@
 <!-- ============================== PROBLEM ============================== -->
 <section id="problem" aria-labelledby="problem-h">
   <div class="wrap">
-    <p class="section-label">Phase 1 &middot; The system today</p>
-    <h2 id="problem-h">Six screens at a gate with no signal</h2>
+    <p class="section-label">Phase 1 &middot; The current system</p>
+    <h2 id="problem-h">How visitors get in today</h2>
 
-    <p>Every visitor fills in a third-party check-in form at the gate, then waits for someone to
-      approve it before a pass arrives on WhatsApp. Four things break it:</p>
+    <p>Every visitor fills in a six-screen form made by an outside company. They fill it in at the
+      gate. Then they wait for someone inside the university to approve it. After that, a pass
+      arrives on WhatsApp.</p>
 
+    <p>Four things make this hard:</p>
     <ul class="facts">
-      <li><strong>No signal.</strong> There is no mobile data at the gate, and campus WiFi needs a
-        coupon you can only get from inside.</li>
-      <li><strong>No option for parents.</strong> &ldquo;Purpose of visit&rdquo; has four choices
-        and none fits, then it demands a company name.</li>
-      <li><strong>You must guess the approver.</strong> Approval moved from teachers to a few
-        administrators. The form still accepts the wrong name without an error.</li>
-      <li><strong>No time limit.</strong> An ignored request is never rejected. It is held, then
-        silently cancelled.</li>
+      <li><strong>There is no signal at the gate.</strong> The campus has no mobile data. The WiFi
+        needs a coupon, and you can only get the coupon inside. Guards used to let visitors use a
+        hotspot. That is no longer allowed.</li>
+      <li><strong>The form&rsquo;s QR code is at the gate.</strong> Most first-time visitors learn
+        about the form only when they arrive.</li>
+      <li><strong>Parents have no option to pick.</strong> The form offers four reasons for a
+        visit. None of them fit a parent. Then it asks for a company name.</li>
+      <li><strong>Visitors must guess who approves.</strong> Teachers used to approve visits. Now
+        only a few office staff can. The form still lets you pick someone who cannot approve, and it
+        shows no error.</li>
     </ul>
 
-    <p class="warn">The six screens below are the <strong>existing third-party system</strong>,
-      captured as evidence. My proposed design is in <a href="#design">Phase 4</a>.</p>
+    <p class="warn">The six screens below belong to <strong>the current system</strong>. I
+      captured them as evidence. My own design is in <a href="#design">Phase 4</a>.</p>
 
     <figure class="shots" id="artefact">
       <img src="images/current-01-phone.png" width="520" height="745" loading="lazy"
-           alt="Existing system, screen 1 of 6: phone number entry with a terms of use checkbox.">
+           alt="Current system, screen 1 of 6: phone number entry with a terms of use checkbox.">
       <img src="images/current-02-otp.png" width="520" height="734" loading="lazy"
-           alt="Existing system, screen 2 of 6: one-time password verification.">
+           alt="Current system, screen 2 of 6: one-time password check.">
       <img src="images/current-03-selfie.png" width="520" height="729" loading="lazy"
-           alt="Existing system, screen 3 of 6: mandatory selfie capture.">
+           alt="Current system, screen 3 of 6: a required selfie.">
       <img src="images/current-04-details.png" width="520" height="734" loading="lazy"
-           alt="Existing system, screen 4 of 6: personal details form requiring name, address, email, ID proof type and the last four digits of an ID document.">
+           alt="Current system, screen 4 of 6: personal details, including name, address, email, ID proof type and the last four digits of an ID card.">
       <img src="images/current-05-purpose.png" width="520" height="719" loading="lazy"
-           alt="Existing system, screen 5 of 6: purpose of visit, offering only Meeting Appointment, AMC and Services, Admission Walk In, and Alumni Students.">
+           alt="Current system, screen 5 of 6: purpose of visit, with only Meeting Appointment, AMC and Services, Admission Walk In, and Alumni Students.">
       <img src="images/current-06-company.png" width="520" height="724" loading="lazy"
-           alt="Existing system, screen 6 of 6: additional details demanding a required company name and a point of contact name.">
-      <figcaption>Eleven or more required inputs. The guards&rsquo; own paper register keeps only
-        five: <strong>name, phone, address, reason and signature.</strong> Everything else is
-        collected and never used to decide who gets in.</figcaption>
+           alt="Current system, screen 6 of 6: a required company name and a point of contact name.">
+      <figcaption>The form asks for eleven or more things. The guards&rsquo; paper register keeps
+        only five: <strong>name, phone, address, reason and signature.</strong> The guards do not
+        use the rest to decide who comes in.</figcaption>
     </figure>
   </div>
 </section>
@@ -138,211 +143,292 @@
     <div class="table-scroll">
     <table class="data">
       <thead>
-        <tr><th scope="col">Code</th><th scope="col">Who</th><th scope="col">Method</th></tr>
+        <tr><th scope="col">Code</th><th scope="col">Who</th><th scope="col">What I did</th></tr>
       </thead>
       <tbody>
-        <tr><th scope="row">P1</th><td>Visiting parent</td><td>Recorded account and written follow-up</td></tr>
-        <tr><th scope="row">P2, P3</th><td>Gate guards, two shifts</td><td>Separate interviews, in Hindi, translated</td></tr>
-        <tr><th scope="row">R2&ndash;R9</th><td>Students and visitors</td><td>Online card sort, 20 items</td></tr>
-        <tr><th scope="row">TT1&ndash;TT5</th><td>Students new to the study</td><td>Paper tree test, 8 tasks</td></tr>
+        <tr><th scope="row">P1</th><td>Visiting parent</td><td>Recorded her story, then sent written questions</td></tr>
+        <tr><th scope="row">P2, P3</th><td>Two gate guards, on different shifts</td><td>Interviewed each one alone, in Hindi, about 10 minutes each</td></tr>
+        <tr><th scope="row">R2&ndash;R9</th><td>6 students, 1 past visitor, 1 other</td><td>Online card sort with 20 cards</td></tr>
+        <tr><th scope="row">TT1&ndash;TT5</th><td>5 students who did not do the card sort</td><td>Paper tree test with 8 tasks</td></tr>
       </tbody>
     </table>
     </div>
-    <p class="small">The codes are only used here and in the evidence captions. The two guards were
-      interviewed apart and gave near-identical answers, so the failure is routine, not one bad
-      shift.</p>
+    <p class="small">I use these codes only here and under the evidence photos. The two guards gave
+      almost the same answers. So the problem happens every day, on every shift.</p>
 
     <details class="disclosure">
-      <summary>Limitations: small, student-heavy sample, and I was in the story</summary>
+      <summary>Limits of this study: a small group, mostly students, and I was part of the story</summary>
       <ul>
-        <li>The student host in the parent&rsquo;s account is me. It is counted as participant
-          observation, not an independent interview.</li>
-        <li>Eight valid card sorts, two short of ten. One of nine was excluded for putting every
-          card in one group in sixty seconds, a rule set before analysis.</li>
-        <li>Recruited through my own network. Only one card-sort participant had been a visitor
-          and never a host.</li>
-        <li>All five tree-test participants were students, answering some tasks written from a
-          parent&rsquo;s view.</li>
-        <li>Guard quotes are my translations from Hindi.</li>
+        <li>The student in the parent&rsquo;s story is me. I count it as my own observation, not as
+          a separate interview.</li>
+        <li>I got nine card sorts and needed ten. I removed one that put all 20 cards in one group
+          in 60 seconds. I set that rule before I looked at the results. That left eight.</li>
+        <li>I found people through my own friends and classes. Only one card-sort person had been a
+          visitor but never a host.</li>
+        <li>All five tree testers were students. Some tasks asked them to act like a parent.</li>
+        <li>I translated the guards&rsquo; answers from Hindi myself.</li>
       </ul>
     </details>
   </div>
 </section>
 
-<!-- ============================== PERSONA / MAPS / PAIN ============================== -->
+<!-- ============================== PERSONA ============================== -->
 <section id="persona" aria-labelledby="persona-h">
   <div class="wrap">
     <p class="section-label">Phase 1 &middot; Persona</p>
-    <h2 id="persona-h">I assumed the form was the problem. It wasn&rsquo;t.</h2>
+    <h2 id="persona-h">What I guessed, and what I found</h2>
+
+    <p>Before the research, I wrote a proto-persona: my guesses about a visiting parent. The
+      research proved all four guesses wrong.</p>
 
     <div class="table-scroll">
     <table class="data">
-      <caption>Proto-persona (my assumptions) against the evidence-based persona</caption>
-      <thead><tr><th scope="col">I assumed</th><th scope="col">The research showed</th></tr></thead>
+      <caption>Proto-persona (my guesses) and the evidence-based persona</caption>
+      <thead><tr><th scope="col">My guess</th><th scope="col">What the research showed</th></tr></thead>
       <tbody>
-        <tr><td>She struggles with apps</td><td>She finished six screens correctly, twice, from a moving car</td></tr>
-        <tr><td>The form is the pain</td><td>The form was tolerable. <strong>The silence after it was not</strong></td></tr>
-        <tr><td>The wait is about 20 minutes</td><td>Over an hour, two applications, one silent cancellation</td></tr>
-        <tr><td>She wants speed</td><td>She wants <strong>certainty</strong>. A refusal costs her a six-hour round trip</td></tr>
+        <tr><td>She finds apps hard to use</td><td>She filled in six screens correctly, twice, in a moving car</td></tr>
+        <tr><td>The long form upsets her most</td><td>She could live with the form. <strong>The waiting after it upset her most</strong></td></tr>
+        <tr><td>She waits about 20 minutes</td><td>She waited over an hour, applied twice, and had one request cancelled</td></tr>
+        <tr><td>She wants to get in fast</td><td>She wants to <strong>know for sure</strong> she will get in. Being turned away costs her a six-hour round trip</td></tr>
       </tbody>
     </table>
     </div>
 
-    <div id="maps">
-      <h3>Her day, and how she felt</h3>
-      <ol class="register">
-        <li><span class="clock">&minus;60 min</span><span class="entry">Starts the form from the car</span><span class="score pos">+2</span></li>
-        <li><span class="clock">&minus;50 min</span><span class="entry">Submits. No sign anyone has seen it</span><span class="score">&minus;2</span></li>
-        <li><span class="clock">&minus;20 min</span><span class="entry">Told she picked the wrong approver. Applies again</span><span class="score">&minus;3</span></li>
-        <li class="trough"><span class="clock">Arrival</span><span class="entry">Twenty minutes at the gate in the rain. Nobody reachable</span><span class="score">&minus;5</span></li>
-        <li><span class="clock">+25 min</span><span class="entry">Her son walks out, a guard phones someone else. Approved</span><span class="score pos">+1</span></li>
-      </ol>
-      <p class="small">Scores are the emotion line from the journey map, +5 to &minus;5.</p>
-
-      <details class="disclosure">
-        <summary>Empathy map and journey map (FigJam): &ldquo;dependent&rdquo; is the feeling that matters</summary>
-        <div class="disclosure-body">
-          <figure class="map">
-            <img src="images/empathy-map.png" width="1700" height="1966" loading="lazy"
-                 alt="Empathy map for the visiting parent, built in FigJam as four quadrants. Says holds verbatim quotes such as none of the professors or the authority was reachable, and the last four digits of Aadhaar card simply not wanted. Thinks holds questions such as will I be allowed in at all today and has anyone seen my request. Does records starting the form an hour early, re-applying after the silent cancellation, and relying on her son. Feels runs from prepared plus two down to dependent minus five, then relieved plus one.">
-            <figcaption>Empathy map. The Says quadrant is verbatim. She got in only because she had
-              someone on the inside.</figcaption>
-          </figure>
-          <figure class="map">
-            <img src="images/journey-map.png" width="1800" height="2524" loading="lazy"
-                 alt="Journey map built in FigJam across five phases: Anticipate, Apply, Wait, Stranded and Resolve. The emotion line starts at plus two, falls to its lowest point of minus five in the Stranded phase while she waits in the rain, then recovers to plus one on entry.">
-            <figcaption>Journey map. The line starts positive because she felt prepared. The drop
-              from there is the finding.</figcaption>
-          </figure>
-        </div>
-      </details>
+    <div class="persona-card">
+      <h3>P1, &ldquo;The Prepared Visitor&rdquo;</h3>
+      <p class="vitals">Homemaker, 40 to 50 &middot; three-hour drive each way &middot; visits
+        often &middot; comes on Fridays at lunch, when her son is free</p>
+      <p>She had four advantages most visitors do not have. She knew about the form. Her son sent
+        her the QR code from the gate. She started an hour early. And her son was on campus to help.
+        She still waited over an hour.</p>
+      <blockquote class="quote"><p>I was thinking whether I would be allowed inside or not that
+        day.</p><footer>Visiting parent</footer></blockquote>
     </div>
+
+    <h3>Her day, step by step</h3>
+    <p class="small">The number on the right is how she felt, from +5 (great) to &minus;5
+      (terrible). The times count from when she reached the gate.</p>
+    <ol class="register">
+      <li><span class="clock">1 hr before</span><span class="entry">Starts the form from the car, so she won&rsquo;t wait in the rain</span><span class="score pos">+2</span></li>
+      <li><span class="clock">55 min before</span><span class="entry">Types her phone, selfie and Aadhaar digits. She dislikes giving the ID</span><span class="score">&minus;1</span></li>
+      <li><span class="clock">50 min before</span><span class="entry">Sends it. Waits. Nothing tells her if anyone has seen it</span><span class="score">&minus;2</span></li>
+      <li><span class="clock">20 min before</span><span class="entry">Told to pick a different approver. Applies again. The first request is cancelled</span><span class="score">&minus;3</span></li>
+      <li><span class="clock">15 min before</span><span class="entry">Still waiting as she drives. Her extra hour is gone</span><span class="score">&minus;4</span></li>
+      <li class="trough"><span class="clock">At the gate</span><span class="entry">Stands in the rain for 20 minutes. Nobody who can approve answers the phone</span><span class="score">&minus;5</span></li>
+      <li><span class="clock">20 min after</span><span class="entry">Her son walks to the gate. A guard phones a different approver</span><span class="score">&minus;2</span></li>
+      <li><span class="clock">25 min after</span><span class="entry">Approved. She walks in</span><span class="score pos">+1</span></li>
+    </ol>
+  </div>
+</section>
+
+<!-- ============================== MAPS ============================== -->
+<section id="maps" class="alt" aria-labelledby="maps-h">
+  <div class="wrap">
+    <p class="section-label">Phase 1 &middot; Empathy map and journey map</p>
+    <h2 id="maps-h">Her visit, mapped</h2>
+
+    <p>I built both maps in FigJam from her recorded story and the guard interviews. Every quote on
+      them is in her own words. Tap a map to open it full size.</p>
+
+    <figure class="map wide">
+      <a href="images/empathy-map.png" target="_blank" rel="noopener"><img src="images/empathy-map.png" width="1700" height="1966" loading="lazy"
+           alt="Empathy map for the visiting parent, built in FigJam with four sections. Says holds her own words, such as half an hour passed, 45 minutes passed, and the last four digits of Aadhaar card, simply not wanted. Thinks holds questions such as will I be allowed in at all today, and has anyone even seen my request. Does lists starting the form an hour early, applying again after the first request was cancelled, and relying on her son. Feels runs from prepared, plus two, down to dependent, minus five, then relieved, plus one. Pains and gains sit at the bottom."></a>
+      <figcaption><strong>Empathy map.</strong> What she said, thought, did and felt. Her lowest
+        feeling was <strong>dependent</strong>: she could get in only because someone inside
+        helped her. <a href="images/empathy-map.png" target="_blank" rel="noopener">Open full
+        size</a>.</figcaption>
+    </figure>
+
+    <figure class="map wide">
+      <a href="images/journey-map.png" target="_blank" rel="noopener"><img src="images/journey-map.png" width="1800" height="2524" loading="lazy"
+           alt="User journey map built in FigJam across five stages: Anticipate, Apply, Wait, Stranded and Resolve. Eleven numbered steps run from starting the form in the car to a guard phoning a different approver. Below, an emotion line starts at plus two, drops to its lowest point of minus five while she stands at the gate in the rain, then rises to plus one when she gets in. The core pain point and ideas for fixes sit at the bottom."></a>
+      <figcaption><strong>Journey map.</strong> Her feelings start high because she felt ready.
+        They drop to the lowest point while she stands at the gate. <a href="images/journey-map.png" target="_blank" rel="noopener">Open
+        full size</a>.</figcaption>
+    </figure>
 
     <div id="pain">
       <h3>The core pain point</h3>
       <blockquote class="statement">
-        <p>The approval step has <strong>no owner, no time limit and no failure path.</strong>
-          Fixing the form lifts one early step from &minus;1 to 0. The low point stays at
-          &minus;5.</p>
+        <p>The approval step has <strong>no one in charge, no time limit and no backup plan.</strong>
+          If the approver does not answer, the visitor just waits.</p>
       </blockquote>
-      <p>Three sources agree, and even the guards don&rsquo;t know who should approve:</p>
+      <p>A shorter form would lift only step 2 on her journey, from &minus;1 to 0. Her worst
+        moment, at the gate, would stay at &minus;5. That moment comes from the approval step.</p>
+      <p>Three sources agree. Even the guards do not know who should approve:</p>
       <div class="quote-row">
-        <blockquote class="quote"><p>Very difficult to figure out whom to ask approval for.</p><footer>Visiting parent</footer></blockquote>
-        <blockquote class="quote"><p>If they lift up the call, all well and good. If not, the guests just keep waiting.</p><footer>Gate guard</footer></blockquote>
+        <blockquote class="quote"><p>Very difficult to figure out whom to ask approval for, especially when a parent is visiting.</p><footer>Visiting parent</footer></blockquote>
+        <blockquote class="quote"><p>&ldquo;Who should I ask approval from?&rdquo; is one of the three questions visitors ask us most.</p><footer>Gate guards</footer></blockquote>
+        <blockquote class="quote"><p>If they lift up the call, all well and good. If not, the guests just keep waiting.</p><footer>Gate guards</footer></blockquote>
       </div>
     </div>
   </div>
 </section>
 
 <!-- ============================== STORIES ============================== -->
-<section id="stories" class="alt" aria-labelledby="stories-h">
+<section id="stories" aria-labelledby="stories-h">
   <div class="wrap">
     <p class="section-label">Phase 1 &middot; User stories</p>
-    <h2 id="stories-h">Five things a visitor needs</h2>
+    <h2 id="stories-h">Five things visitors need</h2>
 
     <ol class="stories">
-      <li><strong>See whether my request has been opened, and who has it,</strong> so I know
-        whether to keep waiting.</li>
-      <li><strong>Have it move to a backup approver if nobody responds in time,</strong> so one
-        absent person can&rsquo;t strand me.</li>
-      <li><strong>Let my host raise the request in advance from campus,</strong> so I never need
-        data at the gate. <span class="aside">The host raises it. Approval stays with the
-        institution.</span></li>
-      <li><strong>Have the system work out the approver,</strong> so I never guess a name.</li>
-      <li><strong>Give only what the gate register uses,</strong> so I&rsquo;m not asked for a
-        selfie and ID digits for nothing.</li>
+      <li><strong>As a visiting parent, I want to see if my request has been opened and who has
+        it,</strong> so I know whether to keep waiting.</li>
+      <li><strong>As a visiting parent, I want my request to go to a backup person if nobody answers
+        in time,</strong> so one busy person can&rsquo;t leave me stuck.</li>
+      <li><strong>As a student, I want to ask for my guest&rsquo;s visit ahead of time,</strong> so
+        my guest doesn&rsquo;t need mobile data at the gate. <span class="aside">The student asks.
+        Office staff still approve.</span></li>
+      <li><strong>As a visiting parent, I want the system to find the right approver,</strong> so I
+        never have to guess a staff name.</li>
+      <li><strong>As a visiting parent, I want to give only what the gate register needs,</strong>
+        so I don&rsquo;t hand over my ID digits and a selfie for no reason.</li>
     </ol>
   </div>
 </section>
 
 <!-- ============================== CARD SORT ============================== -->
-<section id="cardsort" aria-labelledby="cardsort-h">
+<section id="cardsort" class="alt" aria-labelledby="cardsort-h">
   <div class="wrap">
     <p class="section-label">Phase 2 &middot; Information architecture &middot; Card sort</p>
-    <h2 id="cardsort-h">People already think in &ldquo;the state of my request&rdquo;</h2>
+    <h2 id="cardsort-h">How people group the features</h2>
 
-    <p>Eight people sorted twenty features into six groups, or none, and could propose their
-      own groups. Three results mattered:</p>
+    <p>I made 20 cards, one for each thing the system might do. Nine people sorted them online into
+      six groups. They could also say a card fit no group, or make up a new group. Eight results
+      were usable. Three things stood out.</p>
 
     <ol class="findings">
       <li>
-        <h3>Status is one clear idea</h3>
-        <p>&ldquo;Has my request been opened&rdquo; and &ldquo;how long does a decision
-          take&rdquo; were grouped together by all eight. The idea is in people&rsquo;s heads and
-          missing from the product.</p>
+        <h3>Everyone agreed on &ldquo;my request status&rdquo;</h3>
+        <p>All eight people put &ldquo;see if my request has been opened&rdquo; and &ldquo;see how
+          long a decision takes&rdquo; in the same group. People clearly want one place to check
+          their request. The current system has no such place.</p>
       </li>
       <li>
-        <h3>The fix had no home</h3>
-        <p>&ldquo;Pass to a backup person after a set time&rdquo; scattered across four groups.
-          Nobody had used a system that does it. Yet one participant invented it unprompted:</p>
+        <h3>People had never seen a backup approver</h3>
+        <p>Half the group (4 of 8) said &ldquo;pass the request to a backup person after a set
+          time&rdquo; fit no group. They had never used a system that does this. Still, one person
+          came up with the same idea on their own:</p>
         <blockquote class="quote"><p>Time to respond. After which the visitor can seek help.</p><footer>Card-sort participant</footer></blockquote>
       </li>
       <li>
-        <h3>A majority can hide confusion</h3>
-        <p>&ldquo;Add another visitor&rdquo; won 5 of 8 votes, and was also named the hardest card
-          to place. The numbers alone would have called it settled.</p>
+        <h3>A vote can hide confusion</h3>
+        <p>&ldquo;Add another visitor to the same request&rdquo; won 5 of 8 votes. But three people
+          also said it was the hardest card to place. The numbers made it look settled, and it
+          was not.</p>
       </li>
     </ol>
 
     <details class="disclosure">
-      <summary>Two more results: visitors and hosts want opposite things, and my survey had a flaw</summary>
+      <summary>Two more results: visitors and students want different things, and my form had a flaw</summary>
       <div class="disclosure-body">
-        <p><strong>Visitor versus host.</strong> The parent wants less data collected. A student
-          host asked for more, including a visitor photo and vehicle number. The visitor pays the
-          privacy cost and gets no security benefit, so I sided with the gate register: five
-          fields.</p>
-        <p><strong>No &ldquo;not sure&rdquo; option.</strong> One participant pointed out that
-          &ldquo;doesn&rsquo;t fit&rdquo; was doing double duty as &ldquo;I don&rsquo;t
-          know&rdquo;. Fair. The tree test settled it by watching behaviour instead.</p>
+        <p><strong>Visitors and students disagree.</strong> The parent wants the form to ask for
+          less. One student wanted more, like a visitor photo and a car number. The visitor gives up
+          the private data and gets nothing back for it. So I followed the gate register and kept
+          five fields.</p>
+        <p><strong>My form had no &ldquo;not sure&rdquo; choice.</strong> One person told me so.
+          They were right. Some people picked &ldquo;fits no group&rdquo; when they meant &ldquo;I
+          don&rsquo;t know&rdquo;. The tree test helped me tell those two apart.</p>
       </div>
     </details>
   </div>
 </section>
 
 <!-- ============================== TREE TEST ============================== -->
-<section id="treetest" class="alt" aria-labelledby="tt-h">
+<section id="treetest" aria-labelledby="tt-h">
   <div class="wrap">
     <p class="section-label">Phase 2 &middot; Information architecture &middot; Tree test</p>
-    <h2 id="tt-h">Where the menu worked, and where it broke</h2>
+    <h2 id="tt-h">Testing the menu</h2>
 
-    <p>Five new students got eight real situations on paper and pointed at the menu heading they
-      would pick first. One dot per person; filled means their first pick was right.</p>
+    <p>I turned the card sort into a menu with six sections. Then five new students tested it on
+      paper. I read them a situation, like &ldquo;It&rsquo;s been an hour and nobody has answered
+      your request.&rdquo; They pointed at the menu heading they would pick. They saw one level at a
+      time, with no design or search to help them.</p>
 
-    <div class="fc" role="figure" aria-label="First-pick accuracy for eight tasks. Request status 5 of 5. Privacy 5 of 5. No phone signal 5 of 5. Who I am visiting 4 of 5. Backup approver 4 of 5. Add a second visitor 2 of 5. Host pre-registration 1 of 5. Visiting hours 0 of 5.">
+    <figure class="evidence wide-sm">
+      <a href="images/tree-test-card.jpg" target="_blank" rel="noopener"><img src="images/tree-test-card.jpg" width="1200" height="396" loading="lazy"
+           alt="The printed top-level menu card used in the test. It lists six headings: Apply for a Visit, Checking on My Request, Getting In and Out, My Information and Privacy, Getting Help and For Hosts. I numbered them one to six in blue ink during the sessions."></a>
+      <figcaption>The printed top-level menu card. I numbered the headings in pen during the
+        sessions so I could note choices quickly.</figcaption>
+    </figure>
+
+    <h3>First choices, one dot per person</h3>
+    <p class="small">A filled dot means the person&rsquo;s first choice was right. I set the pass
+      marks before testing: 4&ndash;5 is good, 2&ndash;3 is unclear, 0&ndash;1 means the menu is
+      wrong.</p>
+    <div class="fc" role="figure" aria-label="First-choice results for eight tasks. Request status 5 of 5. Privacy 5 of 5. No phone signal 5 of 5. Who I am visiting 4 of 5. Backup approver 4 of 5. Add a second visitor 2 of 5. Student registers a guest 1 of 5. Visiting hours 0 of 5.">
       <div class="fc-row pass"><span class="fc-what">Check request status</span><span class="fc-dots"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i></span><span class="fc-num">5/5</span></div>
       <div class="fc-row pass"><span class="fc-what">Read the privacy policy</span><span class="fc-dots"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i></span><span class="fc-num">5/5</span></div>
       <div class="fc-row pass"><span class="fc-what">No phone signal</span><span class="fc-dots"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i></span><span class="fc-num">5/5</span></div>
       <div class="fc-row"><span class="fc-what">Choose who I&rsquo;m visiting</span><span class="fc-dots"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i></i></span><span class="fc-num">4/5</span></div>
-      <div class="fc-row"><span class="fc-what">Backup approver <em>(I predicted a fail)</em></span><span class="fc-dots"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i></i></span><span class="fc-num">4/5</span></div>
+      <div class="fc-row"><span class="fc-what">Send to a backup approver <em>(I guessed it would fail)</em></span><span class="fc-dots"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i></i></span><span class="fc-num">4/5</span></div>
       <div class="fc-row broke"><span class="fc-what">Add a second visitor</span><span class="fc-dots"><i class="on"></i><i class="on"></i><i></i><i></i><i></i></span><span class="fc-num">2/5</span></div>
-      <div class="fc-row broke"><span class="fc-what">Host registers a guest</span><span class="fc-dots"><i class="on"></i><i></i><i></i><i></i><i></i></span><span class="fc-num">1/5</span></div>
+      <div class="fc-row broke"><span class="fc-what">Student registers a guest</span><span class="fc-dots"><i class="on"></i><i></i><i></i><i></i><i></i></span><span class="fc-num">1/5</span></div>
       <div class="fc-row broke"><span class="fc-what">Find visiting hours</span><span class="fc-dots"><i></i><i></i><i></i><i></i><i></i></span><span class="fc-num">0/5</span></div>
     </div>
-    <p class="small">Pass marks set before testing: 4&ndash;5 sound, 2&ndash;3 unclear, 0&ndash;1
-      wrong.</p>
 
-    <h3>Four lessons, four changes</h3>
+    <h3>What I learned, and what I changed</h3>
     <div class="table-scroll">
     <table class="data lessons">
-      <thead><tr><th scope="col">What happened</th><th scope="col">What it means</th><th scope="col">Change</th></tr></thead>
+      <thead><tr><th scope="col">What happened</th><th scope="col">What it tells me</th><th scope="col">Change</th></tr></thead>
       <tbody>
-        <tr><td><strong>Backup approver passed.</strong> I expected it to fail.</td><td>Unfamiliar is not misplaced. Given a real situation, people knew where it goes.</td><td>None</td></tr>
-        <tr><td><strong>Nobody found visiting hours.</strong> Four of five said they&rsquo;d call the gate desk.</td><td>Hours are a question you ask a person. The label mixed two jobs.</td><td>Split hours and location</td></tr>
-        <tr><td><strong>&ldquo;For Hosts&rdquo; failed.</strong> Four of five went to Apply, confidently.</td><td>Students don&rsquo;t see themselves as &ldquo;hosts&rdquo;. They&rsquo;re arranging a visit.</td><td>Removed the node</td></tr>
-        <tr><td><strong>&ldquo;Add a visitor&rdquo; flipped.</strong> Card sort said Apply; tree test said Checking.</td><td>The card sort measured the words. The tree test measured the moment, after submitting.</td><td>Moved to Checking</td></tr>
+        <tr><td><strong>I guessed the backup task would fail. It passed</strong>, 4 of 5.</td><td>People knew where it belonged once they had a real reason to look for it.</td><td>None</td></tr>
+        <tr><td><strong>Nobody found visiting hours.</strong> It took 75 seconds on average. Four of five said they would call the gate desk.</td><td>People ask a person about hours. The heading also mixed hours with gate location.</td><td>Split hours and location</td></tr>
+        <tr><td><strong>&ldquo;For Hosts&rdquo; failed</strong>, 1 of 5. Four went straight to &ldquo;Apply for a Visit&rdquo;.</td><td>Students don&rsquo;t call themselves &ldquo;hosts&rdquo;. They think &ldquo;I&rsquo;m arranging a visit.&rdquo;</td><td>Removed &ldquo;For Hosts&rdquo;</td></tr>
+        <tr><td><strong>&ldquo;Add a visitor&rdquo; went the other way.</strong> The card sort said Apply. Three testers chose Checking.</td><td>On a card, it sounded like filling in the form. In the test, the request was already sent, so it meant changing it.</td><td>Moved to Checking</td></tr>
       </tbody>
     </table>
     </div>
 
-    <h3>The information architecture, revised</h3>
+    <h3>The five recording sheets</h3>
+    <p>I filled in one sheet per person during each session. Each sheet shows their first choice,
+      path, time and words for every task. Tap a sheet to open it full size.</p>
+
+    <div class="sheets wide">
+      <figure>
+        <a href="images/tt-p1.jpg" target="_blank" rel="noopener"><img src="images/tt-p1.jpg" width="880" height="1087" loading="lazy"
+             alt="Handwritten tree test sheet for tester 1, a student, dated 2 August 2026, with entries for all eight tasks. The visiting hours task is marked opt not found after two minutes."></a>
+        <figcaption><strong>Tester 1</strong>, 2 August. Gave up on visiting hours after two
+          minutes and wrote &ldquo;opt not found&rdquo;.</figcaption>
+      </figure>
+      <figure>
+        <a href="images/tt-p2.jpg" target="_blank" rel="noopener"><img src="images/tt-p2.jpg" width="880" height="1118" loading="lazy"
+             alt="Handwritten tree test sheet for tester 2, dated 3 August 2026. It includes the quotes call desk for help on the visiting hours task and send a reminder to the person on the backup task."></a>
+        <figcaption><strong>Tester 2</strong>, 3 August. The only miss on the backup task. Said
+          &ldquo;Send a reminder to the person&rdquo;.</figcaption>
+      </figure>
+      <figure>
+        <a href="images/tt-p3.jpg" target="_blank" rel="noopener"><img src="images/tt-p3.jpg" width="880" height="1153" loading="lazy"
+             alt="Handwritten tree test sheet for tester 3. It includes the quotes call gate for info on the visiting hours task and very obvious on the privacy task."></a>
+        <figcaption><strong>Tester 3</strong>. Said &ldquo;Call gate for info&rdquo; for visiting
+          hours, and &ldquo;Very obvious&rdquo; for privacy.</figcaption>
+      </figure>
+      <figure>
+        <a href="images/tt-p4.jpg" target="_blank" rel="noopener"><img src="images/tt-p4.jpg" width="880" height="1223" loading="lazy"
+             alt="Handwritten tree test sheet for tester 4, dated 4 August 2026. It includes the quote add another person for same request, and call for help desk on the visiting hours task, which took over a minute."></a>
+        <figcaption><strong>Tester 4</strong>, 4 August. Wrote &ldquo;add another person for same
+          req&rdquo;. Visiting hours took over a minute.</figcaption>
+      </figure>
+      <figure>
+        <a href="images/tt-p5.jpg" target="_blank" rel="noopener"><img src="images/tt-p5.jpg" width="880" height="1241" loading="lazy"
+             alt="Handwritten tree test sheet for tester 5, dated 5 August 2026. The only tester to find the For Hosts heading, in ten seconds."></a>
+        <figcaption><strong>Tester 5</strong>, 5 August. The only person to find &ldquo;For
+          Hosts&rdquo;, in ten seconds.</figcaption>
+      </figure>
+    </div>
+    <p class="small">The sheets say P1 to P5. On this page they are testers 1 to 5, so they
+      don&rsquo;t get mixed up with the parent and the guards.</p>
+
+    <h3>The information architecture, after testing</h3>
     <div id="ia-v2" class="tree" role="figure" aria-label="Revised menu with five top-level sections">
 <pre>
-CAMPUS VISITOR ACCESS  (revised)
-├── <b>Request a Visit</b>             <i>renamed from Apply</i>
-│   └── incl. request a visit for my guest   <i>moved in</i>
+CAMPUS VISITOR ACCESS  (after testing)
+├── <b>Request a Visit</b>             <i>renamed from Apply for a Visit</i>
+│   └── includes: request a visit for my guest   <i>moved in</i>
 ├── <b>Checking on My Request</b>
-│   ├── status, who it's waiting on, backup approver
-│   └── add another visitor         <i>moved in</i>
+│   ├── status, who has it, backup approver
+│   ├── add another visitor         <i>moved in</i>
+│   └── guests expected today       <i>moved in</i>
 ├── <b>Getting In and Out</b>
 │   └── gate location               <i>split out</i>
 ├── <b>My Information and Privacy</b>
@@ -352,28 +438,29 @@ CAMPUS VISITOR ACCESS  (revised)
 REMOVED: For Hosts
 </pre>
     </div>
-    <p class="small">&ldquo;Checking on My Request&rdquo; now holds eight items. I left it alone
-      because the test gave no reason to split it. It&rsquo;s the first thing to test next.</p>
+    <p class="small">&ldquo;Checking on My Request&rdquo; now has eight items. That may be too
+      many. I did not split it, because the test gave me no reason to. It is the first thing I would
+      test next.</p>
 
     <details class="disclosure" id="ia-v1">
-      <summary>The first information architecture, the full scores table and the five recording sheets</summary>
+      <summary>The first menu and the full results table</summary>
       <div class="disclosure-body">
         <div class="tree" role="figure" aria-label="First menu with six top-level sections and card sort agreement">
 <pre>
 CAMPUS VISITOR ACCESS  (first version, from the card sort)
 ├── <b>Apply for a Visit</b>          name, phone, reason, who <i>6/8</i> &middot; add visitor <i>5/8</i> &middot; hours <i>3/8</i>
-├── <b>Checking on My Request</b>     opened <i>8/8</i> &middot; waiting on <i>7/8</i> &middot; backup <i>no home</i>
+├── <b>Checking on My Request</b>     opened <i>8/8</i> &middot; who has it <i>7/8</i> &middot; backup <i>fit no group</i>
 ├── <b>Getting In and Out</b>         entry pass <i>8/8</i> &middot; exit pass <i>8/8</i>
 ├── <b>My Information and Privacy</b> ID proof <i>7/8</i> &middot; privacy <i>6/8</i>
 ├── <b>Getting Help</b>               gate desk <i>7/8</i> &middot; no signal <i>8/8</i>
-└── <b>For Hosts</b>                  guest request, guests today <i>my label, untested</i>
+└── <b>For Hosts</b>                  guest request, guests today <i>my own label</i>
 </pre>
         </div>
 
         <div class="table-scroll">
         <table class="data results">
           <thead>
-            <tr><th scope="col">Task</th><th scope="col">First pick</th><th scope="col">Straight there</th><th scope="col">Median</th><th scope="col">Went instead</th></tr>
+            <tr><th scope="col">Task</th><th scope="col">First choice right</th><th scope="col">No going back</th><th scope="col">Middle time</th><th scope="col">Went to instead</th></tr>
           </thead>
           <tbody>
             <tr><th scope="row">Request status</th><td class="num good">5/5</td><td class="num">4/5</td><td class="num">15s</td><td>none</td></tr>
@@ -382,82 +469,81 @@ CAMPUS VISITOR ACCESS  (first version, from the card sort)
             <tr><th scope="row">Who I&rsquo;m visiting</th><td class="num">4/5</td><td class="num">3/5</td><td class="num">20s</td><td>Checking &times;1</td></tr>
             <tr><th scope="row">Backup approver</th><td class="num">4/5</td><td class="num">4/5</td><td class="num">32s</td><td>Help &times;1</td></tr>
             <tr class="weak"><th scope="row">Second visitor</th><td class="num bad">2/5</td><td class="num">2/5</td><td class="num">20s</td><td>Checking &times;3</td></tr>
-            <tr class="fail"><th scope="row">Host registers</th><td class="num bad">1/5</td><td class="num">4/5</td><td class="num">40s</td><td>Apply &times;4</td></tr>
+            <tr class="fail"><th scope="row">Student registers</th><td class="num bad">1/5</td><td class="num">4/5</td><td class="num">40s</td><td>Apply &times;4</td></tr>
             <tr class="fail"><th scope="row">Visiting hours</th><td class="num bad">0/5</td><td class="num">1/5</td><td class="num">75s</td><td>Help &times;2, In and out &times;2, Checking &times;1</td></tr>
           </tbody>
         </table>
         </div>
-        <p class="small">&ldquo;Host registers&rdquo; scored 4/5 on going straight there: people
-          were confidently wrong. Success rate alone would have hidden that.</p>
-
-        <figure class="sheets">
-          <a href="images/tt-p1.jpg"><img src="images/tt-p1.jpg" width="880" height="1087" loading="lazy"
-               alt="Completed tree test recording sheet for participant TT1, a student, dated 2 August 2026, with handwritten entries for all eight tasks, including the note opt not found against the visiting hours task."></a>
-          <a href="images/tt-p2.jpg"><img src="images/tt-p2.jpg" width="880" height="1118" loading="lazy"
-               alt="Completed tree test recording sheet for participant TT2, dated 3 August 2026, including the quote call desk for help against the visiting hours task."></a>
-          <a href="images/tt-p3.jpg"><img src="images/tt-p3.jpg" width="880" height="1153" loading="lazy"
-               alt="Completed tree test recording sheet for participant TT3, including the quote call gate for info against the visiting hours task."></a>
-          <a href="images/tt-p4.jpg"><img src="images/tt-p4.jpg" width="880" height="1223" loading="lazy"
-               alt="Completed tree test recording sheet for participant TT4, dated 4 August 2026, including the quote call for help desk against the visiting hours task, which took over a minute."></a>
-          <a href="images/tt-p5.jpg"><img src="images/tt-p5.jpg" width="880" height="1241" loading="lazy"
-               alt="Completed tree test recording sheet for participant TT5, dated 5 August 2026, the only participant to find the For Hosts section, in ten seconds."></a>
-          <figcaption>Recording sheets TT1 to TT5 (the sheets are labelled P1 to P5). Select one to
-            open it full size.</figcaption>
-        </figure>
+        <p class="small">Four people went straight to the wrong place for &ldquo;student registers a
+          guest&rdquo;, with no going back. They were sure, and they were wrong. I also marked every
+          task as &ldquo;reached&rdquo; on the sheets, even when the path shows the person never got
+          there. So I used first choices and paths, not the &ldquo;reached&rdquo; column.</p>
       </div>
     </details>
   </div>
 </section>
 
 <!-- ============================== PRIORITISATION ============================== -->
-<section id="moscow" aria-labelledby="moscow-h">
+<section id="moscow" class="alt" aria-labelledby="moscow-h">
   <div class="wrap">
     <p class="section-label">Phase 3 &middot; Prioritisation (MoSCoW)</p>
-    <h2 id="moscow-h">Four must-haves, no more</h2>
+    <h2 id="moscow-h">Four must-haves</h2>
+
+    <p>I listed 27 ideas: 21 from the menu and 6 that people suggested. I grouped them into
+      features, then sorted them into Must, Should, Could and Won&rsquo;t. The first version could
+      have only four must-haves.</p>
 
     <ol class="musts">
-      <li><strong>Submit from anywhere, with five fields.</strong> A public link, not just a QR
-        code at the gate. Only what the register uses.</li>
-      <li><strong>The system picks the approver.</strong> Based on who you&rsquo;re visiting. You
-        never type a name.</li>
-      <li><strong>You can see the status.</strong> Opened or not, and who has it.</li>
-      <li><strong>Timed hand-off to a backup.</strong> The only feature that touches the low point.
-        The others make the wait visible; this one makes it end.</li>
+      <li><strong>Send a request from anywhere, with five fields.</strong> Use a web link, so
+        visitors don&rsquo;t need the QR code at the gate. Ask only for name, phone, address, reason,
+        and who you are visiting.</li>
+      <li><strong>The system picks the approver.</strong> It uses the person you are visiting.
+        Visitors never type a staff name.</li>
+      <li><strong>Visitors can see the status.</strong> They see if the request has been opened,
+        and who has it.</li>
+      <li><strong>A backup approver after a time limit.</strong> If nobody answers in time, the
+        request moves on by itself. This is the only feature that fixes her worst moment.</li>
     </ol>
 
     <div class="tiers">
       <div class="tier">
-        <h3>Should have</h3>
-        <p>Host registers a guest &middot; digital entry pass &middot; decision alert &middot;
-          reminder to approver &middot; add a visitor &middot; gate desk number &middot; offline
-          pass</p>
+        <h3>Should have (7)</h3>
+        <p>Student registers a guest &middot; digital entry pass &middot; alert when decided
+          &middot; remind the approver &middot; add a visitor &middot; gate desk number &middot; pass
+          that works offline</p>
       </div>
       <div class="tier">
-        <h3>Could have</h3>
+        <h3>Could have (8)</h3>
         <p>Reuse last visit &middot; visiting hours &middot; gate directions &middot; exit pass
-          &middot; guests expected today &middot; typical decision time &middot; time slots
-          &middot; privacy notice</p>
+          &middot; guests expected today &middot; usual decision time &middot; time slots &middot;
+          privacy notice</p>
       </div>
     </div>
 
-    <h3>Won&rsquo;t have, and why</h3>
+    <h3>Won&rsquo;t have (4), and why</h3>
     <dl class="wont">
-      <dt>Selfie, ID digits, vehicle number</dt>
-      <dd>The gate doesn&rsquo;t use them, and data you collect can&rsquo;t be un-collected.</dd>
-      <dt>Students approving their own visitors</dt>
-      <dd>The university just narrowed approval on purpose. A feature that reverses that gets
-        rejected, not adopted.</dd>
+      <dt>Selfie, ID digits and car number</dt>
+      <dd>The guards don&rsquo;t use them. Also, you can add a field later, but you can&rsquo;t
+        take back data once you collect it.</dd>
+      <dt>Students approve their own visitors</dt>
+      <dd>The university chose to give approval to a few office staff. A feature that undoes that
+        choice would be turned down.</dd>
       <dt>Emergency button</dt>
-      <dd>With no set responder or time limit, it&rsquo;s another silent queue.</dd>
-      <dt>In-app chat with the host</dt>
-      <dd>It competes with WhatsApp, and a visitor with no insider has nobody to message.</dd>
+      <dd>Nobody would be in charge of answering it, and it would have no time limit. It would
+        just be another request that waits.</dd>
+      <dt>Chat with the person you&rsquo;re visiting</dt>
+      <dd>Everyone already uses WhatsApp. Also, a visitor who knows nobody inside would have no
+        one to message.</dd>
     </dl>
 
     <div id="dfv">
-      <h3>DFV matrix: backup hand-off versus host pre-registration</h3>
+      <h3>DFV matrix: choosing the fourth must-have</h3>
+      <p>Two features competed for the last spot. I scored each from 1 to 5 on three things:
+        Desirability (do people want it), Feasibility (can we build it) and Viability (will the
+        university accept it). I wrote down what each score meant before I scored.</p>
       <div class="table-scroll">
       <table class="data scores">
-        <thead><tr><th scope="col">Score, 1&ndash;5</th><th scope="col">Backup hand-off</th><th scope="col">Host pre-registration</th></tr></thead>
+        <thead><tr><th scope="col">Score, 1&ndash;5</th><th scope="col">Backup approver after a time limit</th><th scope="col">Student registers a guest</th></tr></thead>
         <tbody>
           <tr><th scope="row">Desirability</th><td class="num win">5</td><td class="num">3</td></tr>
           <tr><th scope="row">Feasibility</th><td class="num win">4</td><td class="num">2</td></tr>
@@ -466,23 +552,27 @@ CAMPUS VISITOR ACCESS  (first version, from the card sort)
         <tfoot><tr><th scope="row">Total</th><td class="num total win">13</td><td class="num total">7</td></tr></tfoot>
       </table>
       </div>
-      <p>The hand-off is a timer and a rule over data that already exists, and it automates what
-        guards already do by phone. Pre-registration needs student logins and a new user role, and
-        most of its value (starting before the gate) already comes from the public link.
-        <strong>Nothing except a time limit stops a request dying in silence.</strong></p>
+      <p><strong>Desirability:</strong> four sources point to the backup approver, and one
+        card-sort person asked for it on their own. The student option mainly helps visitors start
+        early, and the web link already does that.</p>
+      <p><strong>Feasibility:</strong> the backup approver is a timer and a rule. The student option
+        needs student logins, a new user type and a link to the student records.</p>
+      <p><strong>Viability:</strong> guards already phone backup people by hand. The backup approver
+        just does that for them. The student option goes against the university&rsquo;s choice to
+        keep approval with a few staff.</p>
 
       <details class="disclosure">
-        <summary>How each score was defined before scoring</summary>
+        <summary>What each score meant, set before scoring</summary>
         <div class="disclosure-body">
           <div class="table-scroll">
           <table class="data anchors">
             <thead><tr><th scope="col">Score</th><th scope="col">Desirability</th><th scope="col">Feasibility</th><th scope="col">Viability</th></tr></thead>
             <tbody>
-              <tr><th scope="row" class="num">1</th><td>My assumption only</td><td>New infrastructure and outside integration</td><td>Reverses an institutional decision</td></tr>
-              <tr><th scope="row" class="num">2</th><td>Inferred from one source</td><td>New role, login or third-party link</td><td>New policy and new risk</td></tr>
-              <tr><th scope="row" class="num">3</th><td>Said by one participant</td><td>Moderate extension of what exists</td><td>Policy decision, low risk</td></tr>
-              <tr><th scope="row" class="num">4</th><td>Several independent sources</td><td>A rule or scheduled job on existing data</td><td>Formalises something done informally</td></tr>
-              <tr><th scope="row" class="num">5</th><td>Several sources, invented unprompted, hits the low point</td><td>Configuration only</td><td>Cuts existing cost, no policy change</td></tr>
+              <tr><th scope="row" class="num">1</th><td>Only my own guess</td><td>New systems and outside links</td><td>Undoes a university decision</td></tr>
+              <tr><th scope="row" class="num">2</th><td>Guessed from one source</td><td>New user type, login or outside link</td><td>Needs a new rule and adds risk</td></tr>
+              <tr><th scope="row" class="num">3</th><td>One person asked for it</td><td>Some changes to what exists</td><td>Needs a rule, low risk</td></tr>
+              <tr><th scope="row" class="num">4</th><td>Several separate sources</td><td>A rule or timer on existing data</td><td>Writes down something people already do</td></tr>
+              <tr><th scope="row" class="num">5</th><td>Several sources, someone invented it, and it fixes the worst moment</td><td>Only settings</td><td>Saves money, no new rules</td></tr>
             </tbody>
           </table>
           </div>
@@ -493,87 +583,92 @@ CAMPUS VISITOR ACCESS  (first version, from the card sort)
 </section>
 
 <!-- ============================== DESIGN ============================== -->
-<section id="design" class="alt" aria-labelledby="design-h">
+<section id="design" aria-labelledby="design-h">
   <div class="wrap">
     <p class="section-label">Phase 4 &middot; Design</p>
-    <h2 id="design-h">The four must-haves, as screens</h2>
+    <h2 id="design-h">The four must-haves as screens</h2>
 
-    <p>I wireframed the flow in grayscale, inspected it against Nielsen&rsquo;s heuristics, fixed
-      what failed, then wired it into a clickable prototype.</p>
+    <p>I drew the screens as grey wireframes. Then I checked them against Nielsen&rsquo;s
+      heuristics and fixed what failed. Last, I linked them into a prototype you can click.</p>
 
     <h3>1. Wireframes</h3>
-    <p>Sixteen phone screens: the full path from home to approval, five error and edge states,
-      and three information pages.</p>
+    <p>There are sixteen phone screens. Eight show the main path from home to approval. Five show
+      errors and problems. Three are information pages. Here are five of them.</p>
 
     <div class="wf-strip" role="list">
       <figure class="wf" role="listitem">
         <img src="images/wf-home.png" width="375" height="700" loading="lazy"
-             alt="Wireframe of the home screen: a Request a Visit button and four sections, Checking on My Request, Getting In and Out, My Information and Privacy, and Getting Help, matching the revised menu.">
-        <figcaption><strong>Home.</strong> The revised menu, as-is.</figcaption>
+             alt="Wireframe of the home screen: a Request a Visit button and four sections, Checking on My Request, Getting In and Out, My Information and Privacy, and Getting Help. These match the tested menu.">
+        <figcaption><strong>Home.</strong> Uses the tested menu.</figcaption>
       </figure>
       <figure class="wf" role="listitem">
         <img src="images/wf-visiting.png" width="375" height="700" loading="lazy"
-             alt="Wireframe of step 2 of 2: reason for visit set to Visiting a student, a Who are you visiting field searchable by name, roll number or department, and a note that the visitor does not choose an approver.">
-        <figcaption><strong>Who you&rsquo;re visiting.</strong> Not who approves.</figcaption>
+             alt="Wireframe of step 2 of 2: reason for visit set to Visiting a student, a Who are you visiting field you can search by name, roll number or department, and a note that the visitor does not choose an approver.">
+        <figcaption><strong>Who you&rsquo;re visiting.</strong> You name the student, and the
+          system finds the approver.</figcaption>
       </figure>
       <figure class="wf" role="listitem">
         <img src="images/wf-waiting.png" width="375" height="700" loading="lazy"
-             alt="Wireframe of the waiting status screen showing three stages, who currently holds the request, and a countdown to when it moves to a backup approver.">
-        <figcaption><strong>Waiting.</strong> Who has it, and the deadline.</figcaption>
+             alt="Wireframe of the waiting screen, showing three stages, who has the request now, and a countdown to when it moves to a backup approver.">
+        <figcaption><strong>Waiting.</strong> Shows who has it, and when it moves on.</figcaption>
       </figure>
       <figure class="wf" role="listitem">
         <img src="images/wf-escalated.png" width="375" height="700" loading="lazy"
-             alt="Wireframe of the escalated status screen: nobody responded in 30 minutes, so the request moved to a backup approver automatically at 13:59, with a timeline of what happened and nothing cancelled.">
-        <figcaption><strong>Moved to backup.</strong> Automatic. Nothing cancelled.</figcaption>
+             alt="Wireframe of the moved-to-backup screen: nobody answered in 30 minutes, so the request moved to a backup approver at 13:59. A timeline shows each step, and nothing was cancelled.">
+        <figcaption><strong>Moved to backup.</strong> Happens by itself. Nothing is
+          cancelled.</figcaption>
       </figure>
       <figure class="wf" role="listitem">
         <img src="images/wf-offline.png" width="375" height="700" loading="lazy"
-             alt="Wireframe of the no-connection state: shows the status saved at 13:41, says the request is safe and the timer keeps running on the university side, and offers showing the reference number to the guard.">
-        <figcaption><strong>No signal.</strong> Your request is still safe.</figcaption>
+             alt="Wireframe of the no-signal screen: it shows the status saved at 13:41, says the request is safe and the timer keeps running at the university, and suggests showing the reference number to the guard.">
+        <figcaption><strong>No signal.</strong> The request is safe, and the timer keeps
+          going.</figcaption>
       </figure>
     </div>
-    <p class="small">Scroll sideways for more. <a href="images/wireframes-board.jpg">Open the full
-      board as one image</a>.</p>
+    <p class="small">Scroll sideways to see all five. <a href="images/wireframes-board.jpg" target="_blank" rel="noopener">Open
+      all sixteen screens as one image</a>.</p>
 
     <h3>2. Heuristic inspection</h3>
-    <p>I checked the first sketches against Nielsen&rsquo;s ten heuristics. Three failed, and
-      each one would have rebuilt a problem the research had found.</p>
+    <p>I checked my first sketches against Nielsen&rsquo;s ten usability heuristics. Three
+      failed. Each failure would have brought back a problem from the research.</p>
 
     <div class="heur">
       <article>
         <h4>Visibility of system status</h4>
-        <p class="was"><span>Sketch</span>The status just said &ldquo;Pending approval&rdquo;. That
-          is the exact silence this study is about.</p>
-        <p class="now"><span>Wireframe</span>Three named stages, who holds the request, minutes
-          until it moves on, and a &ldquo;last updated&rdquo; time so an offline screen can&rsquo;t
-          pass for live.</p>
+        <p class="was"><span>Sketch</span>The status said only &ldquo;Pending approval&rdquo;. It
+          didn&rsquo;t say if anyone had opened it, who had it, or how long was left.</p>
+        <p class="now"><span>Wireframe</span>It shows three named stages, who has the request, and
+          how many minutes until it moves on. A &ldquo;last updated&rdquo; time shows when the
+          screen is out of date.</p>
       </article>
       <article>
         <h4>User control and freedom</h4>
-        <p class="was"><span>Sketch</span>Once the form started, the only button was
-          Continue.</p>
-        <p class="now"><span>Wireframe</span>Back on every screen, &ldquo;Cancel and return
-          home&rdquo; on each form step, and a leave dialog that says your details stay
-          saved.</p>
+        <p class="was"><span>Sketch</span>Once you started the form, the only button was
+          Continue. You couldn&rsquo;t go back or leave.</p>
+        <p class="now"><span>Wireframe</span>Every screen has Back. Each form step has
+          &ldquo;Cancel and return home&rdquo;. A pop-up tells you your details stay saved if you
+          leave.</p>
       </article>
       <article>
         <h4>Error prevention</h4>
-        <p class="was"><span>Sketch</span>Step 2 had a free-text &ldquo;Approver name&rdquo; field,
-          the exact mistake that stranded the parent.</p>
-        <p class="now"><span>Wireframe</span>It asks who you&rsquo;re visiting instead, adds a
-          review step before sending, and a &ldquo;no match&rdquo; state explains why and offers
-          other ways to search.</p>
+        <p class="was"><span>Sketch</span>Step 2 asked you to type the approver&rsquo;s name. That is
+          the same mistake that left the parent waiting.</p>
+        <p class="now"><span>Wireframe</span>It asks who you are visiting. There is a review screen
+          before you send. If a name isn&rsquo;t found, the screen explains why and gives other ways
+          to search.</p>
       </article>
     </div>
 
     <h3>3. Interactive prototype</h3>
+    <p>Try it below. Tap the buttons to move between screens. If you tap something that does
+      nothing, Figma briefly shows the spots you can tap.</p>
     <div class="embed">
-      <iframe title="Campus Visitor Access wireframes and prototype, embedded from Figma"
-              src="https://embed.figma.com/design/h8PuevXEBAWSfShzmBR5ba/Campus-Visitor-Access-%E2%80%94-Wireframes---Prototype?node-id=0-1&amp;embed-host=share"
+      <iframe title="Campus Visitor Access prototype, embedded from Figma"
+              src="https://embed.figma.com/proto/h8PuevXEBAWSfShzmBR5ba/Campus-Visitor-Access-%E2%80%94-Wireframes---Prototype?node-id=2-2&amp;starting-point-node-id=2%3A2&amp;embed-host=share"
               loading="lazy" allowfullscreen></iframe>
     </div>
-    <p class="small"><a href="https://www.figma.com/design/h8PuevXEBAWSfShzmBR5ba/Campus-Visitor-Access?node-id=0-1">Open
-      in Figma</a> if the embed doesn&rsquo;t load. Press play in Figma to click through.</p>
+    <p class="small">If the prototype doesn&rsquo;t load, <a href="https://www.figma.com/proto/h8PuevXEBAWSfShzmBR5ba/Campus-Visitor-Access?node-id=2-2&amp;starting-point-node-id=2%3A2" target="_blank" rel="noopener">open
+      it in Figma</a>.</p>
 
     <div class="two-up">
       <div>
@@ -583,26 +678,26 @@ CAMPUS VISITOR ACCESS  (first version, from the card sort)
           Approved.</p>
       </div>
       <div>
-        <h4>Error states, and how to reach them</h4>
+        <h4>Error screens, and how to reach them</h4>
         <ul>
-          <li>Tap the phone field: wrong number format</li>
-          <li>Tap &ldquo;Who are you visiting&rdquo;: no match</li>
+          <li>Tap the phone number box: wrong number</li>
+          <li>Tap &ldquo;Who are you visiting&rdquo;: name not found</li>
           <li>Tap &ldquo;Last updated&rdquo;: no signal</li>
-          <li>Tap &ldquo;Waiting on&rdquo; after the hand-off: declined</li>
-          <li>Tap Cancel on a form step: leave dialog</li>
+          <li>Tap &ldquo;Waiting on&rdquo; after the move: request declined</li>
+          <li>Tap Cancel on a form step: leave pop-up</li>
         </ul>
       </div>
     </div>
 
     <div class="table-scroll">
     <table class="data">
-      <caption>Where each must-have lives</caption>
+      <caption>Where each must-have appears</caption>
       <thead><tr><th scope="col">Must-have</th><th scope="col">Screens</th></tr></thead>
       <tbody>
-        <tr><td>Submit from anywhere, five fields</td><td>Home, the two form steps, review</td></tr>
-        <tr><td>The system picks the approver</td><td>&ldquo;Who are you visiting&rdquo;, the no-match state</td></tr>
-        <tr><td>You can see the status</td><td>Waiting, no signal</td></tr>
-        <tr><td>Timed hand-off to a backup</td><td>Waiting countdown, moved to backup, approved</td></tr>
+        <tr><td>Send from anywhere, five fields</td><td>Home, the two form steps, review</td></tr>
+        <tr><td>The system picks the approver</td><td>&ldquo;Who are you visiting&rdquo;, name not found</td></tr>
+        <tr><td>Visitors can see the status</td><td>Waiting, no signal</td></tr>
+        <tr><td>Backup approver after a time limit</td><td>Waiting countdown, moved to backup, approved</td></tr>
       </tbody>
     </table>
     </div>
@@ -610,26 +705,26 @@ CAMPUS VISITOR ACCESS  (first version, from the card sort)
 </section>
 
 <!-- ============================== CLOSE ============================== -->
-<section id="close" aria-labelledby="close-h">
+<section id="close" class="alt" aria-labelledby="close-h">
   <div class="wrap">
     <p class="section-label">Reflection</p>
-    <h2 id="close-h">What this would have meant for her</h2>
+    <h2 id="close-h">What this design would have changed for her</h2>
 
     <ul class="outcome">
-      <li>No professor&rsquo;s name to guess, and no Aadhaar digits</li>
-      <li>She would have seen her request was waiting, and on whom</li>
-      <li>At 30 minutes it would have moved on by itself, instead of being cancelled while she
-        stood in the rain</li>
+      <li>She would not have needed a staff member&rsquo;s name, or given her Aadhaar digits</li>
+      <li>She would have seen that her request was waiting, and who had it</li>
+      <li>After 30 minutes, it would have moved to a backup person by itself. It would not have been
+        cancelled while she stood in the rain</li>
     </ul>
 
-    <h3>What I&rsquo;d do differently</h3>
+    <h3>What I would do differently</h3>
     <ul class="bullets">
-      <li><strong>Write the proto-persona before interviewing.</strong> Mine was written after, so
-        I can&rsquo;t prove the order.</li>
-      <li><strong>Add a &ldquo;not sure&rdquo; option to the card sort.</strong> A participant was
-        right about that.</li>
-      <li><strong>Recruit a real parent for testing.</strong> Every tree tester was a student.</li>
-      <li><strong>Usability-test the prototype next,</strong> starting with the eight-item
+      <li><strong>Write the proto-persona before the interviews.</strong> I wrote mine afterwards,
+        so I can&rsquo;t prove which came first.</li>
+      <li><strong>Add a &ldquo;not sure&rdquo; choice to the card sort.</strong> A participant
+        pointed this out, and they were right.</li>
+      <li><strong>Test with a real parent.</strong> All my tree testers were students.</li>
+      <li><strong>Test the prototype with users next,</strong> starting with the eight-item
         &ldquo;Checking on My Request&rdquo; section.</li>
     </ul>
   </div>
@@ -641,10 +736,10 @@ CAMPUS VISITOR ACCESS  (first version, from the card sort)
   <div class="wrap">
     <p><strong>Campus Visitor Access.</strong> Bhargavaram Krishnapur, Vijaybhoomi University,
       2026.</p>
-    <p class="fine">Hand-written HTML and CSS, no JavaScript of its own. The prototype is embedded
-      from Figma, so that one section needs a connection. Maps were made in FigJam. The six
-      current-system screenshots are evidence, not proposals. All participants are
-      anonymised.</p>
+    <p class="fine">Written by hand in HTML and CSS, with no JavaScript of its own. The prototype
+      comes from Figma, so that part needs an internet connection. I made the maps in FigJam. The six
+      screenshots of the current system are evidence, not my design. All participants are
+      anonymous.</p>
   </div>
 </footer>
 

@@ -69,7 +69,8 @@ Fieldwork ran from 31 July to 5 August 2026. All participants are anonymised.
 | :--- | :--- |
 | [Summary](https://codex-crusader.github.io/visitor-access-project/#summary) | The whole study in one minute |
 | [Problem](https://codex-crusader.github.io/visitor-access-project/#problem) | The current system, screen by screen |
-| [Research](https://codex-crusader.github.io/visitor-access-project/#persona) | What I assumed, what I found, the pain point |
+| [Research](https://codex-crusader.github.io/visitor-access-project/#persona) | The persona, and her day step by step |
+| [Maps](https://codex-crusader.github.io/visitor-access-project/#maps) | Empathy map, journey map, and the core pain point |
 | [Card sort](https://codex-crusader.github.io/visitor-access-project/#cardsort) | How people group the features |
 | [Tree test](https://codex-crusader.github.io/visitor-access-project/#treetest) | Where the menu broke, and what changed |
 | [Priorities](https://codex-crusader.github.io/visitor-access-project/#moscow) | Four must-haves, and the close call |
