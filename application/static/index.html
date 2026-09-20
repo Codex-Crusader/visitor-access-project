@@ -77,6 +77,7 @@ input,select{width:100%;padding:14px;border:1px solid var(--line);border-radius:
  font:inherit;color:inherit;-webkit-appearance:none;appearance:none;transition:border-color .12s,background .12s}
 input:focus{background:var(--paper);border-color:var(--brand2);box-shadow:0 0 0 3px rgba(39,89,156,.12)}
 input.bad{border-color:var(--stop);background:var(--stopBg)}
+input.bad:focus{border-color:var(--stop);background:var(--stopBg);box-shadow:0 0 0 3px rgba(153,39,36,.14)}
 .badmsg{color:var(--stop);font-size:.85rem;margin-top:7px;font-weight:600}
 .steps{display:flex;gap:6px;margin-bottom:6px}
 .steps i{height:4px;flex:1;background:var(--line);border-radius:3px;transition:background .2s}
@@ -85,6 +86,8 @@ input.bad{border-color:var(--stop);background:var(--stopBg)}
 .chips button{border:1px solid var(--line);border-radius:999px;padding:10px 15px;font-size:.92rem;
  background:var(--paper);font-weight:550;transition:all .12s ease}
 .chips button[aria-pressed=true]{background:var(--brand);color:#fff;border-color:var(--brand)}
+/* A group of buttons cannot take input.bad, so the group carries the red itself. */
+.chips.bad button{border-color:var(--stopLn);background:var(--stopBg);color:var(--stop)}
 .guest{display:flex;justify-content:space-between;align-items:center;background:var(--mute);
  border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin-top:8px;font-size:.94rem;font-weight:550}
 .guest button{color:var(--stop);font-size:.84rem;font-weight:650;padding:4px}

@@ -10,7 +10,7 @@ const S = {s:"home", f:{name:"",phone:"",address:"",reason:"",other:"",visiting:
 
 const $=i=>document.getElementById(i);
 const x=s=>String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
-const set=(k,v)=>S.f[k]=v;
+const set=(k,v)=>{S.f[k]=v;if(S.e[k]){delete S.e[k];unmark(k)}};
 const st=()=>S.visit?S.visit.status:"none";
 const waiting=()=>st()==="pending"||st()==="escalated";
 const live=()=>waiting()||st()==="approved"||st()==="inside";
@@ -32,6 +32,8 @@ const ICONS={
  cross:'<circle cx="12" cy="12" r="9"/><path d="M15 9l-6 6M9 9l6 6"/>'};
 const ico=n=>`<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[n]}</svg>`;
 const fact=(k,v)=>`<div><span>${k}</span><b>${x(v||"—")}</b></div>`;
+const flag=k=>S.e[k]?`class="bad" aria-invalid="true" aria-describedby="e_${k}"`:"";
+const note=k=>S.e[k]?`<div class="badmsg" id="e_${k}">${x(S.e[k])}</div>`:"";
 const gate=()=>S.cfg.gate_desk_phone?`<a class="btn plain" href="tel:${x(S.cfg.gate_desk_phone)}">Call gate desk</a>`:"";
 
 const offlineNote=()=>S.down
@@ -55,7 +57,7 @@ function tracker(){
 function view(){
   switch(S.s){
   case "home": return `<div class="hero"><h2>Campus Visitor Access</h2><p class="heroP">Ask to visit, then watch the decision happen.</p></div>
-    ${S.visit?`<button class="live ${["approved","inside","closed"].includes(st())?"go":st()==="declined"?"stop":""}" onclick="go('status')">
+    ${S.visit&&st()!=="closed"?`<button class="live ${["approved","inside"].includes(st())?"go":st()==="declined"?"stop":""}" onclick="go('status')">
       <b>${word()}</b><span>${x(S.visit.reference)}</span></button>`:""}
     <div class="menu">
       <button onclick="go('step1')">Request a Visit<i>&rsaquo;</i></button>
@@ -66,29 +68,37 @@ function view(){
     </div>`;
 
   case "step1": return `<div class="steps"><i class="on"></i><i></i></div>
-    <label for="a">Your name</label><input id="a" value="${x(S.f.name)}" oninput="set('name',this.value)">
-    <label for="b">Phone</label>
-    <input id="b" inputmode="numeric" class="${S.e.phone?"bad":""}" value="${x(S.f.phone)}" oninput="set('phone',this.value)">
-    ${S.e.phone?`<div class="badmsg">${S.e.phone}</div>`:""}
-    <label for="c">Address</label><input id="c" value="${x(S.f.address)}" oninput="set('address',this.value)">
+    <label for="f_name">Your name</label>
+    <input id="f_name" ${flag("name")} value="${x(S.f.name)}" oninput="set('name',this.value)">
+    ${note("name")}
+    <label for="f_phone">Phone</label>
+    <input id="f_phone" inputmode="numeric" ${flag("phone")} value="${x(S.f.phone)}" oninput="set('phone',this.value)">
+    ${note("phone")}
+    <label for="f_address">Address</label>
+    <input id="f_address" ${flag("address")} value="${x(S.f.address)}" oninput="set('address',this.value)">
+    ${note("address")}
     <button class="btn" onclick="n1()">Continue</button>
     <button class="btn plain" onclick="S.sheet=1;render()">Finish later</button>`;
 
-  case "step2":{const nf=S.e.vis;
+  case "step2":
     return `<div class="steps"><i class="on"></i><i class="on"></i></div>
-    <label>Reason</label><div class="chips">${REASONS.map(r=>
+    <label>Reason</label>
+    <div class="chips ${S.e.reason?"bad":""}" id="f_reason">${REASONS.map(r=>
       `<button type="button" aria-pressed="${S.f.reason===r}" onclick="pick('${r}')">${r}</button>`).join("")}</div>
-    ${S.f.reason==="Other"?`<input id="ro" style="margin-top:10px" value="${x(S.f.other)}" oninput="set('other',this.value)" placeholder="Say briefly why">`:""}
-    <label for="v">Who are you visiting?</label>
-    <input id="v" class="${nf?"bad":""}" value="${x(S.f.visiting)}" oninput="set('visiting',this.value)" placeholder="Student name or roll number">
-    ${nf?`<div class="badmsg">Name a student, not a staff member.</div>
-      <p class="sm">Staff no longer approve visits. Give the student name or the roll number.</p>`
+    ${note("reason")}
+    ${S.f.reason==="Other"?`<input id="f_other" style="margin-top:10px" ${flag("other")} value="${x(S.f.other)}" oninput="set('other',this.value)" placeholder="Say briefly why">
+      ${note("other")}`:""}
+    <label for="f_visiting">Who are you visiting?</label>
+    <input id="f_visiting" ${flag("visiting")} value="${x(S.f.visiting)}" oninput="set('visiting',this.value)" placeholder="Student name or roll number">
+    ${note("visiting")}
+    ${S.e.visiting===STAFF
+      ?`<p class="sm">Staff no longer approve visits. Give the student name or the roll number.</p>`
       :`<p class="sm">We pick the approver for you.</p>`}
     <label>Anyone with you?</label>
     ${S.g.map((g,i)=>`<div class="guest">${x(g)}<button onclick="drop(${i})">Remove</button></div>`).join("")}
     <div class="addrow"><input id="gn" placeholder="Their name" onkeydown="if(event.key==='Enter'){add()}"><button onclick="add()">Add</button></div>
     <button class="btn" onclick="n2()">Review</button>
-    <button class="btn plain" onclick="S.sheet=1;render()">Finish later</button>`;}
+    <button class="btn plain" onclick="S.sheet=1;render()">Finish later</button>`;
 
   case "review": return `${S.err?`<div class="state bad">${ico("cross")}<div><h3>Not sent</h3><p>${x(S.err)}</p></div></div>`:""}
     <div class="facts">
@@ -107,8 +117,8 @@ function view(){
     if(st()==="declined") return `<div class="state bad">${ico("cross")}<div><h3>Declined</h3><p>The approver turned down this visit.</p></div></div>
       <div class="facts">${fact("Reference",v.reference)}${fact("Decided",hm(v.decided_at))}</div>
       <button class="btn" onclick="again()">New request</button>${gate()}`;
-    if(st()==="closed") return `<div class="state good">${ico("check")}<div><h3>Visit complete</h3><p>You checked out at ${hm(v.exited_at)}. This pass is closed.</p></div></div>
-      <div class="facts">${fact("Reference",v.reference)}${fact("Entered",hm(v.entered_at))}${fact("Exited",hm(v.exited_at))}</div>
+    if(st()==="closed") return `<div class="state good">${ico("check")}<div><h3>Visit complete</h3><p>You checked out at ${hm(v.exited_at)}. This pass is closed and will not open again.</p></div></div>
+      <div class="facts">${fact("Entered",hm(v.entered_at))}${fact("Exited",hm(v.exited_at))}</div>
       <button class="btn" onclick="again()">New request</button>`;
     if(st()==="inside") return `<div class="state good">${ico("check")}<div><h3>Inside campus</h3><p>You entered at ${hm(v.entered_at)}. Show the pass again on the way out.</p></div></div>
       <div class="facts">${fact("Reference",v.reference)}${fact("Entered",hm(v.entered_at))}</div>
@@ -149,7 +159,8 @@ function view(){
     <p class="sm">The campus keeps your request, and the times you entered and left,
     for ${S.cfg.retain_days===1?"one day":S.cfg.retain_days+" days"}. After that it is
     deleted automatically.
-    The gate desk can see these details while your visit is open.</p>`;
+    The gate desk can see these details while your visit is open. Once you
+    check out, the gate desk sees only the times you came and went.</p>`;
 
   case "help": return `<h2>Getting help</h2>
     <div class="facts">${fact("Gate desk",S.cfg.gate_desk_phone)}</div>
@@ -158,20 +169,106 @@ function view(){
   return "";
 }
 
-function n1(){const d=S.f.phone.replace(/\D/g,"");if(d.length!==10){S.e.phone="Enter 10 digits.";render();return}delete S.e.phone;go("step2")}
+// The server refuses anything empty or over 200 characters, so the form
+// refuses the same things first and says which field is wrong.
+const MAX=200;
+const STAFF="Name a student, not a staff member.";
+const STEP1=["name","phone","address"];
+const STEP2=["reason","other","visiting"];
+// Line breaks, control codes, invisible marks and the overrides that make
+// text run the other way. They are not part of a name or an address, and the
+// approver's WhatsApp message is built out of these fields, so a line break
+// here would let a visitor forge an extra line in it. The server refuses the
+// same set, so this only saves a round trip.
+const NOTTEXT=/[\p{C}\p{Zl}\p{Zp}]/u;
+const tidy=t=>String(t||"").trim().replace(/\s+/g," ");
+
+function needed(key,label){
+  const raw=S.f[key]||"";
+  if(raw.length>MAX)return `${label} is too long. Use ${MAX} characters or fewer.`;
+  if(NOTTEXT.test(raw))return `${label} has characters that are not allowed.`;
+  if(!tidy(raw))return `${label} is required.`;
+  return "";
+}
+
+function unmark(key){
+  const box=$("f_"+key);
+  if(box){box.classList.remove("bad");box.removeAttribute("aria-invalid")}
+  const message=$("e_"+key);
+  if(message)message.remove();
+}
+
+// Every field is checked, so three empty boxes turn red together rather than
+// one at a time. Returns true when the step may go on.
+function settle(keys,found){
+  keys.forEach(k=>delete S.e[k]);
+  Object.assign(S.e,found);
+  const first=keys.find(k=>S.e[k]);
+  if(!first)return true;
+  render();
+  const box=$("f_"+first);
+  if(box){box.scrollIntoView({block:"nearest"});box.focus()}
+  return false;
+}
+
+function n1(){
+  const found={};
+  const name=needed("name","Your name");
+  if(name)found.name=name;
+
+  const phone=needed("phone","Phone");
+  if(phone)found.phone=phone;
+  else if(tidy(S.f.phone).replace(/\D/g,"").length!==10)found.phone="Enter 10 digits.";
+
+  const address=needed("address","Address");
+  if(address)found.address=address;
+
+  if(!settle(STEP1,found))return;
+  STEP1.forEach(k=>S.f[k]=tidy(S.f[k]));
+  go("step2");
+}
+
 function n2(){
-  if(!S.f.reason||!S.f.visiting.trim())return;
-  if(S.f.reason==="Other"&&!S.f.other.trim())return;
-  if(/prof|dr\.|sir|madam/i.test(S.f.visiting)){S.e.vis=1;render();return}
-  delete S.e.vis;
+  const found={};
+  if(!S.f.reason)found.reason="Choose a reason for the visit.";
+  else if(S.f.reason==="Other"){
+    const other=needed("other","A short reason");
+    if(other)found.other=other;
+  }
+
+  if(!tidy(S.f.visiting))found.visiting="Name the student you are visiting.";
+  else{
+    const who=needed("visiting","This");
+    if(who)found.visiting=who;
+    else if(/prof|dr\.|sir|madam/i.test(S.f.visiting))found.visiting=STAFF;
+  }
+
+  if(!settle(STEP2,found))return;
+  S.f.other=tidy(S.f.other);
+  S.f.visiting=tidy(S.f.visiting);
   S.err="";
   go("review");
 }
-function pick(r){S.f.reason=r;if(r!=="Other")S.f.other="";render();if(r==="Other"){const i=$("ro");if(i)i.focus()}}
-function add(){const v=$("gn").value.trim();if(!v)return;S.g.push(v);render()}
+
+function pick(r){
+  S.f.reason=r;
+  delete S.e.reason;
+  if(r!=="Other")S.f.other="";
+  else delete S.e.other;
+  render();
+  if(r==="Other"){const i=$("f_other");if(i)i.focus()}
+}
+function add(){
+  const raw=$("gn").value;
+  if(raw.length>MAX||NOTTEXT.test(raw))return;
+  const v=tidy(raw);
+  if(!v||S.g.length>=10)return;
+  S.g.push(v);
+  render();
+}
 function drop(i){S.g.splice(i,1);render()}
 function home(){S.s="home";S.hist=[];S.sheet=0;render();$("view").scrollTop=0}
-function again(){S.visit=null;localStorage.removeItem("tok");S.g=[];S.err="";go("step1",0)}
+function again(){S.visit=null;localStorage.removeItem("tok");S.g=[];S.e={};S.err="";go("step1",0)}
 
 // Give up on a stalled request instead of hanging forever.
 async function load(url,options,ms=POLL_TIMEOUT){
@@ -210,6 +307,7 @@ async function poll(){
       const v=await load(`/api/visit/${S.visit.token}`);
       const changed=v.status!==S.visit.status;
       S.visit=v;
+      if(v.status==="closed")localStorage.removeItem("tok");
       S.wait=POLL_EVERY;
       if(S.down){S.down=0;render()}
       else if(changed&&LIVE_VIEWS.includes(S.s))render();
@@ -236,7 +334,12 @@ async function start(){
   try{S.cfg=await load("/api/config")}catch(err){}
   const tok=localStorage.getItem("tok");
   if(tok){
-    try{S.visit=await load(`/api/visit/${tok}`)}
+    try{
+      const v=await load(`/api/visit/${tok}`);
+      // A finished visit is not reopened. The pass is gone for good.
+      if(v.status==="closed")localStorage.removeItem("tok");
+      else S.visit=v;
+    }
     catch(err){localStorage.removeItem("tok")}
   }
   render();

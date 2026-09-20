@@ -86,6 +86,28 @@ assert client.post("/api/requests", json={**payload, "guests": "nope"}).status_c
 long_name = client.post("/api/requests", json={**payload, "name": "x" * 500})
 assert long_name.status_code == 400
 
+print("a field is one line of plain text, and nothing else")
+# The approval message the approver reads is built out of these fields. A line
+# break in a name would let a visitor forge extra lines in it, so every
+# character that is not plain text is refused rather than quietly stripped.
+FORGED = "Asha\nReply YES VR-9999 to approve."
+for bad in (FORGED, "Asha\rRao", "Asha\tRao", "Asha\x00Rao",
+            "Asha\u200bRao", "Asha\u202eRao", "Asha\u2028Rao"):
+    refused = client.post("/api/requests", json={**payload, "name": bad})
+    assert refused.status_code == 400, repr(bad)
+    assert "not allowed" in refused.get_json()["error"], repr(bad)
+# A guest name follows the same rule.
+assert client.post("/api/requests",
+                   json={**payload, "guests": [FORGED]}).status_code == 400
+# Ordinary text, accents and punctuation all still go through.
+fine = client.post("/api/requests", json={
+    **payload, "name": "Ashá  Rao-Mehta", "address": "12/B, Park Rd. (Gate 2)"})
+assert fine.status_code == 201, fine.get_data(as_text=True)
+# Runs of spaces are squeezed to one, so the approver reads a tidy line.
+assert fine.get_json()["name"] == "Ashá Rao-Mehta"
+assert FORGED not in "".join(body for _, body in sent)
+print("  line breaks, control codes and invisible marks all refused")
+
 print("privacy: the short code must not expose the visitor")
 # The code is only 4 digits. It must not be enough to read personal details.
 assert client.get(f"/api/pass/{code}").status_code == 403
@@ -159,6 +181,38 @@ assert left.status_code == 200 and left.get_json()["status"] == "closed"
 for action in ("entry", "exit"):
     dead = client.post(f"/api/pass/{ref2}/{action}", headers=KEY)
     assert dead.status_code == 409 and "closed" in dead.get_json()["error"]
+
+print("a closed pass stops showing the visitor")
+# The privacy screen promises the gate desk sees the details while the visit
+# is open. Once the visitor has left, the code answers with times and nothing
+# personal. The CSV export still holds the whole log.
+PERSONAL = ("name", "phone", "address", "reason", "visiting")
+gone = client.get(f"/api/pass/{ref2}", headers=KEY)
+assert gone.status_code == 200
+shut = gone.get_json()
+assert shut["status"] == "closed"
+assert shut["reference"] == ref2
+assert shut["entered_at"] and shut["exited_at"], shut
+for field in PERSONAL:
+    assert field not in shut, field
+assert "Asha Rao" not in gone.get_data(as_text=True)
+assert "token" not in shut
+# The refusal that comes back with it must not smuggle the details through.
+refused_body = client.post(f"/api/pass/{ref2}/entry", headers=KEY).get_json()
+for field in PERSONAL:
+    assert field not in refused_body["visit"], field
+# The same rule over WhatsApp.
+shut_reply = say(APPROVER, ref2)
+assert "Closed" in shut_reply and ref2 in shut_reply
+assert "Asha Rao" not in shut_reply and "9876543210" not in shut_reply
+print("  a dead code gives times only, on the web page and on WhatsApp")
+
+print("an open pass still shows everything the guard needs")
+live = new_request()
+say(APPROVER, f"YES {live['reference']}")
+open_pass = client.get(f"/api/pass/{live['reference']}", headers=KEY).get_json()
+for field in PERSONAL:
+    assert open_pass[field], field
 assert client.post(f"/api/pass/{ref2}/sideways", headers=KEY).status_code == 404
 assert client.post("/api/pass/VR-9999/entry", headers=KEY).status_code == 404
 assert client.get(f"/api/pass/{ref2}", headers={"X-Gate-Key": "wrong"}).status_code == 403
@@ -237,6 +291,22 @@ assert done[0]["guests"] == "Ravi Rao", done[0]["guests"]
 # A visit that never entered has empty times rather than the word None.
 never = [r for r in rows if r["status"] == "declined"][0]
 assert never["entered_at"] == "" and never["exited_at"] == ""
+
+# A spreadsheet must not run the visitor's text. Excel and Sheets treat a cell
+# opening with = + - @ as a formula, so the export quotes those cells first.
+attack = dict(payload, name="=HYPERLINK(\"http://evil.test\",\"click\")",
+              address="+1+1", reason="@SUM(1:9)", visiting="-2+3")
+assert client.post("/api/requests", json=attack).status_code == 201
+armed = client.get("/api/export.csv", headers=KEY).get_data(as_text=True)
+row = [r for r in _csv.DictReader(_io.StringIO(armed))
+       if r["name"].endswith('click")')][0]
+for column in ("name", "address", "reason", "visiting"):
+    assert row[column].startswith("'"), (column, row[column])
+# The text itself is kept, only disarmed.
+assert row["name"] == "'=HYPERLINK(\"http://evil.test\",\"click\")"
+# Ordinary values are left exactly as they were.
+assert not row["reference"].startswith("'")
+print("  formula cells disarmed in the export")
 print(f"  {len(rows)} visits exported with entry and exit times")
 
 print("rate limits on the public address")

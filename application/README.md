@@ -43,7 +43,12 @@ pending ──(no reply in time)──> escalated
               closed
 ```
 
-A closed code is dead. Nothing works on it again.
+A closed code is dead. Nothing works on it again, and it stops showing the
+visitor. The visitor app drops the pass and forgets the code. The gate page and
+the WhatsApp lookup answer with the entry and exit times and nothing personal.
+The privacy screen promises the gate desk sees the details while the visit is
+open, so a finished visit has to stop answering. The CSV export still holds the
+whole log for whoever runs the campus.
 
 ## WhatsApp commands
 
@@ -90,6 +95,11 @@ status, created_at, escalated_at, decided_at, entered_at, exited_at
 Times are UTC in ISO format. A visit that never entered has empty `entered_at`
 and `exited_at`, so you can filter completed visits on those columns.
 
+A cell that opens with `=`, `+`, `-` or `@` is written with a leading quote.
+Excel and Sheets run such a cell as a formula, so a visitor who types
+`=HYPERLINK(...)` as their name would otherwise have it executed on whoever
+opens the log. The text is kept, only disarmed.
+
 Records are deleted `RETAIN_DAYS` after they are created, 90 days by default.
 The privacy screen in the visitor app states that same number, so the promise and
 the code agree. Change one and change the other.
@@ -105,6 +115,7 @@ the code agree. Change one and change the other.
 | `check_setup.py` | Checks your settings and sends one test message |
 | `test_app.py` | Runs the whole flow with WhatsApp stubbed out |
 | `test_concurrency.py` | Hammers the app from many threads to check the races |
+| `test_form.js` | Checks the two web pages in a real DOM. Needs `npm install jsdom` |
 | `static/index.html`, `static/app.js` | The visitor app |
 | `static/gate.html`, `static/gate.js` | The gate desk page |
 | `render.yaml`, `Procfile` | How the host starts the app |
@@ -238,6 +249,19 @@ routes, the export, and the delete-after-retention rule.
 The second proves the app survives load: sixty visitors submitting at the same
 instant all get unique codes, and twenty guards pressing Record entry on the same
 visitor produce exactly one entry, not twenty.
+
+The third checks the two web pages. It loads them in a real DOM, so it tests
+what the visitor sees rather than what the server returns. It needs jsdom, which
+the app itself does not use.
+
+```
+npm install jsdom
+node test_form.js
+```
+
+It covers the three rules the pages have to keep: Continue and Review refuse a
+half filled form and turn each wrong field light red, a field takes one line of
+plain text and nothing else, and a closed pass stops showing the visitor.
 
 ## Limits and who they protect
 

@@ -4,6 +4,15 @@ const $ = i => document.getElementById(i);
 const x = s => String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const hm = t => t ? new Date(t).toLocaleTimeString([], {hour:"2-digit", minute:"2-digit"}) : "—";
 
+// A pass code is VR-0000. WhatsApp already accepts the four digits on their
+// own, so the gate page accepts them too and puts the VR- back.
+const CODE = /^(?:VR[- ]?)?(\d{4})$/i;
+const tidy = text => {
+  const trimmed = text.trim();
+  const found = CODE.exec(trimmed);
+  return found ? `VR-${found[1]}` : trimmed.toUpperCase();
+};
+
 let visit = null;
 let notice = "";
 let busy = "";
@@ -92,17 +101,23 @@ function render() {
     visit.status === "approved" ? `<button class="btn go" onclick="act('entry')">Record entry</button>` :
     visit.status === "inside"   ? `<button class="btn" onclick="act('exit')">Record exit</button>` : "";
 
+  // Once the visit is over the server sends times and nothing else, so the
+  // desk stops showing the visitor's name, phone number and address.
+  const closed = visit.status === "closed";
+  const details = closed ? "" : `
+      ${fact("Name", visit.name)}
+      ${fact("Phone", visit.phone)}
+      ${fact("Visiting", visit.visiting)}
+      ${fact("Reason", visit.reason)}
+      ${visit.guests && visit.guests.length ? fact("With", visit.guests.join(", ")) : ""}
+      ${fact("Approved", hm(visit.decided_at))}`;
+
   $("out").innerHTML = `
     ${notice ? problem(notice) : ""}
     <div class="state ${tone}"><h2>${x(title)}</h2><p>${x(line)}</p></div>
     <div class="facts">
       ${fact("Code", visit.reference)}
-      ${fact("Name", visit.name)}
-      ${fact("Phone", visit.phone)}
-      ${fact("Visiting", visit.visiting)}
-      ${fact("Reason", visit.reason)}
-      ${visit.guests.length ? fact("With", visit.guests.join(", ")) : ""}
-      ${fact("Approved", hm(visit.decided_at))}
+      ${details}
       ${visit.entered_at ? fact("Entered", hm(visit.entered_at)) : ""}
       ${visit.exited_at ? fact("Exited", hm(visit.exited_at)) : ""}
     </div>
@@ -124,7 +139,7 @@ function saveKey() {
 }
 
 async function look() {
-  const code = $("code").value.trim().toUpperCase();
+  const code = tidy($("code").value);
   if (!code) {
     notice = "Type a pass code first.";
     render();

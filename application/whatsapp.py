@@ -105,7 +105,21 @@ GATE_LINES = {
 
 
 def pass_body(visit):
-    """What the guard sees after sending a code."""
+    """What the guard sees after sending a code.
+
+    A closed visit is over, so it answers with times and nothing personal.
+    The same rule as the gate page and the pass endpoint.
+    """
+    if visit["status"] == db.CLOSED:
+        lines = [
+            GATE_LINES[db.CLOSED].format(ref=visit["reference"]),
+            "",
+            f"Reference: {visit['reference']}",
+            f"Entered: {visit['entered_at']}",
+            f"Exited: {visit['exited_at']}",
+        ]
+        return "\n".join(lines)
+
     lines = [
         GATE_LINES[visit["status"]].format(ref=visit["reference"]),
         "",

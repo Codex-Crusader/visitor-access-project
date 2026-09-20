@@ -6,6 +6,7 @@ import hmac
 import io
 import threading
 import time
+import unicodedata
 from datetime import datetime, timezone
 
 from flask import Flask, Response, jsonify, request, send_from_directory
@@ -42,25 +43,51 @@ REFUSALS = {
 }
 
 
+# Every field is one line of plain text. These characters are not text:
+# line breaks, terminal control codes, invisible marks, and the overrides
+# that make written text run the other way. Unicode files them under
+# C (other) and Z (separator). A visitor who puts them in a name is not
+# writing a name. They are trying to forge extra lines in the approval
+# message the approver reads on WhatsApp.
+NOT_TEXT = ("Cc", "Cf", "Cs", "Co", "Cn", "Zl", "Zp")
+MAX_LENGTH = 200
+
+
+def clean_text(value):
+    """One line of plain text, or None when the value is not plain text."""
+    if any(unicodedata.category(letter) in NOT_TEXT for letter in value):
+        return None
+    return " ".join(value.split())
+
+
 def clean_fields(payload):
     """Return (fields, guests, error)."""
     fields = {}
     for key in FIELDS:
-        value = str(payload.get(key, "")).strip()
+        raw = str(payload.get(key, ""))
+        if len(raw) > MAX_LENGTH:
+            return None, None, f"{key} is too long"
+        value = clean_text(raw)
+        if value is None:
+            return None, None, f"{key} has characters that are not allowed"
         if not value:
             return None, None, f"{key} is required"
-        if len(value) > 200:
-            return None, None, f"{key} is too long"
         fields[key] = value
 
     digits = "".join(c for c in fields["phone"] if c.isdigit())
     if len(digits) != 10:
         return None, None, "phone must be 10 digits"
 
-    guests = payload.get("guests") or []
-    if not isinstance(guests, list):
+    raw_guests = payload.get("guests") or []
+    if not isinstance(raw_guests, list):
         return None, None, "guests must be a list"
-    guests = [str(g).strip()[:200] for g in guests if str(g).strip()][:10]
+    guests = []
+    for guest in raw_guests[:10]:
+        name = clean_text(str(guest)[:MAX_LENGTH])
+        if name is None:
+            return None, None, "guests have characters that are not allowed"
+        if name:
+            guests.append(name)
     return fields, guests, None
 
 
@@ -193,6 +220,22 @@ def read_visit(token):
     return jsonify(visit)
 
 
+# A finished visit keeps its times and loses everything personal. The privacy
+# screen promises the gate desk sees the details while the visit is open, so
+# a dead code must stop answering with a name, a phone number and an address.
+# The CSV export still holds the whole log for whoever runs the campus.
+PASS_TIMES = ("reference", "status", "created_at", "decided_at",
+              "entered_at", "exited_at")
+
+
+def gate_view(visit):
+    if visit["status"] != db.CLOSED:
+        return visit
+    closed = {key: visit[key] for key in PASS_TIMES}
+    closed["guests"] = []
+    return closed
+
+
 @app.get("/api/pass/<reference>")
 def read_pass(reference):
     if not gate_key_ok():
@@ -200,7 +243,7 @@ def read_pass(reference):
     visit = db.get(reference.upper())
     if visit is None:
         return jsonify(error="No pass with that code"), 404
-    return jsonify(visit)
+    return jsonify(gate_view(visit))
 
 
 @app.post("/api/pass/<reference>/<action>")
@@ -216,19 +259,32 @@ def gate_action(reference, action):
 
     apply_action, required = GATE_ACTIONS[action]
     if visit["status"] != required:
-        return jsonify(error=REFUSALS[action][visit["status"]], visit=visit), 409
+        return jsonify(error=REFUSALS[action][visit["status"]],
+                       visit=gate_view(visit)), 409
 
     # The update itself decides. Two guards pressing at once must not both win.
     if not apply_action(visit["reference"]):
         fresh = db.get(visit["reference"])
-        return jsonify(error=REFUSALS[action][fresh["status"]], visit=fresh), 409
-    return jsonify(db.get(visit["reference"]))
+        return jsonify(error=REFUSALS[action][fresh["status"]],
+                       visit=gate_view(fresh)), 409
+    return jsonify(gate_view(db.get(visit["reference"])))
 
 
 EXPORT_COLUMNS = (
     "reference", "name", "phone", "address", "reason", "visiting", "guests",
     "status", "created_at", "escalated_at", "decided_at", "entered_at", "exited_at",
 )
+
+
+# Excel and Sheets run a cell that opens with one of these as a formula, so a
+# visitor who types =HYPERLINK(...) as their name gets it executed on whoever
+# opens the log. A leading quote makes the cell plain text again.
+FORMULA_START = ("=", "+", "-", "@", "\t", "\r")
+
+
+def safe_cell(value):
+    text = "" if value is None else str(value)
+    return "'" + text if text.startswith(FORMULA_START) else text
 
 
 @app.get("/api/export.csv")
@@ -243,7 +299,7 @@ def export_csv():
     for visit in db.all_visits():
         row = dict(visit)
         row["guests"] = ", ".join(row["guests"])
-        writer.writerow([row.get(c) or "" for c in EXPORT_COLUMNS])
+        writer.writerow([safe_cell(row.get(c)) for c in EXPORT_COLUMNS])
 
     stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     return Response(
