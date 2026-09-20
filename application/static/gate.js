@@ -41,9 +41,9 @@ function render() {
     return;
   }
   if (!visit) {
-    $("out").innerHTML = notice
+    $("out").innerHTML = (notice
       ? `<div class="state bad"><h2>Cannot do that</h2><p>${x(notice)}</p></div>`
-      : "";
+      : "") + `<button class="btn plain" onclick="downloadLog()">Download visit log</button>`;
     return;
   }
   const [tone, title, line] = BANNER[visit.status] || ["wait", visit.status, ""];
@@ -66,7 +66,24 @@ function render() {
       ${visit.exited_at ? fact("Exited", hm(visit.exited_at)) : ""}
     </div>
     ${buttons}
-    <button class="btn plain" onclick="clear_()">Next visitor</button>`;
+    <button class="btn plain" onclick="clear_()">Next visitor</button>
+    <button class="btn plain" onclick="downloadLog()">Download visit log</button>`;
+}
+
+async function downloadLog() {
+  try {
+    const r = await fetch("/api/export.csv", {headers: {"X-Gate-Key": key()}});
+    if (!r.ok) throw new Error("Wrong gate key");
+    const blob = await r.blob();
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "visits.csv";
+    a.click();
+    URL.revokeObjectURL(a.href);
+  } catch (err) {
+    notice = err.message;
+    render();
+  }
 }
 
 function saveKey() {

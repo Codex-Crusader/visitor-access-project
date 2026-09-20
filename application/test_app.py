@@ -193,7 +193,7 @@ assert b["reference"] in [v["reference"] for v in db.open_requests()]
 assert ref2 not in [v["reference"] for v in db.open_requests()]
 assert ref2 not in [v["reference"] for v in db.due_for_escalation()]
 
-print("retention actually deletes, as the privacy screen promises")
+print("retention deletes records older than RETAIN_DAYS")
 old = new_request()
 with db.connect() as conn:
     conn.execute("UPDATE visits SET created_at = ? WHERE reference = ?",
@@ -210,6 +210,34 @@ for path in ("/", "/app.js", "/gate", "/gate.js"):
 cfg = client.get("/api/config").get_json()
 assert cfg["escalate_minutes"] == 30 and cfg["retain_days"] == 1
 assert "gate_key" not in str(cfg).lower(), "the gate key must never be published"
+
+print("export of every entry and exit")
+# Needs the gate key, same as the rest of the gate.
+assert client.get("/api/export.csv").status_code == 403
+assert client.get("/api/export.csv", headers={"X-Gate-Key": "wrong"}).status_code == 403
+
+dump = client.get("/api/export.csv", headers=KEY)
+assert dump.status_code == 200
+assert "text/csv" in dump.headers["Content-Type"]
+assert "attachment" in dump.headers["Content-Disposition"]
+
+import csv as _csv, io as _io
+rows = list(_csv.DictReader(_io.StringIO(dump.get_data(as_text=True))))
+head = rows[0].keys()
+for column in ("reference", "name", "status", "entered_at", "exited_at"):
+    assert column in head, column
+
+# The visitor who went in and out must carry both times.
+done = [r for r in rows if r["reference"] == ref2]
+assert len(done) == 1, done
+assert done[0]["status"] == "closed"
+assert done[0]["entered_at"] and done[0]["exited_at"], done[0]
+# Guests come out readable, not as JSON.
+assert done[0]["guests"] == "Ravi Rao", done[0]["guests"]
+# A visit that never entered has empty times rather than the word None.
+never = [r for r in rows if r["status"] == "declined"][0]
+assert never["entered_at"] == "" and never["exited_at"] == ""
+print(f"  {len(rows)} visits exported with entry and exit times")
 
 print()
 print("all checks passed")

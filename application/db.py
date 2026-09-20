@@ -68,37 +68,36 @@ def to_dict(row):
     return visit
 
 
-def new_reference(conn):
-    while True:
-        reference = f"VR-{random.randint(1000, 9999)}"
-        found = conn.execute(
-            "SELECT 1 FROM visits WHERE reference = ?", (reference,)
-        ).fetchone()
-        if not found:
-            return reference
+CODE_ATTEMPTS = 20
 
 
 def create(fields, guests):
-    with connect() as conn:
-        reference = new_reference(conn)
-        conn.execute(
-            "INSERT INTO visits (reference, token, name, phone, address, reason,"
-            " visiting, guests, status, created_at)"
-            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (
-                reference,
-                secrets.token_urlsafe(16),
-                fields["name"],
-                fields["phone"],
-                fields["address"],
-                fields["reason"],
-                fields["visiting"],
-                json.dumps(guests),
-                PENDING,
-                now(),
-            ),
-        )
-    return get(reference)
+    """Insert a visit. Retries when two requests pick the same code at once."""
+    for _ in range(CODE_ATTEMPTS):
+        reference = f"VR-{random.randint(1000, 9999)}"
+        try:
+            with connect() as conn:
+                conn.execute(
+                    "INSERT INTO visits (reference, token, name, phone, address,"
+                    " reason, visiting, guests, status, created_at)"
+                    " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (
+                        reference,
+                        secrets.token_urlsafe(16),
+                        fields["name"],
+                        fields["phone"],
+                        fields["address"],
+                        fields["reason"],
+                        fields["visiting"],
+                        json.dumps(guests),
+                        PENDING,
+                        now(),
+                    ),
+                )
+            return get(reference)
+        except sqlite3.IntegrityError:
+            continue
+    raise RuntimeError("Could not find a free visit code")
 
 
 def _one(column, value):
@@ -120,6 +119,13 @@ def get_by_token(token):
 def delete(reference):
     with connect() as conn:
         conn.execute("DELETE FROM visits WHERE reference = ?", (reference,))
+
+
+def all_visits():
+    """Every stored visit, oldest first. Used by the export."""
+    with connect() as conn:
+        rows = conn.execute("SELECT * FROM visits ORDER BY created_at").fetchall()
+    return [to_dict(row) for row in rows]
 
 
 def open_requests():

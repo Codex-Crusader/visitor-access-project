@@ -33,7 +33,7 @@ GATE_KEY = _required("GATE_KEY")
 GATE_DESK_PHONE = _required("GATE_DESK_PHONE")
 ESCALATE_MINUTES = _int("ESCALATE_MINUTES", 30)
 
-# The privacy screen promises deletion after the visit day. This keeps it.
-RETAIN_DAYS = _int("RETAIN_DAYS", 1)
+# Days a visit record is kept. The privacy screen states this number.
+RETAIN_DAYS = _int("RETAIN_DAYS", 90)
 
 DATABASE_PATH = os.getenv("DATABASE_PATH", "visits.db")

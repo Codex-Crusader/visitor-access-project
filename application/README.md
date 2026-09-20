@@ -73,6 +73,27 @@ guess one. The code therefore never opens anything on its own.
 - The gate reads and writes `/api/pass/<code>`, and every one of those calls
   needs the `X-Gate-Key` header. The guard types that key once on the gate page.
 
+## The visit log
+
+Every request keeps its own row, including the exact times it was approved, the
+visitor entered, and the visitor left. The gate page has a **Download visit log**
+button that saves the whole history as a CSV file, and the same data is at
+`GET /api/export.csv` with the `X-Gate-Key` header.
+
+The CSV has one row per visit and these columns:
+
+```
+reference, name, phone, address, reason, visiting, guests,
+status, created_at, escalated_at, decided_at, entered_at, exited_at
+```
+
+Times are UTC in ISO format. A visit that never entered has empty `entered_at`
+and `exited_at`, so you can filter completed visits on those columns.
+
+Records are deleted `RETAIN_DAYS` after they are created, 90 days by default.
+The privacy screen in the visitor app states that same number, so the promise and
+the code agree. Change one and change the other.
+
 ## Files
 
 | File | What it holds |
@@ -83,6 +104,7 @@ guess one. The code therefore never opens anything on its own.
 | `config.py` | Settings read from the environment |
 | `check_setup.py` | Checks your settings and sends one test message |
 | `test_app.py` | Runs the whole flow with WhatsApp stubbed out |
+| `test_concurrency.py` | Hammers the app from many threads to check the races |
 | `static/index.html`, `static/app.js` | The visitor app |
 | `static/gate.html`, `static/gate.js` | The gate desk page |
 | `render.yaml`, `Procfile` | How the host starts the app |
@@ -101,7 +123,7 @@ guess one. The code therefore never opens anything on its own.
 | `GATE_KEY` | Password for the gate page. Keep it off the internet |
 | `GATE_DESK_PHONE` | Number shown on the "Call gate desk" button |
 | `ESCALATE_MINUTES` | Minutes before the backup approver is asked. Default 30 |
-| `RETAIN_DAYS` | Days before a record is deleted. Default 1 |
+| `RETAIN_DAYS` | Days a record is kept before deletion. Default 90 |
 
 Write every phone number in E.164 form: a plus sign, the country code, then the
 number. Each approver number must also be on the recipient list in the Meta API
@@ -203,14 +225,23 @@ not reply. After one minute the backup approver gets the same details.
 .venv\Scripts\python.exe test_app.py
 ```
 
-This runs the whole flow without sending any WhatsApp message: approval,
+```
+.venv\Scripts\python.exe test_concurrency.py
+```
+
+The first runs the whole flow without sending any WhatsApp message: approval,
 decline, escalation, repeated deliveries, the code-guessing defence, both gate
-routes, and the delete-after-retention rule.
+routes, the export, and the delete-after-retention rule.
+
+The second proves the app survives load: sixty visitors submitting at the same
+instant all get unique codes, and twenty guards pressing Record entry on the same
+visitor produce exactly one entry, not twenty.
 
 ## Known limits
 
 - The gate key is one shared password. Every guard uses the same one, and there
-  is no record of which guard pressed the button.
+  is no record of which guard pressed the button. It also unlocks the full export,
+  so anyone with the key can download every visitor's name, phone and address.
 - The approver is one fixed number. A real deployment would look up the student
   being visited and message that person.
 - The 4-digit code is short enough to guess, which is why it never works on its

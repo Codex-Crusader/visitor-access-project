@@ -1,11 +1,14 @@
 """Campus visitor access: web form in, WhatsApp approval out."""
 
+import csv
 import hashlib
 import hmac
+import io
 import threading
 import time
+from datetime import datetime, timezone
 
-from flask import Flask, jsonify, request, send_from_directory
+from flask import Flask, Response, jsonify, request, send_from_directory
 
 import config
 import db
@@ -164,8 +167,39 @@ def gate_action(reference, action):
     if visit["status"] != required:
         return jsonify(error=REFUSALS[action][visit["status"]], visit=visit), 409
 
-    apply_action(visit["reference"])
+    # The update itself decides. Two guards pressing at once must not both win.
+    if not apply_action(visit["reference"]):
+        fresh = db.get(visit["reference"])
+        return jsonify(error=REFUSALS[action][fresh["status"]], visit=fresh), 409
     return jsonify(db.get(visit["reference"]))
+
+
+EXPORT_COLUMNS = (
+    "reference", "name", "phone", "address", "reason", "visiting", "guests",
+    "status", "created_at", "escalated_at", "decided_at", "entered_at", "exited_at",
+)
+
+
+@app.get("/api/export.csv")
+def export_csv():
+    """The whole visit log, including every entry and exit time."""
+    if not gate_key_ok():
+        return jsonify(error="Wrong gate key"), 403
+
+    buffer = io.StringIO()
+    writer = csv.writer(buffer)
+    writer.writerow(EXPORT_COLUMNS)
+    for visit in db.all_visits():
+        row = dict(visit)
+        row["guests"] = ", ".join(row["guests"])
+        writer.writerow([row.get(c) or "" for c in EXPORT_COLUMNS])
+
+    stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    return Response(
+        buffer.getvalue(),
+        mimetype="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="visits-{stamp}.csv"'},
+    )
 
 
 @app.get("/webhook/whatsapp")
@@ -211,7 +245,8 @@ def handle_gate(sender, action, reference):
     if visit["status"] != required:
         return REFUSALS[action][visit["status"]]
 
-    apply_action(reference)
+    if not apply_action(reference):
+        return REFUSALS[action][db.get(reference)["status"]]
     return whatsapp.pass_body(db.get(reference))
 
 

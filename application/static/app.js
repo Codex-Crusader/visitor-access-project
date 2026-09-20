@@ -1,6 +1,6 @@
 const REASONS = ["See a student", "See an office", "Delivery", "Event", "Other"];
 const S = {s:"home", f:{name:"",phone:"",address:"",reason:"",other:"",visiting:""}, g:[], e:{},
-  visit:null, cfg:{gate_desk_phone:"",escalate_minutes:30,retain_days:1}, err:"", hist:[], sheet:0};
+  visit:null, cfg:{gate_desk_phone:"",escalate_minutes:30,retain_days:90}, err:"", hist:[], sheet:0};
 
 const $=i=>document.getElementById(i);
 const x=s=>String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -128,7 +128,10 @@ function view(){
 
   case "privacy": return `<h2>What we ask for</h2>
     <div class="facts">${["Name","Phone","Address","Reason","Who you are visiting"].map(i=>`<div><span>${i}</span></div>`).join("")}</div>
-    <p class="sm">No selfie, no ID number, no vehicle number. Deleted ${S.cfg.retain_days===1?"one day":S.cfg.retain_days+" days"} after you ask.</p>`;
+    <p class="sm">No selfie, no ID number, no vehicle number.</p>
+    <p class="sm">The campus keeps your request, and the times you entered and left,
+    for ${S.cfg.retain_days} days. After that it is deleted automatically.
+    The gate desk can see these details while your visit is open.</p>`;
 
   case "help": return `<h2>Getting help</h2>
     <div class="facts">${fact("Gate desk",S.cfg.gate_desk_phone)}</div>

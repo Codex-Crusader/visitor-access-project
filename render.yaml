@@ -3,7 +3,6 @@ services:
     name: visitor-access
     runtime: python
     plan: free
-    rootDir: application
     buildCommand: pip install -r requirements.txt
     # One worker only. The escalation timer is a thread inside the process,
     # so a second worker would send every backup message twice.
@@ -30,4 +29,4 @@ services:
       - key: ESCALATE_MINUTES
         value: "30"
       - key: RETAIN_DAYS
-        value: "1"
+        value: "90"
