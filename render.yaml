@@ -1,0 +1,33 @@
+services:
+  - type: web
+    name: visitor-access
+    runtime: python
+    plan: free
+    rootDir: application
+    buildCommand: pip install -r requirements.txt
+    # One worker only. The escalation timer is a thread inside the process,
+    # so a second worker would send every backup message twice.
+    startCommand: gunicorn app:app --workers 1 --threads 4 --timeout 60
+    envVars:
+      - key: META_TOKEN
+        sync: false
+      - key: META_PHONE_NUMBER_ID
+        sync: false
+      - key: META_VERIFY_TOKEN
+        sync: false
+      - key: META_APP_SECRET
+        sync: false
+      - key: MAIN_APPROVER
+        sync: false
+      - key: BACKUP_APPROVER
+        sync: false
+      - key: GUARD
+        sync: false
+      - key: GATE_KEY
+        sync: false
+      - key: GATE_DESK_PHONE
+        sync: false
+      - key: ESCALATE_MINUTES
+        value: "30"
+      - key: RETAIN_DAYS
+        value: "1"

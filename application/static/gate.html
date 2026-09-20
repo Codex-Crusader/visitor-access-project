@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#16325B">
+<meta name="description" content="Gate desk: check a visitor pass, record entry and exit.">
+<title>Gate Desk</title>
+<style>
+:root{
+ --ink:#0F1822;--soft:#5A6979;--line:#E2E8EE;--paper:#fff;--mute:#F5F8FB;
+ --brand:#16325B;--brand2:#27599C;--tint:#EDF2F9;
+ --go:#0C6B47;--goBg:#E8F5EF;--goLn:#A8D8C3;
+ --wait:#8A5710;--waitBg:#FDF4E6;--waitLn:#EBCE9E;
+ --stop:#992724;--stopBg:#FBEDEB;--stopLn:#E9B6B0;
+ --bg:#D9E1EA;--r:14px;--sh:0 1px 2px rgba(16,30,50,.06),0 1px 1px rgba(16,30,50,.04);
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme=light]){--bg:#0A1017}}
+:root[data-theme=dark]{--bg:#0A1017}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+body{margin:0;min-height:100dvh;background:var(--bg);color:var(--ink);
+ font:17px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+ display:flex;justify-content:center;-webkit-font-smoothing:antialiased}
+button{font:inherit;color:inherit;cursor:pointer;border:0;background:none}
+:focus-visible{outline:2.5px solid var(--brand2);outline-offset:2px}
+
+.app{width:100%;max-width:520px;background:var(--paper);min-height:100dvh;padding:22px 22px 40px}
+h1{margin:0 0 4px;font-size:1.5rem;font-weight:750;letter-spacing:-.02em}
+.sub{margin:0 0 24px;color:var(--soft);font-size:.95rem}
+label{display:block;font-weight:650;font-size:.84rem;letter-spacing:.02em;margin:0 0 7px}
+input{width:100%;padding:16px;border:1px solid var(--line);border-radius:12px;background:var(--mute);
+ font:inherit;color:inherit;text-transform:uppercase;letter-spacing:.08em;
+ font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:1.3rem;text-align:center}
+input:focus{background:var(--paper);border-color:var(--brand2);outline:none;box-shadow:0 0 0 3px rgba(39,89,156,.12)}
+.btn{display:block;width:100%;padding:16px;border-radius:var(--r);background:var(--brand);color:#fff;
+ font-weight:650;margin-top:12px;border:1px solid var(--brand);box-shadow:var(--sh)}
+.btn:active{transform:scale(.988)}
+.btn[disabled]{opacity:.5;cursor:default}
+.btn.go{background:var(--go);border-color:var(--go)}
+.btn.plain{background:var(--paper);color:var(--ink);border-color:var(--line);font-weight:600}
+
+.state{border-radius:var(--r);padding:16px;margin:22px 0 16px;border:1px solid}
+.state h2{margin:0 0 3px;font-size:1.2rem;font-weight:700;letter-spacing:-.01em}
+.state p{margin:0;font-size:.93rem;opacity:.92}
+.good{background:var(--goBg);border-color:var(--goLn);color:var(--go)}
+.wait{background:var(--waitBg);border-color:var(--waitLn);color:var(--wait)}
+.bad{background:var(--stopBg);border-color:var(--stopLn);color:var(--stop)}
+
+.facts{border:1px solid var(--line);border-radius:var(--r);padding:2px 16px;margin-bottom:18px;box-shadow:var(--sh)}
+.facts div{display:flex;justify-content:space-between;gap:14px;padding:13px 0;font-size:.93rem;border-bottom:1px solid var(--line)}
+.facts div:last-child{border:0}
+.facts span{color:var(--soft)}
+.facts b{text-align:right;font-weight:650}
+</style>
+</head>
+<body>
+<div class="app">
+  <h1>Gate Desk</h1>
+  <p class="sub">Type the code on the visitor's pass.</p>
+  <label for="code">Pass code</label>
+  <input id="code" placeholder="VR-0000" autocomplete="off" autocapitalize="characters">
+  <button class="btn" id="look">Check pass</button>
+  <div id="out"></div>
+</div>
+<script src="gate.js"></script>
+</body>
+</html>
