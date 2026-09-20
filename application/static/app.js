@@ -131,11 +131,15 @@ function view(){
       <button class="btn" onclick="again()">New request</button>`;
     if(!hasPass()) return `<h2>No pass yet</h2><p>Your pass appears here once a request is approved.</p>
       <button class="btn" onclick="go(S.visit?'status':'step1')">${S.visit?"Check my request":"Request a Visit"}</button>`;
+    const out=st()==="inside";
     return `${offlineNote()}
-      <div class="pass"><span class="ptop">${st()==="inside"?"Exit pass":"Entry pass"}</span><b>${x(S.visit.reference)}</b>
+      <div class="pass ${out?"out":"in"}">
+      <span class="ptop"><span class="parrow">${out?"&uarr;":"&darr;"}</span>${out?"Exit pass":"Entry pass"}</span>
+      <b>${x(S.visit.reference)}</b>
       <span class="pcut"></span>
-      <span class="pfoot">${x(S.visit.name||"Visitor")}${S.visit.guests.length?" +"+S.visit.guests.length:""} &middot; today</span></div>
-      <p class="sm">${st()==="inside"?"Show this again on the way out. The guard closes it.":"Show this at the gate. The guard looks it up."}</p>
+      <span class="pfoot">${x(S.visit.name||"Visitor")}${S.visit.guests.length?" +"+S.visit.guests.length:""} &middot; today</span>
+      <span class="pway">${out?"On your way out":"Coming in"}</span></div>
+      <p class="sm">${out?"Show this again on the way out. The guard closes it.":"Show this at the gate. The guard looks it up."}</p>
       ${gate()}
       <button class="btn plain" onclick="home()">Go to home</button>`;}
 

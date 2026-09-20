@@ -118,13 +118,31 @@ input.bad{border-color:var(--stop);background:var(--stopBg)}
 .facts span{color:var(--soft)}
 .facts b{text-align:right;font-weight:650}
 
-.pass{border:1px solid var(--line);border-radius:18px;padding:26px 20px 20px;text-align:center;margin-bottom:18px;
+.pass{position:relative;overflow:hidden;border:1px solid var(--line);border-radius:18px;
+ padding:30px 20px 20px;text-align:center;margin-bottom:18px;
  background:var(--paper);box-shadow:0 8px 24px rgba(16,30,50,.1)}
+/* A guard reads the colour before the words, so entry and exit never match. */
+.pass::before{content:"";position:absolute;top:0;left:0;right:0;height:7px}
+.pass.in{background:var(--tint);border-color:#C4D3E6}
+.pass.in::before{background:linear-gradient(90deg,var(--brand),var(--brand2))}
+.pass.out{background:var(--goBg);border-color:var(--goLn)}
+.pass.out::before{background:linear-gradient(90deg,var(--go),#13895C)}
 .ptop{display:block;font-size:.72rem;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--soft)}
+.pass.in .ptop{color:var(--brand2)}
+.pass.out .ptop{color:var(--go)}
+.parrow{display:inline-block;margin-right:6px;font-size:.9rem;vertical-align:-1px}
 .pass b{display:block;margin:10px 0 18px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
  font-size:2.3rem;letter-spacing:.07em;font-weight:700}
+.pass.in b{color:var(--brand)}
+.pass.out b{color:var(--go)}
 .pcut{display:block;height:1px;margin:0 -20px 14px;background:repeating-linear-gradient(90deg,var(--line) 0 7px,transparent 7px 14px)}
+.pass.in .pcut{background:repeating-linear-gradient(90deg,#C4D3E6 0 7px,transparent 7px 14px)}
+.pass.out .pcut{background:repeating-linear-gradient(90deg,var(--goLn) 0 7px,transparent 7px 14px)}
 .pfoot{font-size:.88rem;color:var(--soft)}
+.pass.in .pfoot,.pass.out .pfoot{color:inherit;opacity:.75}
+.pway{display:block;margin-top:12px;font-size:.8rem;font-weight:650;letter-spacing:.06em;text-transform:uppercase}
+.pass.in .pway{color:var(--brand2)}
+.pass.out .pway{color:var(--go)}
 
 .spin{width:28px;height:28px;border:3px solid var(--line);border-top-color:var(--brand);border-radius:50%;margin:76px auto 16px;animation:sp .8s linear infinite}
 @keyframes sp{to{transform:rotate(360deg)}}
