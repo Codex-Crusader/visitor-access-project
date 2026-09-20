@@ -116,6 +116,7 @@ the code agree. Change one and change the other.
 | `test_app.py` | Runs the whole flow with WhatsApp stubbed out |
 | `test_concurrency.py` | Hammers the app from many threads to check the races |
 | `test_form.js` | Checks the two web pages in a real DOM. Needs `npm install jsdom` |
+| `ruff.toml`, `eslint.config.mjs` | Linter settings, and why two rules are off |
 | `static/index.html`, `static/app.js` | The visitor app |
 | `static/gate.html`, `static/gate.js` | The gate desk page |
 | `render.yaml`, `Procfile` | How the host starts the app |
@@ -262,6 +263,19 @@ node test_form.js
 It covers the three rules the pages have to keep: Continue and Review refuse a
 half filled form and turn each wrong field light red, a field takes one line of
 plain text and nothing else, and a closed pass stops showing the visitor.
+
+Two linters are set up, and both report nothing on a clean tree.
+
+```
+ruff check .
+npx eslint static test_form.js
+```
+
+`ruff.toml` and `eslint.config.mjs` each turn off a small number of rules and
+say why in a comment. The important one is `no-implicit-globals`. The pages
+have no build step, so a button calls its handler straight from an `onclick`
+attribute, and an attribute can only reach a global name. Wrapping the script
+in an IIFE would satisfy the rule and break both pages.
 
 ## Limits and who they protect
 

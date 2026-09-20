@@ -77,6 +77,7 @@ input,select{width:100%;padding:14px;border:1px solid var(--line);border-radius:
  font:inherit;color:inherit;-webkit-appearance:none;appearance:none;transition:border-color .12s,background .12s}
 input:focus{background:var(--paper);border-color:var(--brand2);box-shadow:0 0 0 3px rgba(39,89,156,.12)}
 input.bad{border-color:var(--stop);background:var(--stopBg)}
+input.bad:focus{border-color:var(--stop);background:var(--stopBg);box-shadow:0 0 0 3px rgba(153,39,36,.14)}
 .badmsg{color:var(--stop);font-size:.85rem;margin-top:7px;font-weight:600}
 .steps{display:flex;gap:6px;margin-bottom:6px}
 .steps i{height:4px;flex:1;background:var(--line);border-radius:3px;transition:background .2s}
@@ -85,6 +86,8 @@ input.bad{border-color:var(--stop);background:var(--stopBg)}
 .chips button{border:1px solid var(--line);border-radius:999px;padding:10px 15px;font-size:.92rem;
  background:var(--paper);font-weight:550;transition:all .12s ease}
 .chips button[aria-pressed=true]{background:var(--brand);color:#fff;border-color:var(--brand)}
+/* A group of buttons cannot take input.bad, so the group carries the red itself. */
+.chips.bad button{border-color:var(--stopLn);background:var(--stopBg);color:var(--stop)}
 .guest{display:flex;justify-content:space-between;align-items:center;background:var(--mute);
  border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin-top:8px;font-size:.94rem;font-weight:550}
 .guest button{color:var(--stop);font-size:.84rem;font-weight:650;padding:4px}
@@ -153,7 +156,7 @@ const S={s:"home",min:804,f:{name:"",phone:"",address:"",reason:"",other:"",visi
 const hm=m=>String(Math.floor(m/60)%24).padStart(2,"0")+":"+String(m%60).padStart(2,"0");
 const $=i=>document.getElementById(i);
 const x=s=>String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
-const set=(k,v)=>S.f[k]=v;
+const set=(k,v)=>{S.f[k]=v;if(S.e[k]){delete S.e[k];unmark(k)}};
 
 setInterval(()=>{if(S.s!=="sending")tick(1)},520);
 function tick(n){
@@ -179,6 +182,8 @@ const ICONS={
  cross:'<circle cx="12" cy="12" r="9"/><path d="M15 9l-6 6M9 9l6 6"/>'};
 const ico=n=>`<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[n]}</svg>`;
 const fact=(k,v)=>`<div><span>${k}</span><b>${x(v||"—")}</b></div>`;
+const flag=k=>S.e[k]?`class="bad" aria-invalid="true" aria-describedby="e_${k}"`:"";
+const note=k=>S.e[k]?`<div class="badmsg" id="e_${k}">${x(S.e[k])}</div>`:"";
 const DESK="+912200000000", DESK_SHOWN="+91 22 0000 0000";
 const gate=()=>`<a class="btn plain" href="tel:${DESK}">Call gate desk</a>`;
 
@@ -209,30 +214,38 @@ function view(){
     </div>`;
 
   case "step1": return `<div class="steps"><i class="on"></i><i></i></div>
-    <label for="a">Your name</label><input id="a" value="${x(S.f.name)}" oninput="set('name',this.value)">
-    <label for="b">Phone</label>
-    <input id="b" inputmode="numeric" class="${S.e.phone?"bad":""}" value="${x(S.f.phone)}" oninput="set('phone',this.value)">
-    ${S.e.phone?`<div class="badmsg">${S.e.phone}</div>`:""}
-    <label for="c">Address</label><input id="c" value="${x(S.f.address)}" oninput="set('address',this.value)">
+    <label for="f_name">Your name</label>
+    <input id="f_name" ${flag("name")} value="${x(S.f.name)}" oninput="set('name',this.value)">
+    ${note("name")}
+    <label for="f_phone">Phone</label>
+    <input id="f_phone" inputmode="numeric" ${flag("phone")} value="${x(S.f.phone)}" oninput="set('phone',this.value)">
+    ${note("phone")}
+    <label for="f_address">Address</label>
+    <input id="f_address" ${flag("address")} value="${x(S.f.address)}" oninput="set('address',this.value)">
+    ${note("address")}
     <button class="btn" onclick="n1()">Continue</button>
     <button class="btn plain" onclick="S.sheet=1;render()">Finish later</button>`;
 
-  case "step2":{const nf=S.e.vis;
+  case "step2":
     return `<div class="steps"><i class="on"></i><i class="on"></i></div>
-    <label>Reason</label><div class="chips">${REASONS.map(r=>
+    <label>Reason</label>
+    <div class="chips ${S.e.reason?"bad":""}" id="f_reason">${REASONS.map(r=>
       `<button type="button" aria-pressed="${S.f.reason===r}" onclick="pick('${r}')">${r}</button>`).join("")}</div>
-    ${S.f.reason==="Other"?`<input id="ro" style="margin-top:10px" value="${x(S.f.other)}" oninput="set('other',this.value)" placeholder="Say briefly why">`:""}
-    <label for="v">Who are you visiting?</label>
-    <input id="v" class="${nf?"bad":""}" value="${x(S.f.visiting)}" oninput="set('visiting',this.value)" placeholder="Student name or roll number">
-    ${nf?`<div class="badmsg">No match for "${x(S.f.visiting)}".</div>
-      <p class="sm">Staff no longer approve visits. Name the student you are seeing.</p>
-      <button class="btn plain" onclick="roll()">Use a roll number</button>`
+    ${note("reason")}
+    ${S.f.reason==="Other"?`<input id="f_other" style="margin-top:10px" ${flag("other")} value="${x(S.f.other)}" oninput="set('other',this.value)" placeholder="Say briefly why">
+      ${note("other")}`:""}
+    <label for="f_visiting">Who are you visiting?</label>
+    <input id="f_visiting" ${flag("visiting")} value="${x(S.f.visiting)}" oninput="set('visiting',this.value)" placeholder="Student name or roll number">
+    ${note("visiting")}
+    ${S.e.visiting===STAFF
+      ?`<p class="sm">Staff no longer approve visits. Name the student you are seeing.</p>
+        <button class="btn plain" onclick="roll()">Use a roll number</button>`
       :`<p class="sm">We pick the approver for you.</p>`}
     <label>Anyone with you?</label>
     ${S.g.map((g,i)=>`<div class="guest">${x(g)}<button onclick="drop(${i})">Remove</button></div>`).join("")}
     <div class="addrow"><input id="gn" placeholder="Their name" onkeydown="if(event.key==='Enter'){add()}"><button onclick="add()">Add</button></div>
     <button class="btn" onclick="n2()">${S.st==="none"?"Review":"Save changes"}</button>
-    ${S.st==="none"?`<button class="btn plain" onclick="S.sheet=1;render()">Finish later</button>`:""}`;}
+    ${S.st==="none"?`<button class="btn plain" onclick="S.sheet=1;render()">Finish later</button>`:""}`;
 
   case "review": return `<div class="facts">
       ${fact("Name",S.f.name)}${fact("Phone",S.f.phone)}${fact("Address",S.f.address)}
@@ -281,21 +294,106 @@ function view(){
   return "";
 }
 
-function n1(){const d=S.f.phone.replace(/\D/g,"");if(d.length!==10){S.e.phone="Enter 10 digits.";render();return}delete S.e.phone;go("step2")}
-function n2(){
-  if(!S.f.reason||!S.f.visiting.trim())return;
-  if(S.f.reason==="Other"&&!S.f.other.trim())return;
-  if(/prof|dr\.|sir|madam/i.test(S.f.visiting)){S.e.vis=1;render();return}
-  delete S.e.vis;
-  S.st==="none"?go("review"):back();
+// Continue and Review check every field, not just the phone number. Each
+// wrong field turns light red and says what is wrong, and they all light up
+// together rather than one per press.
+const MAX=200;
+const STAFF="Name a student, not a staff member.";
+const STEP1=["name","phone","address"];
+const STEP2=["reason","other","visiting"];
+// Line breaks, control codes, invisible marks and the overrides that make
+// text run the other way. They are not part of a name or an address.
+const NOTTEXT=/[\p{C}\p{Zl}\p{Zp}]/u;
+const tidy=t=>String(t||"").trim().replace(/\s+/g," ");
+
+function needed(key,label){
+  const raw=S.f[key]||"";
+  if(raw.length>MAX)return `${label} is too long. Use ${MAX} characters or fewer.`;
+  if(NOTTEXT.test(raw))return `${label} has characters that are not allowed.`;
+  if(!tidy(raw))return `${label} is required.`;
+  return "";
 }
-function pick(r){S.f.reason=r;if(r!=="Other")S.f.other="";render();if(r==="Other"){const i=$("ro");if(i)i.focus()}}
-function roll(){S.f.visiting="2024SEPVUGP0003";delete S.e.vis;render()}
-function add(){const v=$("gn").value.trim();if(!v)return;S.g.push(v);render()}
+
+function unmark(key){
+  const box=$("f_"+key);
+  if(box){box.classList.remove("bad");box.removeAttribute("aria-invalid")}
+  const message=$("e_"+key);
+  if(message)message.remove();
+}
+
+function settle(keys,found){
+  keys.forEach(k=>delete S.e[k]);
+  Object.assign(S.e,found);
+  const first=keys.find(k=>S.e[k]);
+  if(!first)return true;
+  render();
+  const box=$("f_"+first);
+  if(box){box.scrollIntoView({block:"nearest"});box.focus()}
+  return false;
+}
+
+function n1(){
+  const found={};
+  const name=needed("name","Your name");
+  if(name)found.name=name;
+
+  const phone=needed("phone","Phone");
+  if(phone)found.phone=phone;
+  else if(tidy(S.f.phone).replace(/\D/g,"").length!==10)found.phone="Enter 10 digits.";
+
+  const address=needed("address","Address");
+  if(address)found.address=address;
+
+  if(!settle(STEP1,found))return;
+  STEP1.forEach(k=>S.f[k]=tidy(S.f[k]));
+  go("step2");
+}
+
+function n2(){
+  const found={};
+  if(!S.f.reason)found.reason="Choose a reason for the visit.";
+  else if(S.f.reason==="Other"){
+    const other=needed("other","A short reason");
+    if(other)found.other=other;
+  }
+
+  if(!tidy(S.f.visiting))found.visiting="Name the student you are visiting.";
+  else{
+    const who=needed("visiting","This");
+    if(who)found.visiting=who;
+    else if(/prof|dr[.]|sir|madam/i.test(S.f.visiting))found.visiting=STAFF;
+  }
+
+  if(!settle(STEP2,found))return;
+  S.f.other=tidy(S.f.other);
+  S.f.visiting=tidy(S.f.visiting);
+  if(S.st==="none")go("review");
+  else back();
+}
+
+function pick(r){
+  S.f.reason=r;
+  delete S.e.reason;
+  if(r!=="Other")S.f.other="";
+  else delete S.e.other;
+  render();
+  if(r==="Other"){const i=$("f_other");if(i)i.focus()}
+}
+
+function roll(){S.f.visiting="2024SEPVUGP0003";delete S.e.visiting;render()}
+
+function add(){
+  const raw=$("gn").value;
+  if(raw.length>MAX||NOTTEXT.test(raw))return;
+  const v=tidy(raw);
+  if(!v||S.g.length>=10)return;
+  S.g.push(v);
+  render();
+}
 function drop(i){S.g.splice(i,1);render()}
 function send(){go("sending");setTimeout(()=>{S.sent=S.min;S.st="waiting";S.hist=["home"];go("status",0)},1100)}
 function home(){S.s="home";S.hist=[];S.sheet=0;render();$("view").scrollTop=0}
-function again(){S.st="none";S.sent=null;S.g=[];go("step2",0)}
+function again(){S.st="none";S.sent=null;S.g=[];S.e={};go("step2",0)}
 
 function render(){
   const [t,b]=T[S.s]||["",0];

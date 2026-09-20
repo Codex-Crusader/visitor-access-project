@@ -311,7 +311,7 @@ async function poll(){
       S.wait=POLL_EVERY;
       if(S.down){S.down=0;render()}
       else if(changed&&LIVE_VIEWS.includes(S.s))render();
-    }catch(err){
+    }catch{
       S.wait=Math.min(S.wait*2,POLL_SLOWEST);
       if(!S.down){S.down=1;if(LIVE_VIEWS.includes(S.s))render()}
     }
@@ -331,7 +331,8 @@ function render(){
 
 async function start(){
   render();
-  try{S.cfg=await load("/api/config")}catch(err){}
+  // No settings means the built in defaults, which are good enough to start.
+  try{S.cfg=await load("/api/config")}catch{/* keep the defaults */}
   const tok=localStorage.getItem("tok");
   if(tok){
     try{
@@ -340,7 +341,7 @@ async function start(){
       if(v.status==="closed")localStorage.removeItem("tok");
       else S.visit=v;
     }
-    catch(err){localStorage.removeItem("tok")}
+    catch{localStorage.removeItem("tok")}
   }
   render();
   poll();

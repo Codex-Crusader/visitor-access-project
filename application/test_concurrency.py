@@ -43,8 +43,10 @@ def submit():
         made.append(r)
 
 threads = [threading.Thread(target=submit) for _ in range(N)]
-for t in threads: t.start()
-for t in threads: t.join()
+for t in threads:
+    t.start()
+for t in threads:
+    t.join()
 
 codes = [r.get_json()["reference"] for r in made if r.status_code == 201]
 tokens = [r.get_json()["token"] for r in made if r.status_code == 201]
@@ -59,8 +61,10 @@ def approve(code):
     db.decide(code, db.APPROVED)
 
 threads = [threading.Thread(target=approve, args=(c,)) for c in codes]
-for t in threads: t.start()
-for t in threads: t.join()
+for t in threads:
+    t.start()
+for t in threads:
+    t.join()
 assert all(db.get(c)["status"] == "approved" for c in codes)
 print("  all approved under load")
 
@@ -73,8 +77,10 @@ def race_in():
         results.append(r.status_code)
 
 threads = [threading.Thread(target=race_in) for _ in range(20)]
-for t in threads: t.start()
-for t in threads: t.join()
+for t in threads:
+    t.start()
+for t in threads:
+    t.join()
 wins = results.count(200)
 print(f"  20 guards raced one entry -> {wins} accepted, {results.count(409)} refused")
 assert wins == 1, f"entry must happen exactly once, got {wins}"
@@ -87,8 +93,10 @@ def race_out():
     with lock:
         results.append(r.status_code)
 threads = [threading.Thread(target=race_out) for _ in range(20)]
-for t in threads: t.start()
-for t in threads: t.join()
+for t in threads:
+    t.start()
+for t in threads:
+    t.join()
 print(f"  20 guards raced one exit  -> {results.count(200)} accepted, {results.count(409)} refused")
 assert results.count(200) == 1
 assert db.get(target)["status"] == "closed"
@@ -99,8 +107,10 @@ def cycle(code):
     client.post(f"/api/pass/{code}/entry", headers=KEY)
     client.post(f"/api/pass/{code}/exit", headers=KEY)
 threads = [threading.Thread(target=cycle, args=(c,)) for c in busy]
-for t in threads: t.start()
-for t in threads: t.join()
+for t in threads:
+    t.start()
+for t in threads:
+    t.join()
 closed = [c for c in busy if db.get(c)["status"] == "closed"]
 print(f"  {len(busy)} visitors in and out at once -> {len(closed)} closed correctly")
 assert len(closed) == len(busy)
@@ -114,9 +124,12 @@ def inbound(mid, text):
 
 sent.clear()
 same = inbound("wamid.race", f"YES {codes[50]}")
-threads = [threading.Thread(target=lambda: client.post("/webhook/whatsapp", json=same)) for _ in range(15)]
-for t in threads: t.start()
-for t in threads: t.join()
+threads = [threading.Thread(target=lambda: client.post("/webhook/whatsapp", json=same))
+           for _ in range(15)]
+for t in threads:
+    t.start()
+for t in threads:
+    t.join()
 print(f"  same message delivered 15x -> {len(sent)} replies sent")
 assert len(sent) <= 1, f"duplicate message must act at most once, sent {len(sent)}"
 

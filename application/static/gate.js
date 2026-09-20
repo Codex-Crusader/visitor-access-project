@@ -18,15 +18,16 @@ let notice = "";
 let busy = "";
 
 function key() {
-  try { return localStorage.getItem("gatekey") || ""; } catch (err) { return ""; }
+  try { return localStorage.getItem("gatekey") || ""; } catch { return ""; }
 }
 
 function setKey(value) {
-  try { localStorage.setItem("gatekey", value); } catch (err) {}
+  // A browser with storage blocked keeps the key for this page view only.
+  try { localStorage.setItem("gatekey", value); } catch { /* nothing to undo */ }
 }
 
 function forgetKey() {
-  try { localStorage.removeItem("gatekey"); } catch (err) {}
+  try { localStorage.removeItem("gatekey"); } catch { /* it was never stored */ }
   visit = null;
   notice = "";
   render();
@@ -166,7 +167,8 @@ async function act(action) {
     visit = await call(`/api/pass/${encodeURIComponent(visit.reference)}/${action}`, {method: "POST"});
   } catch (err) {
     notice = err.message;
-    try { visit = await call(`/api/pass/${encodeURIComponent(visit.reference)}`); } catch (ignored) {}
+    // The refusal above is what the guard needs. A failed re-read adds nothing.
+    try { visit = await call(`/api/pass/${encodeURIComponent(visit.reference)}`); } catch { /* keep the refusal */ }
   }
   busy = "";
   render();

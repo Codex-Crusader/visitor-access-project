@@ -1,0 +1,21 @@
+# Settings for `ruff check .`.
+target-version = "py311"
+line-length = 100
+exclude = [".venv", "node_modules"]
+
+[lint]
+select = ["E", "F", "W", "I", "B", "C4", "UP", "SIM", "RUF"]
+ignore = [
+  # The app must not die on one bad request. The background loop keeps
+  # escalating, and a failed WhatsApp reply must not take the webhook with it,
+  # so those three places catch everything on purpose and log it.
+  "BLE001",
+  # timezone.utc reads plainly and works on every version this runs on.
+  "UP017",
+]
+
+[lint.per-file-ignores]
+# The test sets its environment before it imports the app, so its imports
+# cannot all sit at the top of the file.
+"test_app.py" = ["E402", "I001"]
+"test_concurrency.py" = ["E402", "I001"]

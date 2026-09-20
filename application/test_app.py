@@ -275,7 +275,8 @@ assert dump.status_code == 200
 assert "text/csv" in dump.headers["Content-Type"]
 assert "attachment" in dump.headers["Content-Disposition"]
 
-import csv as _csv, io as _io
+import csv as _csv
+import io as _io
 rows = list(_csv.DictReader(_io.StringIO(dump.get_data(as_text=True))))
 head = rows[0].keys()
 for column in ("reference", "name", "status", "entered_at", "exited_at"):
@@ -289,7 +290,7 @@ assert done[0]["entered_at"] and done[0]["exited_at"], done[0]
 # Guests come out readable, not as JSON.
 assert done[0]["guests"] == "Ravi Rao", done[0]["guests"]
 # A visit that never entered has empty times rather than the word None.
-never = [r for r in rows if r["status"] == "declined"][0]
+never = next(r for r in rows if r["status"] == "declined")
 assert never["entered_at"] == "" and never["exited_at"] == ""
 
 # A spreadsheet must not run the visitor's text. Excel and Sheets treat a cell
@@ -298,8 +299,8 @@ attack = dict(payload, name="=HYPERLINK(\"http://evil.test\",\"click\")",
               address="+1+1", reason="@SUM(1:9)", visiting="-2+3")
 assert client.post("/api/requests", json=attack).status_code == 201
 armed = client.get("/api/export.csv", headers=KEY).get_data(as_text=True)
-row = [r for r in _csv.DictReader(_io.StringIO(armed))
-       if r["name"].endswith('click")')][0]
+row = next(r for r in _csv.DictReader(_io.StringIO(armed))
+           if r["name"].endswith('click")'))
 for column in ("name", "address", "reason", "visiting"):
     assert row[column].startswith("'"), (column, row[column])
 # The text itself is kept, only disarmed.

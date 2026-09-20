@@ -13,7 +13,9 @@ try:
 except RuntimeError as missing:
     fail(f"{missing}. Open .env and fill that value in.")
 
-import whatsapp
+# Imported after config, so a missing setting is reported above as a plain
+# sentence rather than as a stack trace from inside this module.
+import whatsapp  # noqa: E402
 
 for name in ("MAIN_APPROVER", "BACKUP_APPROVER", "GATE_DESK_PHONE"):
     value = getattr(config, name)
