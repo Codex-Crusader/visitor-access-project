@@ -2,4 +2,11 @@
 name = "visitor-access-project"
 version = "0.1.0"
 requires-python = ">=3.11"
-dependencies = ["flask", "requests", "python-dotenv"]
+dependencies = [
+    "flask",
+    "requests",
+    "python-dotenv",
+    # The host runs the app under gunicorn. requirements.txt lists it too,
+    # and the two files have to agree.
+    "gunicorn",
+]

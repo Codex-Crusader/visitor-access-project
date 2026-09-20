@@ -1,9 +1,10 @@
 """Checks the .env values and sends one test message. Run this before a demo."""
 
 import sys
+from typing import NoReturn
 
 
-def fail(message):
+def fail(message) -> NoReturn:
     print(f"FAILED: {message}")
     sys.exit(1)
 

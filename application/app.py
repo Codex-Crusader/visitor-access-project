@@ -8,6 +8,7 @@ import threading
 import time
 import unicodedata
 from datetime import datetime, timezone
+from pathlib import Path
 
 from flask import Flask, Response, jsonify, request, send_from_directory
 
@@ -15,7 +16,8 @@ import config
 import db
 import whatsapp
 
-app = Flask(__name__, static_folder="static", static_url_path="")
+STATIC = Path(__file__).parent / "static"
+app = Flask(__name__, static_folder=str(STATIC), static_url_path="")
 
 FIELDS = ("name", "phone", "address", "reason", "visiting")
 BACKGROUND_SECONDS = 30
@@ -118,6 +120,18 @@ def record_hit(bucket):
                 del _hits[stale]
 
 
+def forget_hits():
+    """Empty the rate limit table. The tests call this between checks."""
+    with _hits_lock:
+        _hits.clear()
+
+
+def hit_buckets():
+    """How many callers the rate limit is tracking. The tests read this."""
+    with _hits_lock:
+        return len(_hits)
+
+
 def too_many(bucket, limit, seconds):
     """True when this caller is over the limit. Counts every call."""
     key = (bucket, caller())
@@ -174,12 +188,12 @@ def reply_to(phone, text):
 
 @app.get("/")
 def index():
-    return send_from_directory(app.static_folder, "index.html")
+    return send_from_directory(STATIC, "index.html")
 
 
 @app.get("/gate")
 def gate():
-    return send_from_directory(app.static_folder, "gate.html")
+    return send_from_directory(STATIC, "gate.html")
 
 
 @app.get("/api/config")
@@ -224,16 +238,15 @@ def read_visit(token):
 # screen promises the gate desk sees the details while the visit is open, so
 # a dead code must stop answering with a name, a phone number and an address.
 # The CSV export still holds the whole log for whoever runs the campus.
-PASS_TIMES = ("reference", "status", "created_at", "decided_at",
-              "entered_at", "exited_at")
+CLOSED_PASS = ("reference", "status", "created_at", "decided_at",
+               "entered_at", "exited_at", "guests")
 
 
 def gate_view(visit):
     if visit["status"] != db.CLOSED:
         return visit
-    closed = {key: visit[key] for key in PASS_TIMES}
-    closed["guests"] = []
-    return closed
+    # The page reads guests.length, so guests is emptied rather than dropped.
+    return {key: [] if key == "guests" else visit[key] for key in CLOSED_PASS}
 
 
 @app.get("/api/pass/<reference>")

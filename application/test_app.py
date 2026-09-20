@@ -311,8 +311,7 @@ print("  formula cells disarmed in the export")
 print(f"  {len(rows)} visits exported with entry and exit times")
 
 print("rate limits on the public address")
-import app as _app
-_app._hits.clear()
+application.forget_hits()
 
 # Creating requests is capped so a stranger cannot spam the approver's phone.
 codes_before = len(db.all_visits())
@@ -323,7 +322,7 @@ assert statuses.count(429) == 5, statuses
 print(f"  request flood: {statuses.count(201)} allowed, {statuses.count(429)} refused")
 
 # Wrong gate keys are always refused.
-_app._hits.clear()
+application.forget_hits()
 tries = [client.get("/api/pass/VR-0001", headers={"X-Gate-Key": f"guess{i}"}).status_code
          for i in range(65)]
 assert all(s == 403 for s in tries), set(tries)
@@ -336,15 +335,16 @@ for _ in range(50):
 print("  correct key still works after 65 wrong guesses, and 50 times running")
 
 # The request limit must not be buyable with a made-up address header.
-_app._hits.clear()
+application.forget_hits()
 for i in range(20):
     client.post("/api/requests", json={**payload, "phone": "123"},
                 headers={"X-Forwarded-For": f"9.9.9.{i}"})
-assert len(_app._hits) == 1, f"spoofed headers created {len(_app._hits)} buckets"
+buckets = application.hit_buckets()
+assert buckets == 1, f"spoofed headers created {buckets} buckets"
 print("  20 calls behind 20 fake addresses still counted as one caller")
 
 # The limit must never block Meta's webhook, which shares no bucket with the gate.
-_app._hits.clear()
+application.forget_hits()
 fresh = new_request()
 for _ in range(70):
     client.get("/api/pass/VR-0001", headers={"X-Gate-Key": "guess"})
@@ -354,11 +354,11 @@ assert client.get(f"/api/visit/{fresh['token']}").get_json()["status"] == "appro
 print("  webhook still works while the gate is rate limited")
 
 # A visitor polling their own status is never rate limited.
-_app._hits.clear()
+application.forget_hits()
 polls = [client.get(f"/api/visit/{fresh['token']}").status_code for _ in range(50)]
 assert set(polls) == {200}, set(polls)
 print("  50 visitor polls all served")
-_app._hits.clear()
+application.forget_hits()
 
 print()
 print("all checks passed")
