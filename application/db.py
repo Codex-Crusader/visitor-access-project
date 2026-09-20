@@ -30,6 +30,11 @@ CREATE TABLE IF NOT EXISTS seen_messages (
   id   TEXT PRIMARY KEY,
   seen TEXT NOT NULL
 );
+
+-- The escalation sweep, the purge and the open-request list all filter on
+-- status and created_at. Without this they scan every row every 30 seconds.
+CREATE INDEX IF NOT EXISTS visits_status_created ON visits (status, created_at);
+CREATE INDEX IF NOT EXISTS visits_created ON visits (created_at);
 """
 
 PENDING = "pending"

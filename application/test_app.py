@@ -239,5 +239,55 @@ never = [r for r in rows if r["status"] == "declined"][0]
 assert never["entered_at"] == "" and never["exited_at"] == ""
 print(f"  {len(rows)} visits exported with entry and exit times")
 
+print("rate limits on the public address")
+import app as _app
+_app._hits.clear()
+
+# Creating requests is capped so a stranger cannot spam the approver's phone.
+codes_before = len(db.all_visits())
+limit = __import__("config").REQUESTS_PER_HOUR
+statuses = [client.post("/api/requests", json=payload).status_code for _ in range(limit + 5)]
+assert statuses.count(201) == limit, statuses
+assert statuses.count(429) == 5, statuses
+print(f"  request flood: {statuses.count(201)} allowed, {statuses.count(429)} refused")
+
+# Guessing the gate key is capped.
+_app._hits.clear()
+tries = [client.get("/api/pass/VR-0001", headers={"X-Gate-Key": f"guess{i}"}).status_code
+         for i in range(65)]
+assert all(s == 403 for s in tries), set(tries)
+print(f"  gate key: {len(tries)} wrong guesses all refused")
+
+# A busy guard must never be locked out by their own successful work.
+_app._hits.clear()
+for _ in range(200):
+    assert client.get(f"/api/pass/{ref2}", headers=KEY).status_code == 200
+print("  200 correct-key calls in a row all served, no lockout")
+
+# Wrong guesses must not be able to buy a fresh allowance with a fake header.
+_app._hits.clear()
+for i in range(300):
+    client.get("/api/pass/VR-0001",
+               headers={"X-Gate-Key": "guess", "X-Forwarded-For": f"9.9.9.{i % 250}"})
+assert len(_app._hits) == 1, f"spoofed headers created {len(_app._hits)} buckets"
+print("  300 guesses behind 250 fake addresses still counted as one caller")
+
+# The limit must never block Meta's webhook, which shares no bucket with the gate.
+_app._hits.clear()
+fresh = new_request()
+for _ in range(70):
+    client.get("/api/pass/VR-0001", headers={"X-Gate-Key": "guess"})
+ok = client.post("/webhook/whatsapp", json=inbound(APPROVER, f"YES {fresh['reference']}"))
+assert ok.status_code == 200
+assert client.get(f"/api/visit/{fresh['token']}").get_json()["status"] == "approved"
+print("  webhook still works while the gate is rate limited")
+
+# A visitor polling their own status is never rate limited.
+_app._hits.clear()
+polls = [client.get(f"/api/visit/{fresh['token']}").status_code for _ in range(50)]
+assert set(polls) == {200}, set(polls)
+print("  50 visitor polls all served")
+_app._hits.clear()
+
 print()
 print("all checks passed")

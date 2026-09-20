@@ -1,6 +1,12 @@
 const REASONS = ["See a student", "See an office", "Delivery", "Event", "Other"];
+const POLL_EVERY = 3000;      // normal gap between status checks
+const POLL_SLOWEST = 30000;   // slowest gap after repeated failures
+const POLL_TIMEOUT = 10000;   // give up on one status check
+const SEND_TIMEOUT = 75000;   // a sleeping free server can take ~50s to wake
+const LIVE_VIEWS = ["status", "home", "inout"];
 const S = {s:"home", f:{name:"",phone:"",address:"",reason:"",other:"",visiting:""}, g:[], e:{},
-  visit:null, cfg:{gate_desk_phone:"",escalate_minutes:30,retain_days:90}, err:"", hist:[], sheet:0};
+  visit:null, cfg:{gate_desk_phone:"",escalate_minutes:30,retain_days:90}, err:"", hist:[], sheet:0,
+  wait:POLL_EVERY, down:0};
 
 const $=i=>document.getElementById(i);
 const x=s=>String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -27,6 +33,11 @@ const ICONS={
 const ico=n=>`<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[n]}</svg>`;
 const fact=(k,v)=>`<div><span>${k}</span><b>${x(v||"—")}</b></div>`;
 const gate=()=>S.cfg.gate_desk_phone?`<a class="btn plain" href="tel:${x(S.cfg.gate_desk_phone)}">Call gate desk</a>`:"";
+
+const offlineNote=()=>S.down
+  ? `<p class="sm" style="color:var(--wait)">No connection right now. This page keeps trying,
+     and updates by itself once you are back online.</p>`
+  : "";
 
 function tracker(){
   const v=S.visit, esc=!!v.escalated_at, done=!!v.decided_at;
@@ -107,6 +118,7 @@ function view(){
       ${tracker()}<button class="btn" onclick="go('inout')">Open pass</button>${gate()}
       <button class="btn plain" onclick="home()">Go to home</button>`;
     return `<div class="state wait">${ico("clock")}<div><h3>Not approved yet</h3><p>Do not enter until this says Approved.</p></div></div>
+      ${offlineNote()}
       ${tracker()}
       <div class="facts">${fact("Reference",v.reference)}
         ${fact("With",st()==="escalated"?"Backup approver":"First approver")}
@@ -119,7 +131,8 @@ function view(){
       <button class="btn" onclick="again()">New request</button>`;
     if(!hasPass()) return `<h2>No pass yet</h2><p>Your pass appears here once a request is approved.</p>
       <button class="btn" onclick="go(S.visit?'status':'step1')">${S.visit?"Check my request":"Request a Visit"}</button>`;
-    return `<div class="pass"><span class="ptop">${st()==="inside"?"Exit pass":"Entry pass"}</span><b>${x(S.visit.reference)}</b>
+    return `${offlineNote()}
+      <div class="pass"><span class="ptop">${st()==="inside"?"Exit pass":"Entry pass"}</span><b>${x(S.visit.reference)}</b>
       <span class="pcut"></span>
       <span class="pfoot">${x(S.visit.name||"Visitor")}${S.visit.guests.length?" +"+S.visit.guests.length:""} &middot; today</span></div>
       <p class="sm">${st()==="inside"?"Show this again on the way out. The guard closes it.":"Show this at the gate. The guard looks it up."}</p>
@@ -156,11 +169,16 @@ function drop(i){S.g.splice(i,1);render()}
 function home(){S.s="home";S.hist=[];S.sheet=0;render();$("view").scrollTop=0}
 function again(){S.visit=null;localStorage.removeItem("tok");S.g=[];S.err="";go("step1",0)}
 
-async function load(url,options){
-  const r=await fetch(url,options);
-  const data=await r.json().catch(()=>({}));
-  if(!r.ok)throw new Error(data.error||`Request failed (${r.status})`);
-  return data;
+// Give up on a stalled request instead of hanging forever.
+async function load(url,options,ms=POLL_TIMEOUT){
+  const stop=new AbortController();
+  const timer=setTimeout(()=>stop.abort(),ms);
+  try{
+    const r=await fetch(url,{...options,signal:stop.signal});
+    const data=await r.json().catch(()=>({}));
+    if(!r.ok)throw new Error(data.error||`Request failed (${r.status})`);
+    return data;
+  }finally{clearTimeout(timer)}
 }
 
 async function send(){
@@ -168,7 +186,7 @@ async function send(){
   try{
     S.visit=await load("/api/requests",{method:"POST",headers:{"Content-Type":"application/json"},
       body:JSON.stringify({name:S.f.name,phone:S.f.phone,address:S.f.address,
-        reason:reasonText(),visiting:S.f.visiting,guests:S.g})});
+        reason:reasonText(),visiting:S.f.visiting,guests:S.g})},SEND_TIMEOUT);
     S.err="";
     localStorage.setItem("tok",S.visit.token);
     S.hist=["home"];
@@ -180,14 +198,23 @@ async function send(){
   }
 }
 
+// One request at a time. The next is scheduled only after this one ends,
+// so a slow connection never stacks up overlapping polls.
 async function poll(){
-  if(!S.visit||!live())return;
-  try{
-    const v=await load(`/api/visit/${S.visit.token}`);
-    const changed=v.status!==S.visit.status;
-    S.visit=v;
-    if(changed&&["status","home","inout"].includes(S.s))render();
-  }catch(err){}
+  if(S.visit&&live()){
+    try{
+      const v=await load(`/api/visit/${S.visit.token}`);
+      const changed=v.status!==S.visit.status;
+      S.visit=v;
+      S.wait=POLL_EVERY;
+      if(S.down){S.down=0;render()}
+      else if(changed&&LIVE_VIEWS.includes(S.s))render();
+    }catch(err){
+      S.wait=Math.min(S.wait*2,POLL_SLOWEST);
+      if(!S.down){S.down=1;if(LIVE_VIEWS.includes(S.s))render()}
+    }
+  }
+  setTimeout(poll,S.wait);
 }
 
 function render(){
@@ -209,6 +236,6 @@ async function start(){
     catch(err){localStorage.removeItem("tok")}
   }
   render();
-  setInterval(poll,3000);
+  poll();
 }
 start();

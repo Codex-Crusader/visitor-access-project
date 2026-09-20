@@ -36,4 +36,14 @@ ESCALATE_MINUTES = _int("ESCALATE_MINUTES", 30)
 # Days a visit record is kept. The privacy screen states this number.
 RETAIN_DAYS = _int("RETAIN_DAYS", 90)
 
+# Limits per caller per hour. The web address is public, so both are capped.
+# Counted per IP address. People on one campus WiFi share an address, so this
+# has to be generous enough for a whole group, not one person.
+REQUESTS_PER_HOUR = _int("REQUESTS_PER_HOUR", 60)
+# True when a proxy such as Render sits in front and sets X-Forwarded-For.
+# Leave it false on your own machine, where nothing sets that header and
+# trusting it would let anyone fake their address.
+BEHIND_PROXY = os.getenv("BEHIND_PROXY", "").strip().lower() in ("1", "true", "yes")
+GATE_TRIES_PER_HOUR = _int("GATE_TRIES_PER_HOUR", 60)
+
 DATABASE_PATH = os.getenv("DATABASE_PATH", "visits.db")

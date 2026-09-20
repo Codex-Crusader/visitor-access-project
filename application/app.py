@@ -64,8 +64,58 @@ def clean_fields(payload):
     return fields, guests, None
 
 
+_hits = {}
+_hits_lock = threading.Lock()
+
+
+def caller():
+    """The address to count against.
+
+    Proxies append to X-Forwarded-For, so the last entry is the one our own
+    proxy saw. Reading the first entry instead would let anyone invent an
+    address and get a fresh allowance on every request.
+    """
+    forwarded = request.headers.get("X-Forwarded-For", "")
+    if forwarded and config.BEHIND_PROXY:
+        return forwarded.split(",")[-1].strip()
+    return request.remote_addr or "?"
+
+
+def recent_hits(bucket, seconds):
+    key = (bucket, caller())
+    cutoff = time.time() - seconds
+    with _hits_lock:
+        hits = [t for t in _hits.get(key, []) if t > cutoff]
+        _hits[key] = hits
+        return len(hits)
+
+
+def record_hit(bucket):
+    key = (bucket, caller())
+    with _hits_lock:
+        _hits.setdefault(key, []).append(time.time())
+        if len(_hits) > 10000:  # never let the table grow without bound
+            old = time.time() - 3600
+            for stale in [k for k, v in _hits.items() if not any(t > old for t in v)]:
+                del _hits[stale]
+
+
+def too_many(bucket, limit, seconds):
+    """True when this caller is over the limit. Counts every call."""
+    if recent_hits(bucket, seconds) >= limit:
+        return True
+    record_hit(bucket)
+    return False
+
+
 def gate_key_ok():
-    return hmac.compare_digest(request.headers.get("X-Gate-Key", ""), config.GATE_KEY)
+    """Only wrong guesses count, so a busy guard is never locked out."""
+    if recent_hits("gate", 3600) >= config.GATE_TRIES_PER_HOUR:
+        return False
+    if hmac.compare_digest(request.headers.get("X-Gate-Key", ""), config.GATE_KEY):
+        return True
+    record_hit("gate")
+    return False
 
 
 def signature_ok():
@@ -119,6 +169,10 @@ def read_config():
 
 @app.post("/api/requests")
 def create_request():
+    # The address is public, so cap how often one caller can make the phone buzz.
+    if too_many("request", config.REQUESTS_PER_HOUR, 3600):
+        return jsonify(error="Too many requests from here. Try again later."), 429
+
     fields, guests, error = clean_fields(request.get_json(silent=True) or {})
     if error:
         return jsonify(error=error), 400

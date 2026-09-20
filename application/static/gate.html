@@ -57,10 +57,13 @@ input:focus{background:var(--paper);border-color:var(--brand2);outline:none;box-
 <body>
 <div class="app">
   <h1>Gate Desk</h1>
-  <p class="sub">Type the code on the visitor's pass.</p>
-  <label for="code">Pass code</label>
-  <input id="code" placeholder="VR-0000" autocomplete="off" autocapitalize="characters">
-  <button class="btn" id="look">Check pass</button>
+  <p class="sub" id="sub">Type the code on the visitor's pass.</p>
+  <div id="entry" hidden>
+    <label for="code">Pass code</label>
+    <input id="code" placeholder="VR-0000" autocomplete="off" autocapitalize="characters"
+           inputmode="numeric" enterkeyhint="go">
+    <button class="btn" id="look">Check pass</button>
+  </div>
   <div id="out"></div>
 </div>
 <script src="gate.js"></script>

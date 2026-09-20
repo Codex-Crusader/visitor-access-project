@@ -124,6 +124,9 @@ the code agree. Change one and change the other.
 | `GATE_DESK_PHONE` | Number shown on the "Call gate desk" button |
 | `ESCALATE_MINUTES` | Minutes before the backup approver is asked. Default 30 |
 | `RETAIN_DAYS` | Days a record is kept before deletion. Default 90 |
+| `REQUESTS_PER_HOUR` | New requests allowed per address per hour. Default 60 |
+| `GATE_TRIES_PER_HOUR` | Wrong gate keys allowed per address per hour. Default 60 |
+| `BEHIND_PROXY` | Set to `true` on Render. Leave unset on your own machine |
 
 Write every phone number in E.164 form: a plus sign, the country code, then the
 number. Each approver number must also be on the recipient list in the Meta API
@@ -237,12 +240,38 @@ The second proves the app survives load: sixty visitors submitting at the same
 instant all get unique codes, and twenty guards pressing Record entry on the same
 visitor produce exactly one entry, not twenty.
 
+## Limits and who they protect
+
+Both limits count per address, per hour.
+
+`REQUESTS_PER_HOUR` stops a stranger who finds the public address from making
+the approver's phone ring all night. People on one campus WiFi share a single
+address, so the default of 60 is set for a whole group rather than one person.
+Raise it if a class tests at once.
+
+`GATE_TRIES_PER_HOUR` counts only **wrong** gate keys. Correct keys never count,
+so a guard working a busy gate is never locked out, while guessing stays capped.
+
+`BEHIND_PROXY` decides where the caller's address is read from. On Render a
+proxy sits in front and appends the true address to `X-Forwarded-For`, so the
+server reads the last entry. On your own machine nothing sets that header, and
+trusting it would let anyone invent an address and get a fresh allowance on
+every request. Set it to `true` only when a proxy really is in front.
+
 ## Known limits
 
 - The gate key is one shared password. Every guard uses the same one, and there
   is no record of which guard pressed the button. It also unlocks the full export,
   so anyone with the key can download every visitor's name, phone and address.
+  A guard types it once per device. The page asks for it before it shows anything
+  else, because a code without a key can do nothing.
 - The approver is one fixed number. A real deployment would look up the student
   being visited and message that person.
 - The 4-digit code is short enough to guess, which is why it never works on its
   own. Do not make it do more than it does here.
+- A visitor's browser holds the only link to their request. Clear the browser
+  data, or switch phone, and they cannot reach it again, because the short code
+  deliberately retrieves nothing. They must send a new request. This is the
+  price of not letting anyone read a stranger's details by guessing a code.
+- Records live in a file on the server. On a free host with no disk, a redeploy
+  wipes them. Download the CSV before redeploying if the log matters.

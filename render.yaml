@@ -30,3 +30,11 @@ services:
         value: "30"
       - key: RETAIN_DAYS
         value: "90"
+      # A proxy sits in front on Render, so read the caller's address from the
+      # last entry of X-Forwarded-For rather than trusting the first.
+      - key: BEHIND_PROXY
+        value: "true"
+      - key: REQUESTS_PER_HOUR
+        value: "60"
+      - key: GATE_TRIES_PER_HOUR
+        value: "60"

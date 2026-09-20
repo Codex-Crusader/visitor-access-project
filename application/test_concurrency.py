@@ -11,6 +11,8 @@ os.environ.update(
     BACKUP_APPROVER="+911234567890", GUARD="+911234567890",
     GATE_KEY="k", GATE_DESK_PHONE="+912200000000",
     ESCALATE_MINUTES="30", RETAIN_DAYS="1",
+    # This suite tests database contention, not the rate limit.
+    REQUESTS_PER_HOUR="100000", GATE_TRIES_PER_HOUR="100000",
     DATABASE_PATH=os.path.join(tempfile.mkdtemp(), "load.db"),
 )
 
