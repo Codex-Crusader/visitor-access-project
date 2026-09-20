@@ -125,7 +125,6 @@ the code agree. Change one and change the other.
 | `ESCALATE_MINUTES` | Minutes before the backup approver is asked. Default 30 |
 | `RETAIN_DAYS` | Days a record is kept before deletion. Default 90 |
 | `REQUESTS_PER_HOUR` | New requests allowed per address per hour. Default 60 |
-| `GATE_TRIES_PER_HOUR` | Wrong gate keys allowed per address per hour. Default 60 |
 | `BEHIND_PROXY` | Set to `true` on Render. Leave unset on your own machine |
 
 Write every phone number in E.164 form: a plus sign, the country code, then the
@@ -249,8 +248,16 @@ the approver's phone ring all night. People on one campus WiFi share a single
 address, so the default of 60 is set for a whole group rather than one person.
 Raise it if a class tests at once.
 
-`GATE_TRIES_PER_HOUR` counts only **wrong** gate keys. Correct keys never count,
-so a guard working a busy gate is never locked out, while guessing stays capped.
+There is deliberately no lockout on the gate key. A correct key always works.
+The key is long random text, so guessing it is not a real threat, while a
+lockout is: everyone at one gate shares one address, so a single person
+mistyping would shut out the whole gate for an hour.
+
+`BEHIND_PROXY` must be set to `true` on Render, and it is easy to miss.
+Render applies environment changes in `render.yaml` only on a blueprint sync,
+not on an ordinary deploy, so check the service's own Environment page after
+adding one. Without it every visitor is counted as the same caller, because
+the address the server sees is Render's proxy rather than the person.
 
 `BEHIND_PROXY` decides where the caller's address is read from. On Render a
 proxy sits in front and appends the true address to `X-Forwarded-For`, so the

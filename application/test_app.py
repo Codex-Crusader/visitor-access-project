@@ -251,26 +251,26 @@ assert statuses.count(201) == limit, statuses
 assert statuses.count(429) == 5, statuses
 print(f"  request flood: {statuses.count(201)} allowed, {statuses.count(429)} refused")
 
-# Guessing the gate key is capped.
+# Wrong gate keys are always refused.
 _app._hits.clear()
 tries = [client.get("/api/pass/VR-0001", headers={"X-Gate-Key": f"guess{i}"}).status_code
          for i in range(65)]
 assert all(s == 403 for s in tries), set(tries)
 print(f"  gate key: {len(tries)} wrong guesses all refused")
 
-# A busy guard must never be locked out by their own successful work.
-_app._hits.clear()
-for _ in range(200):
+# The correct key must keep working no matter how many wrong ones came before.
+# Everyone at one gate shares an address, so a lockout would shut out the guard.
+for _ in range(50):
     assert client.get(f"/api/pass/{ref2}", headers=KEY).status_code == 200
-print("  200 correct-key calls in a row all served, no lockout")
+print("  correct key still works after 65 wrong guesses, and 50 times running")
 
-# Wrong guesses must not be able to buy a fresh allowance with a fake header.
+# The request limit must not be buyable with a made-up address header.
 _app._hits.clear()
-for i in range(300):
-    client.get("/api/pass/VR-0001",
-               headers={"X-Gate-Key": "guess", "X-Forwarded-For": f"9.9.9.{i % 250}"})
+for i in range(20):
+    client.post("/api/requests", json={**payload, "phone": "123"},
+                headers={"X-Forwarded-For": f"9.9.9.{i}"})
 assert len(_app._hits) == 1, f"spoofed headers created {len(_app._hits)} buckets"
-print("  300 guesses behind 250 fake addresses still counted as one caller")
+print("  20 calls behind 20 fake addresses still counted as one caller")
 
 # The limit must never block Meta's webhook, which shares no bucket with the gate.
 _app._hits.clear()

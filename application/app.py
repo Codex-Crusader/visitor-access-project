@@ -81,15 +81,6 @@ def caller():
     return request.remote_addr or "?"
 
 
-def recent_hits(bucket, seconds):
-    key = (bucket, caller())
-    cutoff = time.time() - seconds
-    with _hits_lock:
-        hits = [t for t in _hits.get(key, []) if t > cutoff]
-        _hits[key] = hits
-        return len(hits)
-
-
 def record_hit(bucket):
     key = (bucket, caller())
     with _hits_lock:
@@ -102,20 +93,26 @@ def record_hit(bucket):
 
 def too_many(bucket, limit, seconds):
     """True when this caller is over the limit. Counts every call."""
-    if recent_hits(bucket, seconds) >= limit:
-        return True
+    key = (bucket, caller())
+    cutoff = time.time() - seconds
+    with _hits_lock:
+        hits = [t for t in _hits.get(key, []) if t > cutoff]
+        _hits[key] = hits
+        if len(hits) >= limit:
+            return True
     record_hit(bucket)
     return False
 
 
 def gate_key_ok():
-    """Only wrong guesses count, so a busy guard is never locked out."""
-    if recent_hits("gate", 3600) >= config.GATE_TRIES_PER_HOUR:
-        return False
-    if hmac.compare_digest(request.headers.get("X-Gate-Key", ""), config.GATE_KEY):
-        return True
-    record_hit("gate")
-    return False
+    """A correct key always works.
+
+    There is deliberately no lockout. The key is long random text, so guessing
+    it is not a real threat, while a lockout is: people at one gate share one
+    address, so one person mistyping would shut out everybody else, and the
+    guard who is holding up a queue cannot tell a refusal from a wrong key.
+    """
+    return hmac.compare_digest(request.headers.get("X-Gate-Key", ""), config.GATE_KEY)
 
 
 def signature_ok():

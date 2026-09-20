@@ -36,5 +36,3 @@ services:
         value: "true"
       - key: REQUESTS_PER_HOUR
         value: "60"
-      - key: GATE_TRIES_PER_HOUR
-        value: "60"
