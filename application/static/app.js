@@ -130,7 +130,8 @@ function view(){
     <div class="facts">${["Name","Phone","Address","Reason","Who you are visiting"].map(i=>`<div><span>${i}</span></div>`).join("")}</div>
     <p class="sm">No selfie, no ID number, no vehicle number.</p>
     <p class="sm">The campus keeps your request, and the times you entered and left,
-    for ${S.cfg.retain_days} days. After that it is deleted automatically.
+    for ${S.cfg.retain_days===1?"one day":S.cfg.retain_days+" days"}. After that it is
+    deleted automatically.
     The gate desk can see these details while your visit is open.</p>`;
 
   case "help": return `<h2>Getting help</h2>
