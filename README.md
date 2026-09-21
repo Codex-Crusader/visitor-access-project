@@ -138,6 +138,7 @@ The Flask app is a separate program with its own setup. See
 
 Every push to `main` runs [`deploy.yml`](.github/workflows/deploy.yml). It uploads the repository
 root as a Pages artifact. There is no build step and no `gh-pages` branch. On a new repository,
+make it public first, because a free account does not serve Pages from a private repository. Then
 set Source to **GitHub Actions** under Settings, then Pages, before the first push.
 
 > [!WARNING]
