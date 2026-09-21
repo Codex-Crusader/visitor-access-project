@@ -3,6 +3,10 @@ services:
     name: visitor-access
     runtime: python
     plan: free
+    # The app lives in application/, not at the repository root. The Render
+    # dashboard already has this, but a blueprint sync reads only this file
+    # and would drop it, which breaks the build.
+    rootDir: application
     buildCommand: pip install -r requirements.txt
     # One worker only. The escalation timer is a thread inside the process,
     # so a second worker would send every backup message twice.
