@@ -8,7 +8,7 @@ const S = {s:"home", f:{name:"",phone:"",address:"",reason:"",other:"",visiting:
   visit:null, cfg:{gate_desk_phone:"",escalate_minutes:30,retain_days:90}, err:"", hist:[], sheet:0,
   wait:POLL_EVERY, down:0};
 
-const $=i=>document.getElementById(i);
+const el = i=>document.getElementById(i);
 const x=s=>String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const set=(k,v)=>{S.f[k]=v;if(S.e[k]){delete S.e[k];unmark(k)}};
 const st=()=>S.visit?S.visit.status:"none";
@@ -18,7 +18,7 @@ const hasPass=()=>st()==="approved"||st()==="inside";
 const hm=t=>t?new Date(t).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"}):"—";
 const plus=(t,m)=>hm(new Date(new Date(t).getTime()+m*60000).toISOString());
 
-function go(s,keep=1){if(keep)S.hist.push(S.s);S.s=s;S.sheet=0;render();$("view").scrollTop=0}
+function go(s,keep=1){if(keep)S.hist.push(S.s);S.s=s;S.sheet=0;render();el("view").scrollTop=0}
 function back(){S.s=S.hist.pop()||"home";S.sheet=0;render()}
 
 const T={home:["",0],step1:["Request a Visit",1],step2:["Request a Visit",1],review:["Review",1],sending:["",0],
@@ -32,8 +32,11 @@ const ICONS={
  cross:'<circle cx="12" cy="12" r="9"/><path d="M15 9l-6 6M9 9l6 6"/>'};
 const ico=n=>`<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[n]}</svg>`;
 const fact=(k,v)=>`<div><span>${k}</span><b>${x(v||"—")}</b></div>`;
-const flag=k=>S.e[k]?`class="bad" aria-invalid="true" aria-describedby="e_${k}"`:"";
-const note=k=>S.e[k]?`<div class="badmsg" id="e_${k}">${x(S.e[k])}</div>`:"";
+// The class name goes in the markup. The two aria attributes are added after
+// the markup is in the page, by mark(), because an attribute that appears and
+// disappears cannot be written into a template and still read as valid HTML.
+const flag=k=>S.e[k]?"bad":"";
+const note=k=>S.e[k]?`<div class="bad-note" id="e_${k}">${x(S.e[k])}</div>`:"";
 const gate=()=>S.cfg.gate_desk_phone?`<a class="btn plain" href="tel:${x(S.cfg.gate_desk_phone)}">Call gate desk</a>`:"";
 
 const offlineNote=()=>S.down
@@ -41,15 +44,18 @@ const offlineNote=()=>S.down
      and updates by itself once you are back online.</p>`
   : "";
 
+// How far the blue line has run down the tracker. mark() writes it on to the
+// bar after the markup is in the page, so the template holds no computed CSS.
+const railPct=()=>{const v=S.visit;return !v?0:v.decided_at?100:v.escalated_at?60:25};
+
 function tracker(){
   const v=S.visit, esc=!!v.escalated_at, done=!!v.decided_at;
-  const pct=done?100:esc?60:25;
-  return `<ul class="track"><span class="rail"><b style="height:${pct}%"></b></span>
-    <li class="done"><b class="t">Request sent</b><span>${hm(v.created_at)}</span></li>
-    <li class="${esc||done?"done":"now"}"><b class="t">First approver</b>
+  return `<ul class="track"><span class="rail"><b></b></span>
+    <li data-at="done"><b class="t">Request sent</b><span>${hm(v.created_at)}</span></li>
+    <li data-at="${esc||done?"done":"now"}"><b class="t">First approver</b>
       <span>${esc?"No answer by "+hm(v.escalated_at):done?"Replied at "+hm(v.decided_at):"Sent on WhatsApp, no reply yet"}</span></li>
-    ${esc?`<li class="${done?"done":"now"}"><b class="t">Backup approver</b><span>Took over at ${hm(v.escalated_at)}</span></li>`:""}
-    <li class="${done?"done":""}"><b class="t">Decision</b>
+    ${esc?`<li data-at="${done?"done":"now"}"><b class="t">Backup approver</b><span>Took over at ${hm(v.escalated_at)}</span></li>`:""}
+    <li data-at="${done?"done":""}"><b class="t">Decision</b>
       <span>${done?word()+" at "+hm(v.decided_at):"Not yet"}</span></li>
   </ul>`;
 }
@@ -57,7 +63,7 @@ function tracker(){
 function view(){
   switch(S.s){
   case "home": return `<div class="hero"><h2>Campus Visitor Access</h2><p class="heroP">Ask to visit, then watch the decision happen.</p></div>
-    ${S.visit&&st()!=="closed"?`<button class="live ${["approved","inside"].includes(st())?"go":st()==="declined"?"stop":""}" onclick="go('status')">
+    ${S.visit&&st()!=="closed"?`<button class="live" data-tone="${["approved","inside"].includes(st())?"go":st()==="declined"?"stop":""}" onclick="go('status')">
       <b>${word()}</b><span>${x(S.visit.reference)}</span></button>`:""}
     <div class="menu">
       <button onclick="go('step1')">Request a Visit<i>&rsaquo;</i></button>
@@ -69,13 +75,13 @@ function view(){
 
   case "step1": return `<div class="steps"><i class="on"></i><i></i></div>
     <label for="f_name">Your name</label>
-    <input id="f_name" ${flag("name")} value="${x(S.f.name)}" oninput="set('name',this.value)">
+    <input id="f_name" class="${flag("name")}" value="${x(S.f.name)}" oninput="set('name',this.value)">
     ${note("name")}
     <label for="f_phone">Phone</label>
-    <input id="f_phone" inputmode="numeric" ${flag("phone")} value="${x(S.f.phone)}" oninput="set('phone',this.value)">
+    <input id="f_phone" inputmode="numeric" class="${flag("phone")}" value="${x(S.f.phone)}" oninput="set('phone',this.value)">
     ${note("phone")}
     <label for="f_address">Address</label>
-    <input id="f_address" ${flag("address")} value="${x(S.f.address)}" oninput="set('address',this.value)">
+    <input id="f_address" class="${flag("address")}" value="${x(S.f.address)}" oninput="set('address',this.value)">
     ${note("address")}
     <button class="btn" onclick="n1()">Continue</button>
     <button class="btn plain" onclick="S.sheet=1;render()">Finish later</button>`;
@@ -84,19 +90,19 @@ function view(){
     return `<div class="steps"><i class="on"></i><i class="on"></i></div>
     <label>Reason</label>
     <div class="chips ${S.e.reason?"bad":""}" id="f_reason">${REASONS.map(r=>
-      `<button type="button" aria-pressed="${S.f.reason===r}" onclick="pick('${r}')">${r}</button>`).join("")}</div>
+      `<button type="button" aria-pressed="false" onclick="pick('${r}')">${r}</button>`).join("")}</div>
     ${note("reason")}
-    ${S.f.reason==="Other"?`<input id="f_other" style="margin-top:10px" ${flag("other")} value="${x(S.f.other)}" oninput="set('other',this.value)" placeholder="Say briefly why">
+    ${S.f.reason==="Other"?`<input id="f_other" style="margin-top:10px" class="${flag("other")}" value="${x(S.f.other)}" oninput="set('other',this.value)" placeholder="Say briefly why">
       ${note("other")}`:""}
     <label for="f_visiting">Who are you visiting?</label>
-    <input id="f_visiting" ${flag("visiting")} value="${x(S.f.visiting)}" oninput="set('visiting',this.value)" placeholder="Student name or roll number">
+    <input id="f_visiting" class="${flag("visiting")}" value="${x(S.f.visiting)}" oninput="set('visiting',this.value)" placeholder="Student name or roll number">
     ${note("visiting")}
     ${S.e.visiting===STAFF
       ?`<p class="sm">Staff no longer approve visits. Give the student name or the roll number.</p>`
       :`<p class="sm">We pick the approver for you.</p>`}
     <label>Anyone with you?</label>
     ${S.g.map((g,i)=>`<div class="guest">${x(g)}<button onclick="drop(${i})">Remove</button></div>`).join("")}
-    <div class="addrow"><input id="gn" placeholder="Their name" onkeydown="if(event.key==='Enter'){add()}"><button onclick="add()">Add</button></div>
+    <div class="add-row"><input id="gn" placeholder="Their name"><button onclick="add()">Add</button></div>
     <button class="btn" onclick="n2()">Review</button>
     <button class="btn plain" onclick="S.sheet=1;render()">Finish later</button>`;
 
@@ -105,7 +111,7 @@ function view(){
       ${fact("Name",S.f.name)}${fact("Phone",S.f.phone)}${fact("Address",S.f.address)}
       ${fact("Reason",reasonText())}${fact("Visiting",S.f.visiting)}${S.g.length?fact("With you",S.g.join(", ")):""}
     </div>
-    <p class="sm">No answer in ${S.cfg.escalate_minutes} minutes and it moves to a backup approver. You do not fill this in again.</p>
+    <p class="sm">No answer in ${S.cfg.escalate_minutes} minutes, and it moves to a backup approver. You do not fill this in again.</p>
     <button class="btn" onclick="send()">Send request</button>
     <button class="btn plain" onclick="back()">Edit</button>`;
 
@@ -144,11 +150,11 @@ function view(){
     const out=st()==="inside";
     return `${offlineNote()}
       <div class="pass ${out?"out":"in"}">
-      <span class="ptop"><span class="parrow">${out?"&uarr;":"&darr;"}</span>${out?"Exit pass":"Entry pass"}</span>
+      <span class="ptop"><span class="pass-arrow">${out?"&uarr;":"&darr;"}</span>${out?"Exit pass":"Entry pass"}</span>
       <b>${x(S.visit.reference)}</b>
-      <span class="pcut"></span>
-      <span class="pfoot">${x(S.visit.name||"Visitor")}${S.visit.guests.length?" +"+S.visit.guests.length:""} &middot; today</span>
-      <span class="pway">${out?"On your way out":"Coming in"}</span></div>
+      <span class="pass-cut"></span>
+      <span class="pass-foot">${x(S.visit.name||"Visitor")}${S.visit.guests.length?" +"+S.visit.guests.length:""} &middot; today</span>
+      <span class="pass-way">${out?"On your way out":"Coming in"}</span></div>
       <p class="sm">${out?"Show this again on the way out. The guard closes it.":"Show this at the gate. The guard looks it up."}</p>
       ${gate()}
       <button class="btn plain" onclick="home()">Go to home</button>`;}
@@ -180,22 +186,43 @@ const STEP2=["reason","other","visiting"];
 // approver's WhatsApp message is built out of these fields, so a line break
 // here would let a visitor forge an extra line in it. The server refuses the
 // same set, so this only saves a round trip.
-const NOTTEXT=/[\p{C}\p{Zl}\p{Zp}]/u;
+const NOT_TEXT=/[\p{C}\p{Zl}\p{Zp}]/u;
 const tidy=t=>String(t||"").trim().replace(/\s+/g," ");
 
 function needed(key,label){
   const raw=S.f[key]||"";
   if(raw.length>MAX)return `${label} is too long. Use ${MAX} characters or fewer.`;
-  if(NOTTEXT.test(raw))return `${label} has characters that are not allowed.`;
+  if(NOT_TEXT.test(raw))return `${label} has characters that are not allowed.`;
   if(!tidy(raw))return `${label} is required.`;
   return "";
 }
 
 function unmark(key){
-  const box=$("f_"+key);
-  if(box){box.classList.remove("bad");box.removeAttribute("aria-invalid")}
-  const message=$("e_"+key);
+  const box=el("f_"+key);
+  if(box){box.classList.remove("bad");box.removeAttribute("aria-invalid");box.removeAttribute("aria-describedby")}
+  const message=el("e_"+key);
   if(message)message.remove();
+}
+
+// Everything render() cannot put in the markup: attributes that come and go, a
+// height that is a number, and the two handlers that need their own event.
+// The template stays plain HTML, and this finishes the page off.
+function mark(){
+  Object.keys(S.f).forEach(k=>{
+    const box=el("f_"+k);
+    if(!box)return;
+    if(S.e[k]){box.setAttribute("aria-invalid","true");box.setAttribute("aria-describedby","e_"+k)}
+    else{box.removeAttribute("aria-invalid");box.removeAttribute("aria-describedby")}
+  });
+  const chips=el("f_reason");
+  if(chips)chips.querySelectorAll("button").forEach((b,i)=>
+    b.setAttribute("aria-pressed",String(S.f.reason===REASONS[i])));
+  const bar=document.querySelector(".rail b");
+  if(bar)bar.style.height=railPct()+"%";
+  const guest=el("gn");
+  if(guest)guest.onkeydown=e=>{if(e.key==="Enter")add()};
+  const sheet=document.querySelector(".sheet");
+  if(sheet)sheet.onclick=e=>{if(e.target===sheet){S.sheet=0;render()}};
 }
 
 // Every field is checked, so three empty boxes turn red together rather than
@@ -206,7 +233,7 @@ function settle(keys,found){
   const first=keys.find(k=>S.e[k]);
   if(!first)return true;
   render();
-  const box=$("f_"+first);
+  const box=el("f_"+first);
   if(box){box.scrollIntoView({block:"nearest"});box.focus()}
   return false;
 }
@@ -256,22 +283,22 @@ function pick(r){
   if(r!=="Other")S.f.other="";
   else delete S.e.other;
   render();
-  if(r==="Other"){const i=$("f_other");if(i)i.focus()}
+  if(r==="Other"){const i=el("f_other");if(i)i.focus()}
 }
 function add(){
-  const raw=$("gn").value;
-  if(raw.length>MAX||NOTTEXT.test(raw))return;
+  const raw=el("gn").value;
+  if(raw.length>MAX||NOT_TEXT.test(raw))return;
   const v=tidy(raw);
   if(!v||S.g.length>=10)return;
   S.g.push(v);
   render();
 }
 function drop(i){S.g.splice(i,1);render()}
-function home(){S.s="home";S.hist=[];S.sheet=0;render();$("view").scrollTop=0}
+function home(){S.s="home";S.hist=[];S.sheet=0;render();el("view").scrollTop=0}
 function again(){S.visit=null;localStorage.removeItem("tok");S.g=[];S.e={};S.err="";go("step1",0)}
 
 // Give up on a stalled request instead of hanging forever.
-async function load(url,options,ms=POLL_TIMEOUT){
+async function load(url,options={},ms=POLL_TIMEOUT){
   const stop=new AbortController();
   const timer=setTimeout(()=>stop.abort(),ms);
   try{
@@ -316,22 +343,23 @@ async function poll(){
       if(!S.down){S.down=1;if(LIVE_VIEWS.includes(S.s))render()}
     }
   }
-  setTimeout(poll,S.wait);
+  setTimeout(()=>void poll(),S.wait);
 }
 
 function render(){
   const [t,b]=T[S.s]||["",0];
-  $("nav").innerHTML=(b?`<button class="back" onclick="back()">&lsaquo;</button>`:"")+(t?`<h1>${t}</h1>`:"");
-  $("view").innerHTML=view();
-  $("over").innerHTML=S.sheet?`<div class="sheet" onclick="if(event&&event.target===this){S.sheet=0;render()}">
+  el("nav").innerHTML=(b?`<button class="back" onclick="back()">&lsaquo;</button>`:"")+(t?`<h1>${t}</h1>`:"");
+  el("view").innerHTML=view();
+  el("over").innerHTML=S.sheet?`<div class="sheet">
     <div class="box"><h2>Finish later?</h2><p>Everything you typed is saved. Nothing is sent.</p>
     <button class="btn plain" onclick="S.sheet=0;render()">Keep filling</button>
     <button class="btn alt" onclick="S.sheet=0;S.s='home';S.hist=[];render()">Save and exit</button></div></div>`:"";
+  mark();
 }
 
 async function start(){
   render();
-  // No settings means the built in defaults, which are good enough to start.
+  // No settings mean the built-in defaults, which are good enough to start.
   try{S.cfg=await load("/api/config")}catch{/* keep the defaults */}
   const tok=localStorage.getItem("tok");
   if(tok){
@@ -344,6 +372,6 @@ async function start(){
     catch{localStorage.removeItem("tok")}
   }
   render();
-  poll();
+  void poll();
 }
-start();
+void start();

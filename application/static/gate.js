@@ -1,6 +1,9 @@
 const CALL_TIMEOUT = 75000;  // a sleeping free server can take ~50s to wake
 
-const $ = i => document.getElementById(i);
+const el = i => document.getElementById(i);
+// These two are in gate.html from the start, so they are looked up once.
+// The gate key box is built by render(), so that one stays a lookup.
+const out = el("out"), codeBox = el("code");
 const x = s => String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const hm = t => t ? new Date(t).toLocaleTimeString([], {hour:"2-digit", minute:"2-digit"}) : "—";
 
@@ -46,51 +49,55 @@ const fact = (k, v) => `<div><span>${k}</span><b>${x(v || "—")}</b></div>`;
 const problem = t => `<div class="state bad"><h2>Cannot do that</h2><p>${x(t)}</p></div>`;
 const working = t => `<div class="state wait"><h2>${x(t)}</h2><p>This can take up to a minute if the server was asleep.</p></div>`;
 
+// The try covers the network only. A server that answers and refuses is not a
+// failure of the call, so those two refusals are raised after the try ends.
 async function call(url, options) {
   const stop = new AbortController();
   const timer = setTimeout(() => stop.abort(), CALL_TIMEOUT);
+  let r, data;
   try {
-    const r = await fetch(url, {...options, headers: {"X-Gate-Key": key()}, signal: stop.signal});
-    const data = await r.json().catch(() => ({}));
-    if (r.status === 403) throw new Error("That gate key is not right. Check it and save it again.");
-    if (!r.ok) throw new Error(data.error || `Something went wrong (${r.status})`);
-    return data;
+    r = await fetch(url, {...options, headers: {"X-Gate-Key": key()}, signal: stop.signal});
+    data = await r.json().catch(() => ({}));
   } catch (err) {
-    if (err.name === "AbortError") throw new Error("The server did not answer. Check your connection and try again.");
-    throw err;
+    throw err.name === "AbortError"
+      ? new Error("The server did not answer. Check your connection and try again.")
+      : err;
   } finally {
     clearTimeout(timer);
   }
+  if (r.status === 403) throw new Error("That gate key is not right. Check it and save it again.");
+  if (!r.ok) throw new Error(data.error || `Something went wrong (${r.status})`);
+  return data;
 }
 
 function render() {
   // The key comes first. Without it nothing else can work, so nothing else shows.
   const haveKey = !!key();
-  $("entry").hidden = !haveKey;
-  $("sub").textContent = haveKey
+  el("entry").hidden = !haveKey;
+  el("sub").textContent = haveKey
     ? "Type the code on the visitor's pass."
     : "First, type the gate key your admin gave you.";
 
   if (!haveKey) {
-    $("out").innerHTML = `
+    out.innerHTML = `
       ${notice ? problem(notice) : ""}
       <label for="k">Gate key</label>
       <input id="k" type="password" style="text-transform:none;letter-spacing:normal;font-size:1rem"
              enterkeyhint="go">
       <button class="btn" onclick="saveKey()">Save key</button>`;
-    const box = $("k");
+    const box = el("k");
     box.onkeydown = e => { if (e.key === "Enter") saveKey(); };
     box.focus();
     return;
   }
 
   if (busy) {
-    $("out").innerHTML = working(busy);
+    out.innerHTML = working(busy);
     return;
   }
 
   if (!visit) {
-    $("out").innerHTML = `
+    out.innerHTML = `
       ${notice ? problem(notice) : ""}
       <button class="btn plain" onclick="downloadLog()">Download visit log</button>
       <button class="btn plain" onclick="forgetKey()">Change gate key</button>`;
@@ -113,7 +120,7 @@ function render() {
       ${visit.guests && visit.guests.length ? fact("With", visit.guests.join(", ")) : ""}
       ${fact("Approved", hm(visit.decided_at))}`;
 
-  $("out").innerHTML = `
+  out.innerHTML = `
     ${notice ? problem(notice) : ""}
     <div class="state ${tone}"><h2>${x(title)}</h2><p>${x(line)}</p></div>
     <div class="facts">
@@ -127,7 +134,7 @@ function render() {
 }
 
 function saveKey() {
-  const value = $("k").value.trim();
+  const value = el("k").value.trim();
   if (!value) {
     notice = "Type the key first.";
     render();
@@ -136,11 +143,11 @@ function saveKey() {
   setKey(value);
   notice = "";
   render();
-  $("code").focus();
+  codeBox.focus();
 }
 
 async function look() {
-  const code = tidy($("code").value);
+  const code = tidy(codeBox.value);
   if (!code) {
     notice = "Type a pass code first.";
     render();
@@ -180,14 +187,16 @@ async function downloadLog() {
   render();
   try {
     const r = await fetch("/api/export.csv", {headers: {"X-Gate-Key": key()}});
-    if (r.status === 403) throw new Error("That gate key is not right.");
-    if (!r.ok) throw new Error(`Could not download (${r.status})`);
-    const blob = await r.blob();
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
-    a.download = "visits.csv";
-    a.click();
-    URL.revokeObjectURL(a.href);
+    if (r.status === 403) notice = "That gate key is not right.";
+    else if (!r.ok) notice = `Could not download (${r.status})`;
+    else {
+      const blob = await r.blob();
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = "visits.csv";
+      a.click();
+      URL.revokeObjectURL(a.href);
+    }
   } catch (err) {
     notice = err.message;
   }
@@ -198,11 +207,11 @@ async function downloadLog() {
 function clear_() {
   visit = null;
   notice = "";
-  $("code").value = "";
+  codeBox.value = "";
   render();
-  $("code").focus();
+  codeBox.focus();
 }
 
-$("look").onclick = look;
-$("code").onkeydown = e => { if (e.key === "Enter") look(); };
+el("look").onclick = look;
+codeBox.onkeydown = e => { if (e.key === "Enter") void look(); };
 render();

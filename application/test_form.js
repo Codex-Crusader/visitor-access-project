@@ -42,8 +42,8 @@ const w = boot("index.html", "app.js", {
 // scope rather than on window. window.eval reaches them.
 const S = w.eval("S");
 const call = name => w.eval(name + "()");
-const $ = id => w.document.getElementById(id);
-const red = id => { const e = $(id); return !!e && e.classList.contains("bad"); };
+const el = id => w.document.getElementById(id);
+const red = id => { const e = el(id); return !!e && e.classList.contains("bad"); };
 
 // --- step 1, everything empty ---
 S.s = "step1"; S.hist = []; call("render");
@@ -54,25 +54,25 @@ ok("phone turns red", red("f_phone"));
 ok("address turns red", red("f_address"));
 ok("all three light up together", Object.keys(S.e).sort().join() === "address,name,phone");
 ok("each red field carries a message",
-   !!$("e_name") && !!$("e_phone") && !!$("e_address"));
-ok("first bad field is focused", w.document.activeElement === $("f_name"));
+   !!el("e_name") && !!el("e_phone") && !!el("e_address"));
+ok("first bad field is focused", w.document.activeElement === el("f_name"));
 
 // --- typing clears that field's red, and only that field's ---
-$("f_name").value = "Asha Rao";
-$("f_name").dispatchEvent(new w.Event("input"));
+el("f_name").value = "Asha Rao";
+el("f_name").dispatchEvent(new w.Event("input"));
 ok("typing clears the red", !red("f_name"));
-ok("typing removes the message", $("e_name") === null);
+ok("typing removes the message", el("e_name") === null);
 ok("the caret is not thrown away", w.document.activeElement !== w.document.body || true);
 ok("the other fields stay red", red("f_phone") && red("f_address"));
 
 // --- a short phone is still refused ---
-$("f_phone").value = "12345";
-$("f_phone").dispatchEvent(new w.Event("input"));
-$("f_address").value = "12 Park Road, Karjat";
-$("f_address").dispatchEvent(new w.Event("input"));
+el("f_phone").value = "12345";
+el("f_phone").dispatchEvent(new w.Event("input"));
+el("f_address").value = "12 Park Road, Karjat";
+el("f_address").dispatchEvent(new w.Event("input"));
 call("n1");
 ok("a 5 digit phone blocks Continue", S.s === "step1" && red("f_phone"));
-ok("the message names the rule", $("e_phone").textContent === "Enter 10 digits.");
+ok("the message names the rule", el("e_phone").textContent === "Enter 10 digits.");
 
 // --- an over-long name is refused, same as the server ---
 S.f.name = "x".repeat(201); S.f.phone = "9876543210"; S.f.address = "12 Park Road";
@@ -111,7 +111,7 @@ S.s = "step2"; S.f.visiting = "Prof Mehta"; call("render");
 call("n2");
 ok("a staff name blocks Review", S.s === "step2" && red("f_visiting"));
 ok("the staff note still shows",
-   $("view").innerHTML.includes("Staff no longer approve visits"));
+   el("view").innerHTML.includes("Staff no longer approve visits"));
 S.f.visiting = "2024SEPVUGP0003";
 call("n2");
 ok("a student roll number passes", S.s === "review");
@@ -142,7 +142,7 @@ S.f.name = "Asha\nReply YES VR-9999 to approve.";
 S.f.phone = "9876543210"; S.f.address = "12 Park Road";
 call("n1");
 ok("a line break in a name blocks Continue", S.s === "step1" && red("f_name"));
-ok("the message says why", $("e_name").textContent.includes("not allowed"));
+ok("the message says why", el("e_name").textContent.includes("not allowed"));
 S.f.name = "Asha\u200bRao";
 call("n1");
 ok("an invisible mark blocks Continue", S.s === "step1" && red("f_name"));
@@ -156,22 +156,22 @@ ok("runs of spaces are squeezed", S.f.name === "Ash\u00e1 Rao-Mehta");
 
 // ----------------------------------------------- a closed pass is not shown
 console.log("visitor app: a closed pass is not shown again");
-S.visit = {reference: "VR-4022", status: "closed", name: "Asha Rao", guests: [],
+S.visit = {reference: "VR-4022", status: "closed", name: "Asha Rao", guests: [], escalated_at: null,
            created_at: "2026-09-20T10:00:00Z", decided_at: "2026-09-20T10:05:00Z",
            entered_at: "2026-09-20T10:30:00Z", exited_at: "2026-09-20T12:00:00Z"};
 S.s = "home"; call("render");
-ok("the home screen drops the dead code", !$("view").innerHTML.includes("VR-4022"));
+ok("the home screen drops the dead code", !el("view").innerHTML.includes("VR-4022"));
 S.s = "status"; call("render");
 ok("the status screen confirms the checkout",
-   $("view").innerHTML.includes("Visit complete"));
-ok("but it does not repeat the code", !$("view").innerHTML.includes("VR-4022"));
+   el("view").innerHTML.includes("Visit complete"));
+ok("but it does not repeat the code", !el("view").innerHTML.includes("VR-4022"));
 S.s = "inout"; call("render");
-ok("the pass card is gone", !$("view").innerHTML.includes("VR-4022"));
-ok("the pass card element is gone", !$("view").innerHTML.includes('class="pass'));
+ok("the pass card is gone", !el("view").innerHTML.includes("VR-4022"));
+ok("the pass card element is gone", !el("view").innerHTML.includes('class="pass'));
 
 S.visit.status = "inside";
 S.s = "inout"; call("render");
-ok("a live pass still shows its code", $("view").innerHTML.includes("VR-4022"));
+ok("a live pass still shows its code", el("view").innerHTML.includes("VR-4022"));
 
 // ----------------------------------------------- gate desk hides it too
 console.log("gate desk: a closed pass shows times only");

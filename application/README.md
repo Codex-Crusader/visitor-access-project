@@ -55,13 +55,13 @@ whole log for whoever runs the campus.
 One phone number can be the approver, the backup approver and the guard at the
 same time, so each job has its own word.
 
-| You send | What happens |
-| --- | --- |
-| `VR-4022` | Shows the pass and says what you can do next |
-| `YES VR-4022` | Approves the request |
-| `NO VR-4022` | Declines the request |
-| `IN VR-4022` | Records the entry |
-| `OUT VR-4022` | Records the exit |
+| You send      | What happens                                              |
+|---------------|-----------------------------------------------------------|
+| `VR-4022`     | Shows the pass and says what you can do next              |
+| `YES VR-4022` | Approves the request                                      |
+| `NO VR-4022`  | Declines the request                                      |
+| `IN VR-4022`  | Records the entry                                         |
+| `OUT VR-4022` | Records the exit                                          |
 | anything else | Sends back the request that is waiting, with full details |
 
 `YES` and `NO` work without a code when exactly one request is waiting. The
@@ -106,38 +106,38 @@ the code agree. Change one and change the other.
 
 ## Files
 
-| File | What it holds |
-| --- | --- |
-| `app.py` | Flask routes, the escalation timer and the delete timer |
-| `db.py` | SQLite storage |
-| `whatsapp.py` | Meta API send, message text, command reading |
-| `config.py` | Settings read from the environment |
-| `check_setup.py` | Checks your settings and sends one test message |
-| `test_app.py` | Runs the whole flow with WhatsApp stubbed out |
-| `test_concurrency.py` | Hammers the app from many threads to check the races |
-| `test_form.js` | Checks the two web pages in a real DOM. Needs `npm install jsdom` |
-| `ruff.toml`, `eslint.config.mjs` | Linter settings, and why two rules are off |
-| `static/index.html`, `static/app.js` | The visitor app |
-| `static/gate.html`, `static/gate.js` | The gate desk page |
-| `render.yaml`, `Procfile` | How the host starts the app |
+| File                                 | What it holds                                                     |
+|--------------------------------------|-------------------------------------------------------------------|
+| `app.py`                             | Flask routes, the escalation timer and the delete timer           |
+| `db.py`                              | SQLite storage                                                    |
+| `whatsapp.py`                        | Meta API send, message text, command reading                      |
+| `config.py`                          | Settings read from the environment                                |
+| `check_setup.py`                     | Checks your settings and sends one test message                   |
+| `test_app.py`                        | Runs the whole flow with WhatsApp stubbed out                     |
+| `test_concurrency.py`                | Hammers the app from many threads to check the races              |
+| `test_form.js`                       | Checks the two web pages in a real DOM. Needs `npm install jsdom` |
+| `ruff.toml`, `eslint.config.mjs`     | Linter settings, and why two rules are off                        |
+| `static/index.html`, `static/app.js` | The visitor app                                                   |
+| `static/gate.html`, `static/gate.js` | The gate desk page                                                |
+| `render.yaml`, `Procfile`            | How the host starts the app                                       |
 
 ## Settings
 
-| Name | What it is |
-| --- | --- |
-| `META_TOKEN` | Access token from the WhatsApp API Setup page |
-| `META_PHONE_NUMBER_ID` | Phone number ID from the same page |
-| `META_VERIFY_TOKEN` | Any text. Type the same text into the Meta webhook page |
-| `META_APP_SECRET` | App secret. Leave empty to skip the signature check |
-| `MAIN_APPROVER` | Approver number, like `+911234567890` |
-| `BACKUP_APPROVER` | Backup approver. Defaults to the main approver |
-| `GUARD` | Gate desk number. Defaults to the main approver |
-| `GATE_KEY` | Password for the gate page. Keep it off the internet |
-| `GATE_DESK_PHONE` | Number shown on the "Call gate desk" button |
-| `ESCALATE_MINUTES` | Minutes before the backup approver is asked. Default 30 |
-| `RETAIN_DAYS` | Days a record is kept before deletion. Default 90 |
-| `REQUESTS_PER_HOUR` | New requests allowed per address per hour. Default 60 |
-| `BEHIND_PROXY` | Set to `true` on Render. Leave unset on your own machine |
+| Name                   | What it is                                               |
+|------------------------|----------------------------------------------------------|
+| `META_TOKEN`           | Access token from the WhatsApp API Setup page            |
+| `META_PHONE_NUMBER_ID` | Phone number ID from the same page                       |
+| `META_VERIFY_TOKEN`    | Any text. Type the same text into the Meta webhook page  |
+| `META_APP_SECRET`      | App secret. Leave empty to skip the signature check      |
+| `MAIN_APPROVER`        | Approver number, like `+911234567890`                    |
+| `BACKUP_APPROVER`      | Backup approver. Defaults to the main approver           |
+| `GUARD`                | Gate desk number. Defaults to the main approver          |
+| `GATE_KEY`             | Password for the gate page. Keep it off the internet     |
+| `GATE_DESK_PHONE`      | Number shown on the "Call gate desk" button              |
+| `ESCALATE_MINUTES`     | Minutes before the backup approver is asked. Default 30  |
+| `RETAIN_DAYS`          | Days a record is kept before deletion. Default 90        |
+| `REQUESTS_PER_HOUR`    | New requests allowed per address per hour. Default 60    |
+| `BEHIND_PROXY`         | Set to `true` on Render. Leave unset on your own machine |
 
 Write every phone number in E.164 form: a plus sign, the country code, then the
 number. Each approver number must also be on the recipient list in the Meta API
@@ -173,8 +173,8 @@ cloudflared tunnel --url http://localhost:5000
 ```
 
 Put the printed address plus `/webhook/whatsapp` into the Meta Configuration
-page, with your `META_VERIFY_TOKEN`, and press Verify and save. Then switch the
-**messages** field to Subscribed. The app receives nothing until you do that.
+page, with your `META_VERIFY_TOKEN`, and press Verify and save. Then subscribe the
+**messages** field. The app receives nothing until you do that.
 It is the step people miss.
 
 ## Put it on the internet with Render
@@ -244,7 +244,7 @@ not reply. After one minute the backup approver gets the same details.
 ```
 
 The first runs the whole flow without sending any WhatsApp message: approval,
-decline, escalation, repeated deliveries, the code-guessing defence, both gate
+decline, escalation, repeated deliveries, the code-guessing defense, both gate
 routes, the export, and the delete-after-retention rule.
 
 The second proves the app survives load: sixty visitors submitting at the same
@@ -282,7 +282,7 @@ in an IIFE would satisfy the rule and break both pages.
 Both limits count per address, per hour.
 
 `REQUESTS_PER_HOUR` stops a stranger who finds the public address from making
-the approver's phone ring all night. People on one campus WiFi share a single
+the approver's phone ring all night. People on one campus Wi-Fi share a single
 address, so the default of 60 is set for a whole group rather than one person.
 Raise it if a class tests at once.
 
@@ -318,5 +318,5 @@ every request. Set it to `true` only when a proxy really is in front.
   data, or switch phone, and they cannot reach it again, because the short code
   deliberately retrieves nothing. They must send a new request. This is the
   price of not letting anyone read a stranger's details by guessing a code.
-- Records live in a file on the server. On a free host with no disk, a redeploy
+- Records live in a file on the server. On a free host with no disk, a fresh build
   wipes them. Download the CSV before redeploying if the log matters.

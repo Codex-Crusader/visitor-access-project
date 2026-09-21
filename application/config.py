@@ -38,7 +38,7 @@ RETAIN_DAYS = _int("RETAIN_DAYS", 90)
 
 # How many new requests one address may send per hour. The web address is
 # public, so this stops a stranger making the approver's phone ring all night.
-# Counted per IP address. People on one campus WiFi share an address, so this
+# Counted per IP address. People on one campus Wi-Fi share an address, so this
 # has to be generous enough for a whole group, not one person.
 REQUESTS_PER_HOUR = _int("REQUESTS_PER_HOUR", 60)
 # True when a proxy such as Render sits in front and sets X-Forwarded-For.

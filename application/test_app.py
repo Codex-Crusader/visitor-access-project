@@ -158,7 +158,7 @@ assert "Not checked in" in say(APPROVER, f"OUT {code}")
 assert "Inside now" in say(APPROVER, f"IN {code}")
 assert client.get(f"/api/visit/{token}").get_json()["entered_at"]
 assert "Already inside" in say(APPROVER, f"IN {code}")
-# OUT closes it, then the code is dead.
+# OUT closes it, and then the code is dead.
 assert "Closed" in say(APPROVER, f"OUT {code}")
 assert client.get(f"/api/visit/{token}").get_json()["status"] == "closed"
 assert "closed" in say(APPROVER, f"IN {code}").lower()

@@ -1,0 +1,12 @@
+{
+  "name": "visitor-access-project",
+  "private": true,
+  "description": "Tooling for the two web pages. The app itself uses no npm package.",
+  "scripts": {
+    "test": "node test_form.js",
+    "lint": "npx eslint static test_form.js"
+  },
+  "devDependencies": {
+    "jsdom": "^26.1.0"
+  }
+}

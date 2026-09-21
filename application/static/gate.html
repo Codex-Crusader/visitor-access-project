@@ -23,7 +23,7 @@ body{margin:0;min-height:100dvh;background:var(--bg);color:var(--ink);
  font:17px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
  display:flex;justify-content:center;-webkit-font-smoothing:antialiased}
 button{font:inherit;color:inherit;cursor:pointer;border:0;background:none}
-:focus-visible{outline:2.5px solid var(--brand2);outline-offset:2px}
+:focus-visible{outline:3px solid var(--brand2);outline-offset:2px}
 
 .app{width:100%;max-width:520px;background:var(--paper);min-height:100dvh;padding:22px 22px 40px}
 h1{margin:0 0 4px;font-size:1.5rem;font-weight:750;letter-spacing:-.02em}
@@ -61,7 +61,7 @@ input:focus{background:var(--paper);border-color:var(--brand2);outline:none;box-
   <div id="entry" hidden>
     <label for="code">Pass code</label>
     <input id="code" placeholder="VR-0000" autocomplete="off" autocapitalize="characters"
-           autocorrect="off" spellcheck="false" inputmode="text" enterkeyhint="go">
+           spellcheck="false" inputmode="text" enterkeyhint="go">
     <button class="btn" id="look">Check pass</button>
   </div>
   <div id="out"></div>
