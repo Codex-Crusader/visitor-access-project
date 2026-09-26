@@ -52,6 +52,26 @@ input:focus{background:var(--paper);border-color:var(--brand2);outline:none;box-
 .facts div:last-child{border:0}
 .facts span{color:var(--soft)}
 .facts b{text-align:right;font-weight:650}
+
+/* The board: who is inside now and who is expected, so the guard works from a
+   list rather than typing every code. */
+.sec{display:flex;align-items:center;gap:8px;margin:28px 0 10px;font-size:1rem;font-weight:700}
+.count{min-width:26px;padding:1px 8px;border-radius:999px;background:var(--tint);color:var(--brand);
+ font-size:.85rem;text-align:center}
+.list{border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--sh);overflow:hidden}
+.row{display:flex;justify-content:space-between;align-items:center;gap:12px;width:100%;
+ padding:13px 16px;text-align:left;border-bottom:1px solid var(--line);background:var(--paper)}
+.row:last-child{border-bottom:0}
+.row:hover{background:var(--mute)}
+.row small{display:block;color:var(--soft);font-size:.82rem;font-weight:500}
+.row b{font-weight:650}
+.row .side{text-align:right;flex-shrink:0}
+.row code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-weight:650;letter-spacing:.04em}
+.row.long{background:var(--waitBg)}
+.row.long .side small{color:var(--wait);font-weight:650}
+.empty{padding:14px 16px;color:var(--soft);font-size:.93rem}
+.updated{margin:10px 0 0;color:var(--soft);font-size:.82rem}
+.tools{margin-top:28px;padding-top:6px;border-top:1px solid var(--line)}
 </style>
 </head>
 <body>
@@ -65,6 +85,12 @@ input:focus{background:var(--paper);border-color:var(--brand2);outline:none;box-
     <button class="btn" id="look">Check pass</button>
   </div>
   <div id="out"></div>
+  <div id="board" hidden></div>
+  <div id="tools" class="tools" hidden>
+    <button class="btn plain" id="refresh">Refresh the lists</button>
+    <button class="btn plain" id="log">Download visit log</button>
+    <button class="btn plain" id="rekey">Change gate key</button>
+  </div>
 </div>
 <script src="gate.js"></script>
 </body>

@@ -264,17 +264,21 @@ def read_failures(payload):
 def notify(phone, visit, escalated=False):
     """Send the approval request. Returns why the template failed, or None.
 
-    The template is tried first, because it arrives whenever it is sent.
-    If Meta refuses it, for example while the template waits for review,
-    plain text goes instead. That still arrives within the 24 hours.
+    The template goes out when one is set, because it arrives whenever it is
+    sent. When Meta refuses it, the failure is raised, unless
+    TEMPLATE_FALLBACK is on. Then plain text goes instead, which arrives only
+    within 24 hours of the approver's last message.
     """
-    problem = None
-    if config.REQUEST_TEMPLATE:
-        try:
-            send_template(phone, template_values(visit, escalated))
-            return None
-        except RuntimeError as failure:
-            problem = str(failure)
+    if not config.REQUEST_TEMPLATE:
+        send(phone, request_body(visit, escalated))
+        return None
+    try:
+        send_template(phone, template_values(visit, escalated))
+        return None
+    except RuntimeError as failure:
+        if not config.TEMPLATE_FALLBACK:
+            raise
+        problem = str(failure)
     send(phone, request_body(visit, escalated))
     return problem
 

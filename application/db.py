@@ -163,6 +163,31 @@ def all_visits():
     return [to_dict(row) for row in rows]
 
 
+BOARD_FIELDS = "reference, name, visiting, guests, status, decided_at, entered_at"
+
+
+def at_gate(expected_hours):
+    """What the gate desk board shows: (expected, inside).
+
+    expected is every pass approved in the last `expected_hours` and not used
+    yet, newest first. inside is everyone inside now, longest inside first, so
+    a visitor who never left is at the top. Two queries, each one a lookup on
+    the status index, rather than one OR that reads the whole table.
+    """
+    since = _ago(expected_hours / 24)
+    with connect() as conn:
+        expected = conn.execute(
+            f"SELECT {BOARD_FIELDS} FROM visits WHERE status = ? AND decided_at >= ?"
+            " ORDER BY decided_at DESC",
+            (APPROVED, since),
+        ).fetchall()
+        inside = conn.execute(
+            f"SELECT {BOARD_FIELDS} FROM visits WHERE status = ? ORDER BY entered_at",
+            (INSIDE,),
+        ).fetchall()
+    return [to_dict(row) for row in expected], [to_dict(row) for row in inside]
+
+
 def open_requests():
     with connect() as conn:
         rows = conn.execute(

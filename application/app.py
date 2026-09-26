@@ -24,6 +24,9 @@ FIELDS = ("name", "phone", "address", "reason", "visiting")
 BACKGROUND_SECONDS = 30
 # After IN <code>, the guard has this long to send the visitor's photo.
 PHOTO_MINUTES = 10
+# The gate board lists passes approved within this many hours as expected.
+# An older pass still works. It only leaves the list.
+BOARD_HOURS = 24
 
 GATE_ACTIONS = {
     "entry": (db.check_in, db.APPROVED),
@@ -297,6 +300,18 @@ def read_pass(reference):
     return jsonify(gate_view(visit))
 
 
+@app.get("/api/gate/board")
+def gate_board():
+    """Who the gate desk expects, and who is inside now.
+
+    Only open visits appear, so this shows nothing the pass lookup would not.
+    """
+    if not gate_key_ok():
+        return jsonify(error="Wrong gate key"), 403
+    expected, inside = db.at_gate(BOARD_HOURS)
+    return jsonify(expected=expected, inside=inside)
+
+
 @app.post("/api/pass/<reference>/<action>")
 def gate_action(reference, action):
     if not gate_key_ok():
@@ -493,14 +508,28 @@ def answer_message(sender, text, photo):
     return whatsapp.waiting_body(db.open_requests()) if is_approver(sender) else whatsapp.HELP
 
 
+def escalate_due():
+    """Ask the backup approver about every request nobody answered.
+
+    One failed send must not stop the others, or the purge after them. The
+    failed request stays pending, so the next round tries it again.
+    """
+    for visit in db.due_for_escalation():
+        try:
+            log_template_problem(whatsapp.notify_backup(visit))
+        except Exception as failure:
+            app.logger.error("Could not ask the backup approver about %s: %s",
+                             visit["reference"], failure)
+            continue
+        db.mark_escalated(visit["reference"])
+
+
 def background_loop():
     """Escalate requests nobody answered, then delete records past retention."""
     while True:
         time.sleep(BACKGROUND_SECONDS)
         try:
-            for visit in db.due_for_escalation():
-                log_template_problem(whatsapp.notify_backup(visit))
-                db.mark_escalated(visit["reference"])
+            escalate_due()
             removed = db.purge_old()
             if removed:
                 app.logger.info("Deleted %s visit records past retention", removed)

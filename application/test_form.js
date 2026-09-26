@@ -26,6 +26,7 @@ function boot(page, script, stubs) {
   const w = dom.window;
   // jsdom has no layout, so it leaves this one out. Every browser has it.
   w.Element.prototype.scrollIntoView = function () {};
+  w.scrollTo = function () {};
   Object.assign(w, stubs);
   const tag = w.document.createElement("script");
   tag.textContent = read(script);
@@ -245,6 +246,75 @@ gRender();
 ok("an open pass still shows the visitor", gOut().includes("Asha Rao"));
 ok("an open pass still offers Record entry", gOut().includes("Record entry"));
 
-console.log();
-console.log(failures ? `${failures} check(s) FAILED` : "all form checks passed");
-process.exit(failures ? 1 : 0);
+// ------------------------------------------------ the gate desk board
+async function boardChecks() {
+  console.log("gate desk: the board lists who is inside and who is expected");
+  const hour = 3600000, now = Date.now();
+  const ago = ms => new Date(now - ms).toISOString();
+  const BOARD = {
+    inside: [
+      {reference: "VR-1111", name: "Asha Rao", visiting: "2024SEPVUGP0003", guests: ["Ravi Rao"],
+       status: "inside", entered_at: ago(9 * hour)},
+      {reference: "VR-2222", name: "Meera", visiting: "2024SEPVUGP0007", guests: [],
+       status: "inside", entered_at: ago(20 * 60000)},
+    ],
+    expected: [
+      {reference: "VR-3333", name: "Kiran <b>", visiting: "2024SEPVUGP0009", guests: [],
+       status: "approved", decided_at: ago(hour)},
+    ],
+  };
+  const PASS = {reference: "VR-3333", status: "approved", name: "Kiran", phone: "9876543210",
+                visiting: "2024SEPVUGP0009", reason: "Delivery", guests: [], decided_at: ago(hour)};
+  const calls = [];
+  const desk = boot("gate.html", "gate.js", {
+    fetch: url => {
+      calls.push(url);
+      const body = url.includes("/api/gate/board") ? BOARD : PASS;
+      return Promise.resolve({status: 200, ok: true, json: () => Promise.resolve(body)});
+    },
+  });
+  const $ = id => desk.document.getElementById(id);
+  ok("without a key the board stays hidden", $("board").hidden && $("tools").hidden);
+  ok("without a key nothing is asked of the server", calls.length === 0);
+
+  desk.eval('localStorage.setItem("gatekey","k")');
+  await desk.eval("loadBoard()");
+  desk.eval("render()");
+  const html = $("board").innerHTML;
+  ok("with a key the board shows", !$("board").hidden && !$("tools").hidden);
+  ok("inside comes before expected", html.indexOf("Inside now") < html.indexOf("Expected"));
+  const counts = [...$("board").querySelectorAll(".count")].map(c => c.textContent);
+  ok("each list shows its count", counts.join() === "2,1");
+  ok("a guest shows as +1", html.includes("Asha Rao +1"));
+  ok("how long someone is inside shows", html.includes("In for 9 h"));
+  const rows = [...$("board").querySelectorAll(".row")];
+  ok("inside too long is marked", rows[0].classList.contains("long"));
+  ok("a short stay is not marked", !rows[1].classList.contains("long"));
+  ok("names are escaped", html.includes("Kiran &lt;b&gt;") && !html.includes("Kiran <b>"));
+  ok("the update time shows", html.includes("Updated"));
+
+  rows[2].click();
+  await new Promise(done => setTimeout(done, 0));
+  await new Promise(done => setTimeout(done, 0));
+  ok("tapping a name opens that pass", calls.some(u => u === "/api/pass/VR-3333"));
+  ok("the code box holds the code", $("code").value === "VR-3333");
+  ok("the pass offers Record entry", $("out").innerHTML.includes("Record entry"));
+  ok("the board stays under the pass", $("board").innerHTML.includes("Inside now"));
+
+  // A failed refresh keeps the lists and says how old they are.
+  desk.fetch = () => Promise.reject(new Error("offline"));
+  await desk.eval("loadBoard()");
+  ok("a failed refresh keeps the lists", $("board").innerHTML.includes("Asha Rao"));
+  ok("and says they are old", $("board").innerHTML.includes("Could not refresh"));
+
+  BOARD.inside = []; BOARD.expected = [];
+  desk.fetch = () => Promise.resolve({status: 200, ok: true, json: () => Promise.resolve(BOARD)});
+  await desk.eval("loadBoard()");
+  ok("an empty list says so", $("board").innerHTML.includes("Nobody is inside."));
+}
+
+void boardChecks().then(() => {
+  console.log();
+  console.log(failures ? `${failures} check(s) FAILED` : "all form checks passed");
+  process.exit(failures ? 1 : 0);
+});

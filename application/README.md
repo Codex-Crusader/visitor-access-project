@@ -8,6 +8,28 @@ working.
 
 The guard works either from a web page or from WhatsApp.
 
+## The gate page
+
+The gate page at `/gate` asks for the gate key once. After that it shows:
+
+1. A box for a pass code, as before.
+2. **Inside now**: everyone who entered and has not left, longest first. A
+   visitor inside for more than 8 hours has a yellow row, so a visitor who
+   never checked out stands out.
+3. **Expected**: every pass approved in the last 24 hours and not used yet.
+   An older pass still works. It only leaves this list.
+4. **Refresh the lists**, **Download visit log** and **Change gate key**.
+
+Tap a name to open that pass, the same as typing its code. The lists
+refresh every 30 seconds and after every entry or exit. When a refresh fails,
+the page keeps the last lists and says how old they are. A wrong gate key is
+named as the reason.
+
+The lists come from `GET /api/gate/board` with the `X-Gate-Key` header. It
+returns only open visits, and for each one only the code, name, person
+visited, guests, status and the approval and entry times. `BOARD_HOURS` and
+`LONG_HOURS` set the 24 and 8 hours, in `app.py` and `static/gate.js`.
+
 ## How it works
 
 1. The browser posts the form to `POST /api/requests`.
@@ -165,6 +187,7 @@ the code agree. Change one and change the other.
 | `BEHIND_PROXY`         | Set to `true` on Render. Leave unset on your own machine |
 | `REQUEST_TEMPLATE`     | Approval request template. Default `visit_request`       |
 | `TEMPLATE_LANGUAGE`    | Language code of that template. Default `en`             |
+| `TEMPLATE_FALLBACK`    | `true`: plain text when the template fails. Default off  |
 
 Write every phone number in E.164 form: a plus sign, the country code, then the
 number. Each approver number must also be on the recipient list in the Meta API
@@ -197,11 +220,28 @@ Reply YES or NO followed by the reference to decide this request.
 ```
 
 `{{1}}` is the reference, `{{2}}` says whether this is a new request or an
-escalation, and the rest are the visitor's details. Meta must approve the
-template before it works. Until then, and whenever Meta refuses it, the app
-sends plain text instead and writes `Approval template refused` to the log.
-Replies to the approver's and the guard's own commands stay plain text,
-because the person just wrote to the number.
+escalation, and the rest are the visitor's details. Replies to the approver's
+and the guard's own commands stay plain text, because the person just wrote
+to the number.
+
+Meta must approve the template before it works. What happens when Meta
+refuses it depends on `TEMPLATE_FALLBACK`:
+
+- Unset, the default: the visitor sees "Could not reach the approver" and can
+  try again. An escalation that fails is logged and tried again 30 seconds
+  later. Use this in production.
+- `true`: the app sends plain text instead and writes `Approval template
+  refused` to the log. Use this only while Meta reviews a new template.
+
+Leave the fallback off in production. Meta can pause or disable a template,
+for example after low quality ratings. With the fallback on, every request
+would then go out as plain text. Plain text is lost for any approver who has
+not written to the number in 24 hours, and the visitor is still told that the
+request went out. With the fallback off, the failure reaches the visitor.
+
+If you turn the fallback on during a review, set `TEMPLATE_FALLBACK=true` in
+the Render Environment page, and delete it there once the template shows
+Approved in WhatsApp Manager.
 
 If you make a new Meta app or WhatsApp account, create the template again in
 WhatsApp Manager, under Message templates, with the same name and body.

@@ -132,8 +132,6 @@ class Catch(logging.Handler):
 
 application.app.logger.addHandler(Catch())
 
-# While the template waits for Meta's review, plain text goes instead, and the
-# log says so, because plain text alone can be lost.
 real_template = whatsapp.send_template
 
 
@@ -143,6 +141,30 @@ def refused(*_args):
 
 whatsapp.send_template = refused
 try:
+    # By default a refused template is a failed request. Plain text would be
+    # lost for a quiet approver while the visitor was told it went out.
+    assert application.config.TEMPLATE_FALLBACK is False
+    replies = len(sent)
+    refused_request = client.post("/api/requests", json=payload)
+    assert refused_request.status_code == 502, refused_request.status_code
+    assert len(sent) == replies, "no plain text may go out without the fallback"
+
+    # The backup approver's round fails the same way, and one failure stops
+    # neither the other escalations nor the purge after them.
+    with db.connect() as conn:
+        conn.execute("UPDATE visits SET created_at = ? WHERE status = 'pending'",
+                     ("2020-06-01T00:00:00+00:00",))
+    caught.clear()
+    application.escalate_due()
+    assert any("backup approver" in line for line in caught), caught
+    assert db.due_for_escalation(), "a failed escalation must stay due and be tried again"
+    with db.connect() as conn:
+        conn.execute("UPDATE visits SET created_at = ? WHERE created_at = ?",
+                     (db.now(), "2020-06-01T00:00:00+00:00"))
+
+    # While Meta reviews the template, TEMPLATE_FALLBACK sends plain text
+    # instead, and the log says so, because plain text alone can be lost.
+    application.config.TEMPLATE_FALLBACK = True
     fallback = client.post("/api/requests", json=payload)
     assert fallback.status_code == 201, fallback.get_data(as_text=True)
     assert f"Reply YES {fallback.get_json()['reference']}" in sent[-1][1]
@@ -162,6 +184,7 @@ try:
         whatsapp.send = real_send
 finally:
     whatsapp.send_template = real_template
+    application.config.TEMPLATE_FALLBACK = False
 
 # With no template set, plain text goes straight out.
 application.config.REQUEST_TEMPLATE = ""
@@ -401,6 +424,33 @@ for field in PERSONAL:
 assert client.post(f"/api/pass/{ref2}/sideways", headers=KEY).status_code == 404
 assert client.post("/api/pass/VR-9999/entry", headers=KEY).status_code == 404
 assert client.get(f"/api/pass/{ref2}", headers={"X-Gate-Key": "wrong"}).status_code == 403
+
+print("the gate board")
+assert client.get("/api/gate/board").status_code == 403
+assert client.get("/api/gate/board", headers={"X-Gate-Key": "wrong"}).status_code == 403
+board = client.get("/api/gate/board", headers=KEY).get_json()
+expected_refs = [v["reference"] for v in board["expected"]]
+inside_refs = [v["reference"] for v in board["inside"]]
+assert live["reference"] in expected_refs, expected_refs          # approved, not used
+assert ref2 not in expected_refs + inside_refs                     # closed
+assert second_in["reference"] in inside_refs, inside_refs          # inside
+waiting_one = new_request()
+assert waiting_one["reference"] not in expected_refs + inside_refs  # pending
+# The board carries what the list shows, and nothing it does not.
+shown = board["expected"][0]
+assert set(shown) == {"reference", "name", "visiting", "guests", "status",
+                    "decided_at", "entered_at"}, set(shown)
+# Inside is ordered longest first, so whoever never left is at the top.
+entered = [v["entered_at"] for v in board["inside"]]
+assert entered == sorted(entered), entered
+# A pass approved more than BOARD_HOURS ago leaves the list but still works.
+with db.connect() as conn:
+    conn.execute("UPDATE visits SET decided_at = ? WHERE reference = ?",
+                 ("2020-01-01T00:00:00+00:00", live["reference"]))
+board = client.get("/api/gate/board", headers=KEY).get_json()
+assert live["reference"] not in [v["reference"] for v in board["expected"]]
+assert client.get(f"/api/pass/{live['reference']}", headers=KEY).get_json()["status"] == "approved"
+print(f"  {len(board['inside'])} inside, {len(board['expected'])} expected")
 
 print("a declined pass never opens the gate")
 bad = new_request()

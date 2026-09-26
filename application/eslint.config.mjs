@@ -18,7 +18,7 @@ export default [
       sourceType: "script",
       globals: {
         window: "readonly", document: "readonly", localStorage: "readonly",
-        fetch: "readonly", setTimeout: "readonly", clearTimeout: "readonly",
+        fetch: "readonly", setTimeout: "readonly", clearTimeout: "readonly", setInterval: "readonly",
         AbortController: "readonly", URL: "readonly", console: "readonly",
         require: "readonly", module: "readonly", __dirname: "readonly",
         process: "readonly",
