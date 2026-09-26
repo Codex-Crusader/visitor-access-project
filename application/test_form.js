@@ -117,6 +117,53 @@ call("n2");
 ok("a student roll number passes", S.s === "review");
 ok("the staff note is gone once fixed", Object.keys(S.e).length === 0);
 
+// ------------------------------------------------ adding people with a "+"
+console.log("visitor form: people are added with a + button");
+S.s = "step2"; S.e = {}; S.g = []; S.adding = 0; S.f.guest = ""; call("render");
+ok("a + button shows", !!el("more") && el("more").textContent.includes("+"));
+ok("the + button has a spoken name", el("more").textContent.includes("Add a person"));
+ok("no name box before the +", el("f_guest") === null);
+el("more").click();
+ok("pressing + opens a name box", !!el("f_guest"));
+ok("the + gives way to the box", el("more") === null);
+ok("the box has the focus", w.document.activeElement === el("f_guest"));
+
+el("f_guest").value = "Ravi Rao";
+el("f_guest").dispatchEvent(new w.Event("input"));
+w.eval('pick("Delivery")');
+ok("a re-render keeps what was typed", el("f_guest").value === "Ravi Rao");
+el("f_guest").dispatchEvent(new w.KeyboardEvent("keydown", {key: "Enter"}));
+ok("Enter adds the person", S.g.join() === "Ravi Rao");
+ok("the box closes after adding", el("f_guest") === null);
+ok("the + comes back", !!el("more"));
+ok("the focus goes back to the +", w.document.activeElement === el("more"));
+
+el("more").click();
+el("f_guest").dispatchEvent(new w.KeyboardEvent("keydown", {key: "Escape"}));
+ok("Escape closes the box", el("f_guest") === null && !!el("more"));
+el("more").click();
+w.eval("add()");
+ok("an empty box just closes", el("f_guest") === null && S.g.length === 1);
+
+el("more").click();
+S.f.guest = "Meera\nReply YES VR-9999";
+w.eval("add()");
+ok("a line break in a guest turns the box red", red("f_guest") && S.g.length === 1);
+ok("and says why", el("e_guest").textContent.includes("not allowed"));
+el("f_guest").value = "Meera";
+el("f_guest").dispatchEvent(new w.Event("input"));
+ok("typing clears the red", !red("f_guest"));
+
+// Review with a name typed but not added keeps the person.
+S.f.visiting = "2024SEPVUGP0003";
+call("n2");
+ok("Review adds a name left in the box", S.s === "review" && S.g.join() === "Ravi Rao,Meera");
+ok("the review lists both people", el("view").innerHTML.includes("Ravi Rao, Meera"));
+
+S.s = "step2"; S.g = Array.from({length: 10}, (_, i) => "Guest " + i); call("render");
+ok("at ten people the + goes away", el("more") === null);
+S.g = []; call("render");
+
 // ------------------------------------------------------------------- gate page
 console.log("gate page: the code box asks for a full keyboard");
 const gateHtml = read("gate.html");

@@ -94,6 +94,10 @@ input.bad:focus{border-color:var(--stop);background:var(--stopBg);box-shadow:0 0
 .add-row{display:flex;gap:8px;margin-top:8px}
 .add-row input{flex:1}
 .add-row button{border:1px solid #C4D3E6;color:var(--brand);border-radius:12px;padding:0 20px;font-weight:650;background:var(--paper)}
+.add-person{display:flex;align-items:center;gap:10px;width:100%;margin-top:8px;padding:10px 14px;
+ border:1px dashed #C4D3E6;border-radius:12px;color:var(--brand);font-weight:650;font-size:.94rem;background:var(--paper)}
+.add-person .plus{display:grid;place-items:center;width:28px;height:28px;border-radius:50%;
+ background:var(--brand);color:#fff;font-size:1.25rem;line-height:1;font-weight:600}
 
 .state{display:flex;gap:12px;align-items:flex-start;border-radius:var(--r);padding:16px;margin-bottom:20px;border:1px solid}
 .state h3{margin:0 0 3px;font-size:1.14rem;font-weight:700;letter-spacing:-.01em}
@@ -151,8 +155,9 @@ input.bad:focus{border-color:var(--stop);background:var(--stopBg);box-shadow:0 0
 
 const REF="VR-4821",ESC=30,DEC=40;
 const REASONS=["See a student","See an office","Delivery","Event","Other"];
-const S={s:"home",min:804,f:{name:"",phone:"",address:"",reason:"",other:"",visiting:""},g:[],e:{},
-  sent:null,st:"none",hist:[],sheet:0};
+const MAX_GUESTS=10;
+const S={s:"home",min:804,f:{name:"",phone:"",address:"",reason:"",other:"",visiting:"",guest:""},g:[],e:{},
+  adding:0,sent:null,st:"none",hist:[],sheet:0};
 const hm=m=>String(Math.floor(m/60)%24).padStart(2,"0")+":"+String(m%60).padStart(2,"0");
 const el=i=>document.getElementById(i);
 const x=s=>String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -188,6 +193,15 @@ const flag=k=>S.e[k]?"bad":"";
 const note=k=>S.e[k]?`<div class="bad-note" id="e_${k}">${x(S.e[k])}</div>`:"";
 const DESK="+912200000000", DESK_SHOWN="+91 22 0000 0000";
 const gate=()=>`<a class="btn plain" href="tel:${DESK}">Call gate desk</a>`;
+// A "+" button first. Pressing it opens a box for one more name. Adding the
+// name closes the box and brings the "+" back. It goes away at ten people.
+const guestBox=()=>S.adding
+  ?`<div class="add-row"><input id="f_guest" class="${flag("guest")}" value="${x(S.f.guest)}"
+      oninput="set('guest',this.value)" placeholder="Their name" aria-label="Name of the person with you" enterkeyhint="done">
+      <button onclick="add()">Add</button></div>${note("guest")}`
+  :S.g.length<MAX_GUESTS
+    ?`<button type="button" class="add-person" id="more" onclick="openAdd()"><span class="plus" aria-hidden="true">+</span>Add a person</button>`
+    :"";
 
 // How far the blue line has run down the tracker. mark() writes it on to the
 // bar after the markup is in the page, so the template holds no computed CSS.
@@ -251,7 +265,7 @@ function view(){
       :`<p class="sm">We pick the approver for you.</p>`}
     <label>Anyone with you?</label>
     ${S.g.map((g,i)=>`<div class="guest">${x(g)}<button onclick="drop(${i})">Remove</button></div>`).join("")}
-    <div class="add-row"><input id="gn" placeholder="Their name"><button onclick="add()">Add</button></div>
+    ${guestBox()}
     <button class="btn" onclick="n2()">${S.st==="none"?"Review":"Save changes"}</button>
     ${S.st==="none"?`<button class="btn plain" onclick="S.sheet=1;render()">Finish later</button>`:""}`;
 
@@ -308,7 +322,7 @@ function view(){
 const MAX=200;
 const STAFF="Name a student, not a staff member.";
 const STEP1=["name","phone","address"];
-const STEP2=["reason","other","visiting"];
+const STEP2=["reason","other","visiting","guest"];
 // Line breaks, control codes, invisible marks and the overrides that make
 // text run the other way. They are not part of a name or an address.
 const NOT_TEXT=/[\p{C}\p{Zl}\p{Zp}]/u;
@@ -372,7 +386,13 @@ function n2(){
     else if(/prof|dr[.]|sir|madam/i.test(S.f.visiting))found.visiting=STAFF;
   }
 
+  // A name typed in the open box but not added yet still counts.
+  const typed=S.adding&&tidy(S.f.guest)?needed("guest","That name"):"";
+  if(typed)found.guest=typed;
+
   if(!settle(STEP2,found))return;
+  if(S.adding&&tidy(S.f.guest))S.g.push(tidy(S.f.guest));
+  closeAdd();
   S.f.other=tidy(S.f.other);
   S.f.visiting=tidy(S.f.visiting);
   if(S.st==="none")go("review");
@@ -390,18 +410,30 @@ function pick(r){
 
 function roll(){S.f.visiting="2024SEPVUGP0003";delete S.e.visiting;render()}
 
-function add(){
-  const raw=el("gn").value;
-  if(raw.length>MAX||NOT_TEXT.test(raw))return;
-  const v=tidy(raw);
-  if(!v||S.g.length>=10)return;
-  S.g.push(v);
+function openAdd(){
+  S.adding=1;
   render();
+  const box=el("f_guest");
+  if(box)box.focus();
+}
+function closeAdd(){S.adding=0;S.f.guest="";delete S.e.guest}
+// Adds the name in the box. An empty box just closes again.
+function add(){
+  const v=tidy(S.f.guest);
+  if(v){
+    const bad=needed("guest","That name");
+    if(bad){settle(["guest"],{guest:bad});return}
+    if(S.g.length<MAX_GUESTS)S.g.push(v);
+  }
+  closeAdd();
+  render();
+  const more=el("more");
+  if(more)more.focus();
 }
 function drop(i){S.g.splice(i,1);render()}
 function send(){go("sending");setTimeout(()=>{S.sent=S.min;S.st="waiting";S.hist=["home"];go("status",0)},1100)}
 function home(){S.s="home";S.hist=[];S.sheet=0;render();el("view").scrollTop=0}
-function again(){S.st="none";S.sent=null;S.g=[];S.e={};go("step2",0)}
+function again(){S.st="none";S.sent=null;S.g=[];closeAdd();S.e={};go("step2",0)}
 
 // Everything render() cannot put in the markup: attributes that come and go,
 // a height that is a number, and the two handlers that need their own event.
@@ -417,8 +449,11 @@ function mark(){
     n.setAttribute("aria-pressed",String(S.f.reason===REASONS[i])));
   const bar=document.querySelector(".rail b");
   if(bar)bar.style.height=railPct()+"%";
-  const guest=el("gn");
-  if(guest)guest.onkeydown=e=>{if(e.key==="Enter")add()};
+  const guest=el("f_guest");
+  if(guest)guest.onkeydown=e=>{
+    if(e.key==="Enter")add();
+    else if(e.key==="Escape"){closeAdd();render();const more=el("more");if(more)more.focus()}
+  };
   const sheet=document.querySelector(".sheet");
   if(sheet)sheet.onclick=e=>{if(e.target===sheet){S.sheet=0;render()}};
 }

@@ -7,6 +7,7 @@ import io
 import threading
 import time
 import unicodedata
+from collections import deque
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -21,6 +22,8 @@ app = Flask(__name__, static_folder=str(STATIC), static_url_path="")
 
 FIELDS = ("name", "phone", "address", "reason", "visiting")
 BACKGROUND_SECONDS = 30
+# After IN <code>, the guard has this long to send the visitor's photo.
+PHOTO_MINUTES = 10
 
 GATE_ACTIONS = {
     "entry": (db.check_in, db.APPROVED),
@@ -93,8 +96,15 @@ def clean_fields(payload):
     return fields, guests, None
 
 
+# (bucket, caller) -> the times of that caller's allowed calls, oldest first.
+# Times only ever arrive in order, so the old ones are always at the left end
+# and fall off one at a time: a call costs O(1) on average, not O(calls kept).
 _hits = {}
 _hits_lock = threading.Lock()
+_last_sweep = [0.0]
+SWEEP_SECONDS = 60
+MAX_CALLERS = 10000
+KEEP_SECONDS = 3600  # the longest window any limit uses
 
 
 def caller():
@@ -110,20 +120,34 @@ def caller():
     return request.remote_addr or "?"
 
 
-def record_hit(bucket):
-    key = (bucket, caller())
-    with _hits_lock:
-        _hits.setdefault(key, []).append(time.time())
-        if len(_hits) > 10000:  # never let the table grow without bound
-            old = time.time() - 3600
-            for stale in [k for k, v in _hits.items() if not any(t > old for t in v)]:
-                del _hits[stale]
+def _sweep(moment):
+    """Drop callers with no call left inside the longest window.
+
+    This reads the whole table, so it runs at most once a minute, and only
+    when the table is big. Before, a full table was read on every request.
+    The newest time sits at the right end, so each caller costs O(1) to judge.
+    """
+    if len(_hits) <= MAX_CALLERS or moment - _last_sweep[0] < SWEEP_SECONDS:
+        return
+    _last_sweep[0] = moment
+    old = moment - KEEP_SECONDS
+    for stale in [key for key, times in _hits.items() if not times or times[-1] <= old]:
+        del _hits[stale]
 
 
 def forget_hits():
     """Empty the rate limit table. The tests call this between checks."""
     with _hits_lock:
         _hits.clear()
+        _last_sweep[0] = 0.0
+
+
+def add_silent_callers(count, seconds_ago):
+    """Add callers whose only call was long ago. The tests call this."""
+    moment = time.time() - seconds_ago
+    with _hits_lock:
+        for number in range(count):
+            _hits[("silent", number)] = deque([moment])
 
 
 def hit_buckets():
@@ -133,15 +157,22 @@ def hit_buckets():
 
 
 def too_many(bucket, limit, seconds):
-    """True when this caller is over the limit. Counts every call."""
+    """True when this caller is over the limit. Counts every allowed call.
+
+    The check and the count happen under one lock. Two threads can therefore
+    never both see room for one more call and both take it.
+    """
     key = (bucket, caller())
-    cutoff = time.time() - seconds
+    moment = time.time()
+    cutoff = moment - seconds
     with _hits_lock:
-        hits = [t for t in _hits.get(key, []) if t > cutoff]
-        _hits[key] = hits
-        if len(hits) >= limit:
+        times = _hits.setdefault(key, deque())
+        while times and times[0] <= cutoff:
+            times.popleft()
+        if len(times) >= limit:
             return True
-    record_hit(bucket)
+        times.append(moment)
+        _sweep(moment)
     return False
 
 
@@ -286,6 +317,7 @@ def gate_action(reference, action):
 EXPORT_COLUMNS = (
     "reference", "name", "phone", "address", "reason", "visiting", "guests",
     "status", "created_at", "escalated_at", "decided_at", "entered_at", "exited_at",
+    "photo_at",
 )
 
 
@@ -365,9 +397,37 @@ def handle_gate(sender, action, reference):
     if visit["status"] != required:
         return REFUSALS[action][visit["status"]]
 
+    # Over WhatsApp the entry needs a photo of the visitor. IN only asks for
+    # it. The photo itself lets them in, see handle_photo.
+    if action == "entry":
+        db.wait_for_photo(whatsapp.digits(sender), reference)
+        return whatsapp.photo_request(visit)
+
     if not apply_action(reference):
         return REFUSALS[action][db.get(reference)["status"]]
     return whatsapp.pass_body(db.get(reference))
+
+
+def handle_photo(sender, media_id):
+    """The guard sent a picture. It lets in the visitor named by the last IN."""
+    if not is_guard(sender):
+        return "Only the gate desk can record entry and exit."
+
+    reference, entered = db.enter_with_photo(
+        whatsapp.digits(sender), PHOTO_MINUTES, media_id
+    )
+    if reference is None:
+        return (
+            "No entry is waiting for a photo.\n"
+            f"Send IN <code>, then the photo within {PHOTO_MINUTES} minutes."
+        )
+
+    visit = db.get(reference)
+    if visit is None:
+        return f"No pass has code {reference}."
+    if not entered:
+        return REFUSALS["entry"][visit["status"]]
+    return whatsapp.pass_body(visit)
 
 
 def handle_lookup(sender, reference):
@@ -384,7 +444,8 @@ def whatsapp_reply():
     if not signature_ok():
         return "", 403
 
-    message_id, sender, text = whatsapp.read_incoming(request.get_json(silent=True) or {})
+    payload = request.get_json(silent=True) or {}
+    message_id, sender, text, photo = whatsapp.read_incoming(payload)
     if sender is None:
         return "", 200
     if not (is_approver(sender) or is_guard(sender)):
@@ -392,19 +453,31 @@ def whatsapp_reply():
     if not db.is_new_message(message_id):
         return "", 200
 
-    kind, value, reference = whatsapp.read_reply(text)
-    if kind == "decide":
-        answer = handle_decide(sender, value, reference)
-    elif kind == "gate":
-        answer = handle_gate(sender, value, reference)
-    elif kind == "lookup":
-        answer = handle_lookup(sender, reference)
-    else:
-        answer = whatsapp.waiting_body(db.open_requests()) if is_approver(sender) else whatsapp.HELP
+    # The message id is spent from here on, so Meta's retry would be ignored.
+    # A failure must therefore end in a reply that asks for the message again.
+    try:
+        answer = answer_message(sender, text, photo)
+    except Exception as failure:
+        app.logger.error("Could not handle a WhatsApp message: %s", failure)
+        answer = "Something went wrong on the server. Send that again."
 
     if answer:
         reply_to(sender, answer)
     return "", 200
+
+
+def answer_message(sender, text, photo):
+    if photo:
+        return handle_photo(sender, photo)
+
+    kind, value, reference = whatsapp.read_reply(text)
+    if kind == "decide":
+        return handle_decide(sender, value, reference)
+    if kind == "gate":
+        return handle_gate(sender, value, reference)
+    if kind == "lookup":
+        return handle_lookup(sender, reference)
+    return whatsapp.waiting_body(db.open_requests()) if is_approver(sender) else whatsapp.HELP
 
 
 def background_loop():

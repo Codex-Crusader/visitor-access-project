@@ -4,7 +4,9 @@ const el = i => document.getElementById(i);
 // These two are in gate.html from the start, so they are looked up once.
 // The gate key box is built by render(), so that one stays a lookup.
 const out = el("out"), codeBox = el("code");
-const x = s => String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+// Built once. Inside the callback it was a new object for every escaped letter.
+const ESC = {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"};
+const x = s => String(s).replace(/[&<>"']/g, c => ESC[c]);
 const hm = t => t ? new Date(t).toLocaleTimeString([], {hour:"2-digit", minute:"2-digit"}) : "—";
 
 // A pass code is VR-0000. WhatsApp already accepts the four digits on their

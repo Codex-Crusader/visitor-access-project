@@ -2,8 +2,9 @@
 
 A visitor fills in a web form. The server sends the details to an approver on
 WhatsApp. The approver replies YES or NO. The visitor sees the decision on the
-same page within three seconds. At the gate, a guard checks the code, records
-the entry and the exit, and the code then stops working.
+same page within three seconds. At the gate, a guard checks the code, takes a
+photo of the visitor, records the entry and the exit, and the code then stops
+working.
 
 The guard works either from a web page or from WhatsApp.
 
@@ -17,7 +18,8 @@ The guard works either from a web page or from WhatsApp.
 5. Meta posts that reply to `POST /webhook/whatsapp`.
 6. The server records the decision.
 7. The visitor's page asks `GET /api/visit/<token>` every three seconds.
-8. At the gate, the guard records entry and exit.
+8. At the gate, the guard sends `IN VR-4022` and then a photo of the visitor.
+   The photo records the entry. Later, `OUT VR-4022` records the exit.
 
 If no reply arrives within `ESCALATE_MINUTES`, the server sends the same details
 to the backup approver. Escalation never decides anything. Only a YES or a NO
@@ -34,7 +36,7 @@ pending ──(no reply in time)──> escalated
                  │
         approved │ declined
                  │
-         (guard records entry)
+   (guard sends IN, then a photo)
                  │
               inside
                  │
@@ -60,13 +62,33 @@ same time, so each job has its own word.
 | `VR-4022`     | Shows the pass and says what you can do next              |
 | `YES VR-4022` | Approves the request                                      |
 | `NO VR-4022`  | Declines the request                                      |
-| `IN VR-4022`  | Records the entry                                         |
+| `IN VR-4022`  | Asks for a photo, and names the visitor to photograph     |
+| a photo       | Records the entry for the last `IN`                       |
 | `OUT VR-4022` | Records the exit                                          |
 | anything else | Sends back the request that is waiting, with full details |
 
 `YES` and `NO` work without a code when exactly one request is waiting. The
 server ignores every number that is not in `MAIN_APPROVER`, `BACKUP_APPROVER`
 or `GUARD`.
+
+### The photo at the gate
+
+On WhatsApp, `IN` alone lets nobody in. The server answers "Take a photo of
+Asha Rao and send it here." The guard takes the photo in the same chat and
+sends it. That photo records the entry, and the server answers with the pass.
+
+- The photo must come within 10 minutes of the `IN`. After that, send `IN`
+  again. `PHOTO_MINUTES` in `app.py` sets this time.
+- Each `IN` replaces the one before it. If you send `IN VR-4022` and then
+  `IN VR-5100`, the photo lets in VR-5100, and the reply names that code.
+- One photo lets in one person. A second photo on the same `IN` does nothing.
+- Only the `GUARD` number can send the photo. A photo from any other number
+  changes nothing.
+
+The photo itself stays in the gate desk's WhatsApp chat. The server keeps
+WhatsApp's id for the photo and the time it arrived. The visit log shows that
+time in the `photo_at` column. The privacy screen in the visitor app says the
+same thing, so change both together.
 
 ## Two kinds of address, on purpose
 
@@ -89,11 +111,13 @@ The CSV has one row per visit and these columns:
 
 ```
 reference, name, phone, address, reason, visiting, guests,
-status, created_at, escalated_at, decided_at, entered_at, exited_at
+status, created_at, escalated_at, decided_at, entered_at, exited_at, photo_at
 ```
 
 Times are UTC in ISO format. A visit that never entered has empty `entered_at`
-and `exited_at`, so you can filter completed visits on those columns.
+and `exited_at`, so you can filter completed visits on those columns. An entry
+recorded on the gate page has an empty `photo_at`, because the page takes no
+photo.
 
 A cell that opens with `=`, `+`, `-` or `@` is written with a leading quote.
 Excel and Sheets run such a cell as a formula, so a visitor who types
@@ -213,10 +237,12 @@ and choose Never for expiry.
 2. Read the WhatsApp message on your phone.
 3. Reply `YES VR-4022`, using the code from the message.
 4. Watch the page turn green and show the entry pass.
-5. Send `IN VR-4022` on WhatsApp, or use `/gate` in a browser.
-6. The visitor page changes to "Inside campus" by itself.
-7. Send `OUT VR-4022`. The visitor page says "Visit complete".
-8. Send the code once more. It says the pass is closed.
+5. Send `IN VR-4022` on WhatsApp. The reply asks for a photo.
+6. Take a photo in the same chat and send it. You can also use `/gate` in a
+   browser instead of steps 5 and 6.
+7. The visitor page changes to "Inside campus" by itself.
+8. Send `OUT VR-4022`. The visitor page says "Visit complete".
+9. Send the code once more. It says the pass is closed.
 
 To show a decline, reply `NO` with the code.
 
@@ -245,7 +271,7 @@ not reply. After one minute the backup approver gets the same details.
 
 The first runs the whole flow without sending any WhatsApp message: approval,
 decline, escalation, repeated deliveries, the code-guessing defense, both gate
-routes, the export, and the delete-after-retention rule.
+routes, the photo at the gate, the export, and the delete-after-retention rule.
 
 The second proves the app survives load: sixty visitors submitting at the same
 instant all get unique codes, and twenty guards pressing Record entry on the same
@@ -262,7 +288,9 @@ node test_form.js
 
 It covers the three rules the pages have to keep: Continue and Review refuse a
 half filled form and turn each wrong field light red, a field takes one line of
-plain text and nothing else, and a closed pass stops showing the visitor.
+plain text and nothing else, and a closed pass stops showing the visitor. It
+also checks the "+" button that adds a person: the name box opens only after
+you press "+", and a name left in the box still counts when you press Review.
 
 Two linters are set up, and both report nothing on a clean tree.
 
@@ -310,6 +338,9 @@ every request. Set it to `true` only when a proxy really is in front.
   so anyone with the key can download every visitor's name, phone and address.
   A guard types it once per device. The page asks for it before it shows anything
   else, because a code without a key can do nothing.
+- Only WhatsApp asks for a photo. The **Record entry** button on the gate page
+  still lets a visitor in without one. Use WhatsApp at the gate if every entry
+  must have a photo.
 - The approver is one fixed number. A real deployment would look up the student
   being visited and message that person.
 - The 4-digit code is short enough to guess, which is why it never works on its

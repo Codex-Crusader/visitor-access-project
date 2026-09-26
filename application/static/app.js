@@ -4,12 +4,15 @@ const POLL_SLOWEST = 30000;   // slowest gap after repeated failures
 const POLL_TIMEOUT = 10000;   // give up on one status check
 const SEND_TIMEOUT = 75000;   // a sleeping free server can take ~50s to wake
 const LIVE_VIEWS = ["status", "home", "inout"];
-const S = {s:"home", f:{name:"",phone:"",address:"",reason:"",other:"",visiting:""}, g:[], e:{},
+const MAX_GUESTS = 10;        // the server keeps no more than this
+const S = {s:"home", f:{name:"",phone:"",address:"",reason:"",other:"",visiting:"",guest:""}, g:[], e:{}, adding:0,
   visit:null, cfg:{gate_desk_phone:"",escalate_minutes:30,retain_days:90}, err:"", hist:[], sheet:0,
   wait:POLL_EVERY, down:0};
 
 const el = i=>document.getElementById(i);
-const x=s=>String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+// Built once. Inside the callback it was a new object for every escaped letter.
+const ESC={"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"};
+const x=s=>String(s).replace(/[&<>"']/g,c=>ESC[c]);
 const set=(k,v)=>{S.f[k]=v;if(S.e[k]){delete S.e[k];unmark(k)}};
 const st=()=>S.visit?S.visit.status:"none";
 const waiting=()=>st()==="pending"||st()==="escalated";
@@ -37,6 +40,16 @@ const fact=(k,v)=>`<div><span>${k}</span><b>${x(v||"—")}</b></div>`;
 // disappears cannot be written into a template and still read as valid HTML.
 const flag=k=>S.e[k]?"bad":"";
 const note=k=>S.e[k]?`<div class="bad-note" id="e_${k}">${x(S.e[k])}</div>`:"";
+// A "+" button first. Pressing it opens a box for one more name. Adding the
+// name closes the box and brings the "+" back. The server keeps ten guests at
+// most, so the "+" goes away at ten rather than letting an eleventh vanish.
+const guestBox=()=>S.adding
+  ?`<div class="add-row"><input id="f_guest" class="${flag("guest")}" value="${x(S.f.guest)}"
+      oninput="set('guest',this.value)" placeholder="Their name" aria-label="Name of the person with you" enterkeyhint="done">
+      <button onclick="add()">Add</button></div>${note("guest")}`
+  :S.g.length<MAX_GUESTS
+    ?`<button type="button" class="add-person" id="more" onclick="openAdd()"><span class="plus" aria-hidden="true">+</span>Add a person</button>`
+    :"";
 const gate=()=>S.cfg.gate_desk_phone?`<a class="btn plain" href="tel:${x(S.cfg.gate_desk_phone)}">Call gate desk</a>`:"";
 
 const offlineNote=()=>S.down
@@ -102,7 +115,7 @@ function view(){
       :`<p class="sm">We pick the approver for you.</p>`}
     <label>Anyone with you?</label>
     ${S.g.map((g,i)=>`<div class="guest">${x(g)}<button onclick="drop(${i})">Remove</button></div>`).join("")}
-    <div class="add-row"><input id="gn" placeholder="Their name"><button onclick="add()">Add</button></div>
+    ${guestBox()}
     <button class="btn" onclick="n2()">Review</button>
     <button class="btn plain" onclick="S.sheet=1;render()">Finish later</button>`;
 
@@ -155,13 +168,16 @@ function view(){
       <span class="pass-cut"></span>
       <span class="pass-foot">${x(S.visit.name||"Visitor")}${S.visit.guests.length?" +"+S.visit.guests.length:""} &middot; today</span>
       <span class="pass-way">${out?"On your way out":"Coming in"}</span></div>
-      <p class="sm">${out?"Show this again on the way out. The guard closes it.":"Show this at the gate. The guard looks it up."}</p>
+      <p class="sm">${out?"Show this again on the way out. The guard closes it.":"Show this at the gate. The guard looks it up and takes your photo, then lets you in."}</p>
       ${gate()}
       <button class="btn plain" onclick="home()">Go to home</button>`;}
 
   case "privacy": return `<h2>What we ask for</h2>
-    <div class="facts">${["Name","Phone","Address","Reason","Who you are visiting"].map(i=>`<div><span>${i}</span></div>`).join("")}</div>
-    <p class="sm">No selfie, no ID number, no vehicle number.</p>
+    <div class="facts">${["Name","Phone","Address","Reason","Who you are visiting","A photo at the gate"].map(i=>`<div><span>${i}</span></div>`).join("")}</div>
+    <p class="sm">At the gate, the guard takes one photo of you on the gate desk's
+    WhatsApp before letting you in. The photo stays in that WhatsApp chat. This
+    app keeps the time it was taken and WhatsApp's id for it, not the photo
+    itself. No ID number, no vehicle number.</p>
     <p class="sm">The campus keeps your request, and the times you entered and left,
     for ${S.cfg.retain_days===1?"one day":S.cfg.retain_days+" days"}. After that it is
     deleted automatically.
@@ -180,7 +196,7 @@ function view(){
 const MAX=200;
 const STAFF="Name a student, not a staff member.";
 const STEP1=["name","phone","address"];
-const STEP2=["reason","other","visiting"];
+const STEP2=["reason","other","visiting","guest"];
 // Line breaks, control codes, invisible marks and the overrides that make
 // text run the other way. They are not part of a name or an address, and the
 // approver's WhatsApp message is built out of these fields, so a line break
@@ -219,8 +235,11 @@ function mark(){
     b.setAttribute("aria-pressed",String(S.f.reason===REASONS[i])));
   const bar=document.querySelector(".rail b");
   if(bar)bar.style.height=railPct()+"%";
-  const guest=el("gn");
-  if(guest)guest.onkeydown=e=>{if(e.key==="Enter")add()};
+  const guest=el("f_guest");
+  if(guest)guest.onkeydown=e=>{
+    if(e.key==="Enter")add();
+    else if(e.key==="Escape"){closeAdd();render();const more=el("more");if(more)more.focus()}
+  };
   const sheet=document.querySelector(".sheet");
   if(sheet)sheet.onclick=e=>{if(e.target===sheet){S.sheet=0;render()}};
 }
@@ -270,7 +289,14 @@ function n2(){
     else if(/prof|dr\.|sir|madam/i.test(S.f.visiting))found.visiting=STAFF;
   }
 
+  // A name typed in the open box but not added yet still counts. Pressing
+  // Review must not quietly lose the person.
+  const typed=S.adding&&tidy(S.f.guest)?needed("guest","That name"):"";
+  if(typed)found.guest=typed;
+
   if(!settle(STEP2,found))return;
+  if(S.adding&&tidy(S.f.guest))S.g.push(tidy(S.f.guest));
+  closeAdd();
   S.f.other=tidy(S.f.other);
   S.f.visiting=tidy(S.f.visiting);
   S.err="";
@@ -285,17 +311,30 @@ function pick(r){
   render();
   if(r==="Other"){const i=el("f_other");if(i)i.focus()}
 }
-function add(){
-  const raw=el("gn").value;
-  if(raw.length>MAX||NOT_TEXT.test(raw))return;
-  const v=tidy(raw);
-  if(!v||S.g.length>=10)return;
-  S.g.push(v);
+function openAdd(){
+  S.adding=1;
   render();
+  const box=el("f_guest");
+  if(box)box.focus();
+}
+function closeAdd(){S.adding=0;S.f.guest="";delete S.e.guest}
+// Adds the name in the box. An empty box just closes again. A name that
+// breaks the field rules turns red and stays, the same as every other field.
+function add(){
+  const v=tidy(S.f.guest);
+  if(v){
+    const bad=needed("guest","That name");
+    if(bad){settle(["guest"],{guest:bad});return}
+    if(S.g.length<MAX_GUESTS)S.g.push(v);
+  }
+  closeAdd();
+  render();
+  const more=el("more");
+  if(more)more.focus();
 }
 function drop(i){S.g.splice(i,1);render()}
 function home(){S.s="home";S.hist=[];S.sheet=0;render();el("view").scrollTop=0}
-function again(){S.visit=null;localStorage.removeItem("tok");S.g=[];S.e={};S.err="";go("step1",0)}
+function again(){S.visit=null;localStorage.removeItem("tok");S.g=[];closeAdd();S.e={};S.err="";go("step1",0)}
 
 // Give up on a stalled request instead of hanging forever.
 async function load(url,options={},ms=POLL_TIMEOUT){

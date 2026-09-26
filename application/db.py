@@ -31,10 +31,31 @@ CREATE TABLE IF NOT EXISTS seen_messages (
   seen TEXT NOT NULL
 );
 
+-- The guard sent IN <code> and the app is waiting for the visitor's photo.
+-- One row per guard number, so a second IN replaces the first. These are
+-- tables of their own rather than new columns on visits, because CREATE TABLE
+-- IF NOT EXISTS never adds a column to a database that already exists.
+CREATE TABLE IF NOT EXISTS photo_waits (
+  guard     TEXT PRIMARY KEY,
+  reference TEXT NOT NULL,
+  asked     TEXT NOT NULL
+);
+
+-- The photo the guard took at the gate. The picture itself stays in the gate
+-- desk's WhatsApp chat. The app keeps Meta's id for it and the time.
+CREATE TABLE IF NOT EXISTS photos (
+  reference TEXT PRIMARY KEY,
+  media_id  TEXT NOT NULL,
+  taken_at  TEXT NOT NULL
+);
+
 -- The escalation sweep, the purge and the open-request list all filter on
 -- status and created_at. Without this they scan every row every 30 seconds.
 CREATE INDEX IF NOT EXISTS visits_status_created ON visits (status, created_at);
 CREATE INDEX IF NOT EXISTS visits_created ON visits (created_at);
+-- The purge also deletes old message ids every 30 seconds. Without this it
+-- reads the whole table each time to find the few that are old.
+CREATE INDEX IF NOT EXISTS seen_messages_seen ON seen_messages (seen);
 """
 
 PENDING = "pending"
@@ -124,12 +145,21 @@ def get_by_token(token):
 def delete(reference):
     with connect() as conn:
         conn.execute("DELETE FROM visits WHERE reference = ?", (reference,))
+        conn.execute("DELETE FROM photos WHERE reference = ?", (reference,))
 
 
 def all_visits():
-    """Every stored visit, oldest first. Used by the export."""
+    """Every stored visit, oldest first, with the time of its gate photo.
+
+    Used by the export. The photo time comes from one join rather than one
+    lookup per visit.
+    """
     with connect() as conn:
-        rows = conn.execute("SELECT * FROM visits ORDER BY created_at").fetchall()
+        rows = conn.execute(
+            "SELECT visits.*, photos.taken_at AS photo_at FROM visits"
+            " LEFT JOIN photos ON photos.reference = visits.reference"
+            " ORDER BY visits.created_at"
+        ).fetchall()
     return [to_dict(row) for row in rows]
 
 
@@ -191,6 +221,56 @@ def check_out(reference):
     return _stamp(reference, CLOSED, "exited_at", INSIDE)
 
 
+def wait_for_photo(guard, reference):
+    """Remember that this guard owes a photo for this pass. Replaces any earlier one."""
+    with connect() as conn:
+        conn.execute(
+            "INSERT OR REPLACE INTO photo_waits (guard, reference, asked) VALUES (?, ?, ?)",
+            (guard, reference, now()),
+        )
+
+
+def enter_with_photo(guard, minutes, media_id):
+    """Let in the visitor this guard's photo is for. Returns (reference, entered).
+
+    reference is None when no IN from this guard is waiting, or when the IN is
+    older than `minutes`. entered is False unless the pass was approved.
+
+    Every photo ends the wait, so a second photo can never let a second person
+    in on the same IN. Everything happens in one transaction: if any step
+    fails, the wait is still there and the guard can send the photo again.
+    """
+    with connect() as conn:
+        wait = conn.execute(
+            "SELECT reference, asked FROM photo_waits WHERE guard = ?", (guard,)
+        ).fetchone()
+        conn.execute("DELETE FROM photo_waits WHERE guard = ?", (guard,))
+        if wait is None or wait["asked"] < _ago(minutes / 1440):
+            return None, False
+
+        reference, stamp = wait["reference"], now()
+        changed = conn.execute(
+            "UPDATE visits SET status = ?, entered_at = ? WHERE reference = ? AND status = ?",
+            (INSIDE, stamp, reference, APPROVED),
+        ).rowcount
+        if changed == 1:
+            conn.execute(
+                "INSERT OR REPLACE INTO photos (reference, media_id, taken_at)"
+                " VALUES (?, ?, ?)",
+                (reference, media_id, stamp),
+            )
+    return reference, changed == 1
+
+
+def photo_of(reference):
+    """The stored photo record for a pass, or None."""
+    with connect() as conn:
+        row = conn.execute(
+            "SELECT media_id, taken_at FROM photos WHERE reference = ?", (reference,)
+        ).fetchone()
+    return dict(row) if row else None
+
+
 def is_new_message(message_id):
     """False when this WhatsApp message was already handled."""
     if not message_id:
@@ -210,4 +290,10 @@ def purge_old():
             "DELETE FROM visits WHERE created_at < ?", (_ago(config.RETAIN_DAYS),)
         ).rowcount
         conn.execute("DELETE FROM seen_messages WHERE seen < ?", (_ago(1),))
+        # A photo goes with its visit. reference is the key of both tables,
+        # so this is an index lookup per photo, not a scan per photo.
+        conn.execute(
+            "DELETE FROM photos WHERE reference NOT IN (SELECT reference FROM visits)"
+        )
+        conn.execute("DELETE FROM photo_waits WHERE asked < ?", (_ago(1),))
     return removed

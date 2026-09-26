@@ -52,6 +52,26 @@ def say(sender, text):
     return sent[-1][1] if sent else ""
 
 
+def picture(sender, caption=None):
+    """Build a Meta webhook payload for a photo, with a fresh message id."""
+    counter[0] += 1
+    image = {"id": f"media.{counter[0]}", "mime_type": "image/jpeg"}
+    if caption is not None:
+        image["caption"] = caption
+    return {
+        "entry": [{"changes": [{"value": {"messages": [
+            {"id": f"wamid.{counter[0]}", "from": sender, "type": "image", "image": image}
+        ]}}]}]
+    }
+
+
+def snap(sender):
+    """The guard sends a photo. Returns the reply, or "" when there was none."""
+    replies = len(sent)
+    client.post("/webhook/whatsapp", json=picture(sender))
+    return sent[-1][1] if len(sent) > replies else ""
+
+
 payload = {
     "name": "Asha Rao",
     "phone": "9876543210",
@@ -154,9 +174,19 @@ assert say(APPROVER, code.lower().replace("vr-", "")) .count("Asha Rao") == 1
 
 # OUT before IN is refused.
 assert "Not checked in" in say(APPROVER, f"OUT {code}")
-# IN works, then a second IN is refused.
-assert "Inside now" in say(APPROVER, f"IN {code}")
-assert client.get(f"/api/visit/{token}").get_json()["entered_at"]
+# A photo with no IN before it lets nobody in.
+assert "No entry is waiting" in snap(APPROVER)
+# IN only asks for the photo, and names the person to photograph.
+asked = say(APPROVER, f"IN {code}")
+assert "Take a photo of Asha Rao" in asked and code in asked, asked
+assert client.get(f"/api/visit/{token}").get_json()["status"] == "approved"
+# The photo lets them in.
+assert "Inside now" in snap(APPROVER)
+entered = client.get(f"/api/visit/{token}").get_json()
+assert entered["status"] == "inside" and entered["entered_at"]
+assert db.photo_of(code)["taken_at"] == entered["entered_at"]
+# A second photo on the same IN lets nobody else in, and a second IN is refused.
+assert "No entry is waiting" in snap(APPROVER)
 assert "Already inside" in say(APPROVER, f"IN {code}")
 # OUT closes it, and then the code is dead.
 assert "Closed" in say(APPROVER, f"OUT {code}")
@@ -165,6 +195,74 @@ assert "closed" in say(APPROVER, f"IN {code}").lower()
 assert "No pass has code VR-9999" in say(APPROVER, "IN VR-9999")
 assert "Add the code" in say(APPROVER, "IN")
 print("  lookup, entry, exit and decommission all correct")
+
+print("the gate photo")
+
+
+def approved():
+    made = new_request()
+    say(APPROVER, f"YES {made['reference']}")
+    return made
+
+
+def status_of(made):
+    return client.get(f"/api/visit/{made['token']}").get_json()["status"]
+
+
+# Two INs in a row: the photo goes to the second, and the reply says which.
+first, second_in = approved(), approved()
+say(APPROVER, f"IN {first['reference']}")
+say(APPROVER, f"IN {second_in['reference']}")
+went_in = snap(APPROVER)
+assert second_in["reference"] in went_in and "Inside now" in went_in, went_in
+assert status_of(first) == "approved" and status_of(second_in) == "inside"
+
+# An IN older than the time limit is dead. The photo must not let anyone in.
+say(APPROVER, f"IN {first['reference']}")
+with db.connect() as conn:
+    conn.execute("UPDATE photo_waits SET asked = ?", ("2020-01-01T00:00:00+00:00",))
+late = snap(APPROVER)
+assert "No entry is waiting" in late and str(application.PHOTO_MINUTES) in late, late
+assert status_of(first) == "approved"
+
+# The web gate let the visitor in while the guard was taking the photo.
+say(APPROVER, f"IN {first['reference']}")
+client.post(f"/api/pass/{first['reference']}/entry", headers=KEY)
+assert "Already inside" in snap(APPROVER)
+assert db.photo_of(first["reference"]) is None
+
+# A photo from a stranger gets no answer and changes nothing.
+third = approved()
+say(APPROVER, f"IN {third['reference']}")
+assert snap(STRANGER) == ""
+assert status_of(third) == "approved"
+
+# An approver who is not the gate desk cannot let anyone in with a photo.
+real_guard = application.config.GUARD
+application.config.GUARD = "+919999999999"
+try:
+    assert "Only the gate desk" in snap(APPROVER)
+finally:
+    application.config.GUARD = real_guard
+
+# A failure after the message id is spent asks for the photo again, and the
+# photo sent again then works, because nothing was used up.
+real_enter = db.enter_with_photo
+
+
+def broken(*_args):
+    raise RuntimeError("database is locked")
+
+
+db.enter_with_photo = broken
+try:
+    assert "Send that again" in snap(APPROVER)
+finally:
+    db.enter_with_photo = real_enter
+assert status_of(third) == "approved"
+assert "Inside now" in snap(APPROVER)
+assert status_of(third) == "inside"
+print("  IN asks for a photo, and only the photo lets the visitor in")
 
 print("gate over the web page")
 second = new_request()
@@ -289,6 +387,10 @@ assert done[0]["status"] == "closed"
 assert done[0]["entered_at"] and done[0]["exited_at"], done[0]
 # Guests come out readable, not as JSON.
 assert done[0]["guests"] == "Ravi Rao", done[0]["guests"]
+# The log says when the gate photo was taken. The web gate takes none.
+assert done[0]["photo_at"] == "", done[0]
+photographed = next(r for r in rows if r["reference"] == code)
+assert photographed["photo_at"] == photographed["entered_at"], photographed
 # A visit that never entered has empty times rather than the word None.
 never = next(r for r in rows if r["status"] == "declined")
 assert never["entered_at"] == "" and never["exited_at"] == ""
@@ -358,6 +460,14 @@ application.forget_hits()
 polls = [client.get(f"/api/visit/{fresh['token']}").status_code for _ in range(50)]
 assert set(polls) == {200}, set(polls)
 print("  50 visitor polls all served")
+
+# The table of callers stays bounded. Callers silent for an hour are dropped
+# once it passes MAX_CALLERS, and callers heard from recently are kept.
+application.forget_hits()
+application.add_silent_callers(application.MAX_CALLERS + 1, 7200)
+assert client.post("/api/requests", json={**payload, "phone": "123"}).status_code == 400
+assert application.hit_buckets() == 1, application.hit_buckets()
+print(f"  {application.MAX_CALLERS + 1} silent callers swept out, the live one kept")
 application.forget_hits()
 
 print()

@@ -19,7 +19,8 @@ GATE_WORDS = {"IN": "entry", "OUT": "exit"}
 HELP = (
     "Send a code like VR-4022 to look it up.\n"
     "YES <code> approves. NO <code> declines.\n"
-    "IN <code> records entry. OUT <code> records exit."
+    "IN <code>, then a photo of the visitor, records entry.\n"
+    "OUT <code> records exit."
 )
 
 
@@ -98,7 +99,7 @@ GATE_LINES = {
     db.PENDING: "Not approved yet. Do not let them in.",
     db.ESCALATED: "Not approved yet. Do not let them in.",
     db.DECLINED: "Declined. Do not let them in.",
-    db.APPROVED: "Approved. Reply IN {ref} to record the entry.",
+    db.APPROVED: "Approved. Reply IN {ref}, then send a photo of the visitor.",
     db.INSIDE: "Inside now. Reply OUT {ref} to record the exit.",
     db.CLOSED: "Closed. The visit is over and this code is finished.",
 }
@@ -138,6 +139,14 @@ def pass_body(visit):
     return "\n".join(lines)
 
 
+def photo_request(visit):
+    """What the guard reads after IN, while the visitor waits at the gate."""
+    return (
+        f"Take a photo of {visit['name']} and send it here.\n"
+        f"{visit['reference']} is let in once the photo arrives."
+    )
+
+
 def normalize_reference(text):
     found = CODE.match(text.strip())
     return f"VR-{found.group(1)}" if found else None
@@ -168,15 +177,25 @@ def read_reply(body):
 
 
 def read_incoming(payload):
-    """Pull (message_id, sender, text) out of a Meta webhook payload."""
+    """Pull (message_id, sender, text, photo) out of a Meta webhook payload.
+
+    photo is Meta's media id when the message is a picture, and None for text.
+    A picture's text is its caption, which is often empty. Any other kind of
+    message, and anything malformed, gives four Nones.
+    """
+    nothing = None, None, None, None
     try:
         value = payload["entry"][0]["changes"][0]["value"]
         message = value["messages"][0]
-        if message.get("type") != "text":
-            return None, None, None
-        return message.get("id"), message["from"], message["text"]["body"]
+        kind = message.get("type")
+        if kind == "text":
+            return message.get("id"), message["from"], message["text"]["body"], None
+        if kind == "image":
+            image = message["image"]
+            return message.get("id"), message["from"], image.get("caption", ""), image["id"]
+        return nothing
     except (KeyError, IndexError, TypeError):
-        return None, None, None
+        return nothing
 
 
 def notify_approver(visit):
