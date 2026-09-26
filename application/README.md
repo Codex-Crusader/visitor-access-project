@@ -13,7 +13,8 @@ The guard works either from a web page or from WhatsApp.
 1. The browser posts the form to `POST /api/requests`.
 2. The server stores the request and gives it two things: a short code like
    `VR-4022` that people read aloud, and a long private token for the browser.
-3. The server sends one WhatsApp message to the main approver.
+3. The server sends one WhatsApp message to the main approver, as an approved
+   template, see "The approval template".
 4. The approver replies `YES VR-4022` or `NO VR-4022`.
 5. Meta posts that reply to `POST /webhook/whatsapp`.
 6. The server records the decision.
@@ -162,10 +163,52 @@ the code agree. Change one and change the other.
 | `RETAIN_DAYS`          | Days a record is kept before deletion. Default 90        |
 | `REQUESTS_PER_HOUR`    | New requests allowed per address per hour. Default 60    |
 | `BEHIND_PROXY`         | Set to `true` on Render. Leave unset on your own machine |
+| `REQUEST_TEMPLATE`     | Approval request template. Default `visit_request`       |
+| `TEMPLATE_LANGUAGE`    | Language code of that template. Default `en`             |
 
 Write every phone number in E.164 form: a plus sign, the country code, then the
 number. Each approver number must also be on the recipient list in the Meta API
 Setup page, because a test number only sends to numbers on that list.
+
+### The approval template
+
+WhatsApp delivers plain text only to a person who messaged your business
+number in the last 24 hours. Outside that window, Meta accepts the message,
+answers 200, and then drops it. The app sees no error, and the approver gets
+nothing. An approver who has not used the number since yesterday is outside
+the window.
+
+The approval request therefore goes out as the template `visit_request`, which
+WhatsApp delivers at any time. The template has category Utility, language
+`en`, and this body:
+
+```
+Campus visit request {{1}}.
+{{2}}
+
+Name: {{3}}
+Phone: {{4}}
+Address: {{5}}
+Reason: {{6}}
+Visiting: {{7}}
+With: {{8}}
+
+Reply YES or NO followed by the reference to decide this request.
+```
+
+`{{1}}` is the reference, `{{2}}` says whether this is a new request or an
+escalation, and the rest are the visitor's details. Meta must approve the
+template before it works. Until then, and whenever Meta refuses it, the app
+sends plain text instead and writes `Approval template refused` to the log.
+Replies to the approver's and the guard's own commands stay plain text,
+because the person just wrote to the number.
+
+If you make a new Meta app or WhatsApp account, create the template again in
+WhatsApp Manager, under Message templates, with the same name and body.
+
+Meta reports a lost message later, through the same webhook. The app writes
+each one to the log as `WhatsApp could not deliver to <number>: error <code>`.
+Error 131047 means the 24 hour window.
 
 ## Run it on your own machine
 
@@ -253,6 +296,11 @@ not reply. After one minute the backup approver gets the same details.
 
 - Error 190: the access token expired. Use a permanent token, see above.
 - Error 131030: the number is not on the Meta recipient list. Add it.
+- The visitor sees the request as sent, but the approver gets nothing: search
+  the Render log for `could not deliver`. Error 131047 means the 24 hour
+  window, see "The approval template". `Approval template refused` means the
+  template is missing or still waiting for Meta's review.
+- Error 132001: the template does not exist, or Meta has not approved it yet.
 - The reply never changes the page: the webhook address does not match your
   current address, or the **messages** field is not subscribed.
 - The webhook returns 403: `META_APP_SECRET` does not match the app.

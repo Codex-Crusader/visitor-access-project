@@ -26,6 +26,7 @@ def fake_send(to, body):
     with lock:
         sent.append((to, body))
 whatsapp.send = fake_send
+whatsapp.send_template = lambda to, values: fake_send(to, "\n".join(values))
 
 db.init()
 client = application.app.test_client()

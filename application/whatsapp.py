@@ -33,16 +33,11 @@ def same_number(a, b):
     return digits(a) == digits(b)
 
 
-def send(to_phone, body):
+def _post(to_phone, message):
     response = requests.post(
         API_URL,
         headers={"Authorization": f"Bearer {config.META_TOKEN}"},
-        json={
-            "messaging_product": "whatsapp",
-            "to": digits(to_phone),
-            "type": "text",
-            "text": {"body": body},
-        },
+        json={"messaging_product": "whatsapp", "to": digits(to_phone), **message},
         timeout=TIMEOUT_SECONDS,
     )
     if not response.ok:
@@ -50,6 +45,49 @@ def send(to_phone, body):
             f"WhatsApp send failed ({response.status_code}): {response.text}"
         )
     return response.json()
+
+
+def send(to_phone, body):
+    """Plain text. WhatsApp delivers it only within 24 hours of the person's
+    last message to this number. Replies to a command always are."""
+    return _post(to_phone, {"type": "text", "text": {"body": body}})
+
+
+def send_template(to_phone, values):
+    """The approved template, which WhatsApp delivers at any time.
+
+    The approver may not have written to this number for days, and outside
+    24 hours Meta accepts plain text and then drops it without telling us.
+    """
+    return _post(to_phone, {
+        "type": "template",
+        "template": {
+            "name": config.REQUEST_TEMPLATE,
+            "language": {"code": config.TEMPLATE_LANGUAGE},
+            "components": [{
+                "type": "body",
+                "parameters": [{"type": "text", "text": value} for value in values],
+            }],
+        },
+    })
+
+
+# The values for the visit_request template, in the order of its {{1}}..{{8}}:
+# reference, the line saying who is asked, then the six details.
+def template_values(visit, escalated=False):
+    return [
+        visit["reference"],
+        "Backup approver: no answer from the first approver."
+        if escalated
+        else "New request, waiting for your decision.",
+        visit["name"],
+        visit["phone"],
+        visit["address"],
+        visit["reason"],
+        visit["visiting"],
+        # Meta refuses an empty value, so no guests is said in words.
+        ", ".join(visit["guests"]) or "No one",
+    ]
 
 
 def request_body(visit, escalated=False):
@@ -198,9 +236,52 @@ def read_incoming(payload):
         return nothing
 
 
+def read_failures(payload):
+    """Messages Meta could not deliver, as (recipient, code, reason) tuples.
+
+    Meta accepts a message first and reports its delivery later, in the same
+    webhook, as a status. A failed status is the only sign that a message
+    never arrived, for example error 131047, the 24 hour rule.
+    """
+    failures = []
+    try:
+        for entry in payload.get("entry", []):
+            for change in entry.get("changes", []):
+                for status in change.get("value", {}).get("statuses", []):
+                    if status.get("status") != "failed":
+                        continue
+                    for error in status.get("errors") or [{}]:
+                        failures.append((
+                            status.get("recipient_id", "?"),
+                            error.get("code", "?"),
+                            error.get("title") or error.get("message") or "no reason given",
+                        ))
+    except (AttributeError, TypeError):
+        pass
+    return failures
+
+
+def notify(phone, visit, escalated=False):
+    """Send the approval request. Returns why the template failed, or None.
+
+    The template is tried first, because it arrives whenever it is sent.
+    If Meta refuses it, for example while the template waits for review,
+    plain text goes instead. That still arrives within the 24 hours.
+    """
+    problem = None
+    if config.REQUEST_TEMPLATE:
+        try:
+            send_template(phone, template_values(visit, escalated))
+            return None
+        except RuntimeError as failure:
+            problem = str(failure)
+    send(phone, request_body(visit, escalated))
+    return problem
+
+
 def notify_approver(visit):
-    send(config.MAIN_APPROVER, request_body(visit))
+    return notify(config.MAIN_APPROVER, visit)
 
 
 def notify_backup(visit):
-    send(config.BACKUP_APPROVER, request_body(visit, escalated=True))
+    return notify(config.BACKUP_APPROVER, visit, escalated=True)

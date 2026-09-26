@@ -31,6 +31,13 @@ GUARD = os.getenv("GUARD", "").strip() or MAIN_APPROVER
 GATE_KEY = _required("GATE_KEY")
 
 GATE_DESK_PHONE = _required("GATE_DESK_PHONE")
+
+# The approved WhatsApp template for the approval request. WhatsApp delivers
+# plain text only within 24 hours of the approver's last message, and drops it
+# quietly after that, so the request goes out as this template. Set it empty to
+# send plain text only.
+REQUEST_TEMPLATE = os.getenv("REQUEST_TEMPLATE", "visit_request").strip()
+TEMPLATE_LANGUAGE = os.getenv("TEMPLATE_LANGUAGE", "en").strip()
 ESCALATE_MINUTES = _int("ESCALATE_MINUTES", 30)
 
 # Days a visit record is kept. The privacy screen states this number.

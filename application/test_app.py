@@ -4,6 +4,7 @@ Run it with: .venv\\Scripts\\python.exe test_app.py
 It sends no WhatsApp messages and uses a throwaway database.
 """
 
+import logging
 import os
 import tempfile
 
@@ -28,6 +29,16 @@ import whatsapp
 
 sent = []
 whatsapp.send = lambda to, body: sent.append((to, body))
+# A template arrives as its values, one per line, so the checks below can read it.
+templates = []
+
+
+def fake_template(to, values):
+    templates.append((to, values))
+    sent.append((to, "\n".join(values)))
+
+
+whatsapp.send_template = fake_template
 
 db.init()
 client = application.app.test_client()
@@ -98,6 +109,82 @@ assert visit["status"] == "pending"
 assert len(token) > 16, "token must be long enough to resist guessing"
 assert code in sent[-1][1]
 print("  created", code)
+
+print("the approval request goes out as a template")
+# Plain text reaches the approver only within 24 hours of their last message.
+# The template arrives at any time, so the request must use it.
+to, values = templates[-1]
+assert to == "+911234567890", to
+assert len(values) == 8, values
+assert values[0] == code and values[2] == "Asha Rao" and values[7] == "Ravi Rao", values
+# Meta refuses an empty value and a line break inside a value.
+assert all(v and "\n" not in v for v in values), values
+assert client.post("/api/requests", json={**payload, "guests": []}).status_code == 201
+assert templates[-1][1][7] == "No one", templates[-1][1]
+
+caught = []
+
+
+class Catch(logging.Handler):
+    def emit(self, record):
+        caught.append(record.getMessage())
+
+
+application.app.logger.addHandler(Catch())
+
+# While the template waits for Meta's review, plain text goes instead, and the
+# log says so, because plain text alone can be lost.
+real_template = whatsapp.send_template
+
+
+def refused(*_args):
+    raise RuntimeError("WhatsApp send failed (404): template name does not exist")
+
+
+whatsapp.send_template = refused
+try:
+    fallback = client.post("/api/requests", json=payload)
+    assert fallback.status_code == 201, fallback.get_data(as_text=True)
+    assert f"Reply YES {fallback.get_json()['reference']}" in sent[-1][1]
+    assert any("template refused" in line for line in caught), caught
+
+    # When plain text fails too, the visitor is told, and nothing is kept.
+    real_send = whatsapp.send
+
+    def down(*_args):
+        raise RuntimeError("WhatsApp send failed (500)")
+
+    whatsapp.send = down
+    try:
+        lost = client.post("/api/requests", json=payload)
+        assert lost.status_code == 502, lost.status_code
+    finally:
+        whatsapp.send = real_send
+finally:
+    whatsapp.send_template = real_template
+
+# With no template set, plain text goes straight out.
+application.config.REQUEST_TEMPLATE = ""
+try:
+    count = len(templates)
+    plain = client.post("/api/requests", json=payload).get_json()
+    assert len(templates) == count and f"Reply YES {plain['reference']}" in sent[-1][1]
+finally:
+    application.config.REQUEST_TEMPLATE = "visit_request"
+
+# Meta reports a lost message later, as a failed status. It must reach the log.
+caught.clear()
+lost_status = {"entry": [{"changes": [{"value": {"statuses": [{
+    "id": "wamid.lost", "status": "failed", "recipient_id": "911234567890",
+    "errors": [{"code": 131047, "title": "Re-engagement message"}]}]}}]}]}
+assert client.post("/webhook/whatsapp", json=lost_status).status_code == 200
+assert any("131047" in line and "911234567890" in line for line in caught), caught
+# A delivered status is not an error.
+caught.clear()
+lost_status["entry"][0]["changes"][0]["value"]["statuses"][0]["status"] = "delivered"
+client.post("/webhook/whatsapp", json=lost_status)
+assert caught == [], caught
+print("  template first, plain text as the fallback, and every lost message logged")
 
 # Input guards.
 assert client.post("/api/requests", json={**payload, "phone": "123"}).status_code == 400
@@ -340,6 +427,7 @@ db.mark_escalated(b["reference"])
 after = client.get(f"/api/visit/{b['token']}").get_json()
 assert after["status"] == "escalated" and after["escalated_at"]
 assert "Backup approver" in sent[-1][1]
+assert templates[-1][0] == "+911234567890" and templates[-1][1][1].startswith("Backup")
 # An escalated request is still undecided, and a visitor inside never escalates.
 assert b["reference"] in [v["reference"] for v in db.open_requests()]
 assert ref2 not in [v["reference"] for v in db.open_requests()]

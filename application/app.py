@@ -210,6 +210,13 @@ def is_guard(phone):
     return whatsapp.same_number(phone, config.GUARD)
 
 
+def log_template_problem(problem):
+    """The template was refused and plain text went instead. Say so, because
+    plain text does not reach an approver who has been quiet for 24 hours."""
+    if problem:
+        app.logger.error("Approval template refused, sent plain text instead: %s", problem)
+
+
 def reply_to(phone, text):
     try:
         whatsapp.send(phone, text)
@@ -248,7 +255,7 @@ def create_request():
 
     visit = db.create(fields, guests)
     try:
-        whatsapp.notify_approver(visit)
+        log_template_problem(whatsapp.notify_approver(visit))
     except Exception as sending_failed:
         db.delete(visit["reference"])
         app.logger.error("WhatsApp send failed: %s", sending_failed)
@@ -445,6 +452,12 @@ def whatsapp_reply():
         return "", 403
 
     payload = request.get_json(silent=True) or {}
+    # Meta accepts every message first and reports a failed delivery only
+    # here, later. Without this line a lost approval request leaves no trace.
+    for recipient, code, reason in whatsapp.read_failures(payload):
+        app.logger.error("WhatsApp could not deliver to %s: error %s, %s",
+                         recipient, code, reason)
+
     message_id, sender, text, photo = whatsapp.read_incoming(payload)
     if sender is None:
         return "", 200
@@ -486,7 +499,7 @@ def background_loop():
         time.sleep(BACKGROUND_SECONDS)
         try:
             for visit in db.due_for_escalation():
-                whatsapp.notify_backup(visit)
+                log_template_problem(whatsapp.notify_backup(visit))
                 db.mark_escalated(visit["reference"])
             removed = db.purge_old()
             if removed:
