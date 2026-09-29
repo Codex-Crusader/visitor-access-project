@@ -153,7 +153,7 @@ input.bad:focus{border-color:var(--stop);background:var(--stopBg);box-shadow:0 0
 </div>
 <script>
 
-const REF="VR-4821",ESC=30,DEC=40;
+const REF="VR-4821",ESC=15,DEC=25;
 const REASONS=["See a student","See an office","Delivery","Event","Other"];
 const MAX_GUESTS=10;
 const S={s:"home",min:804,f:{name:"",phone:"",address:"",reason:"",other:"",visiting:"",guest:""},g:[],e:{},
@@ -273,7 +273,7 @@ function view(){
       ${fact("Name",S.f.name)}${fact("Phone",S.f.phone)}${fact("Address",S.f.address)}
       ${fact("Reason",reasonText())}${fact("Visiting",S.f.visiting)}${S.g.length?fact("With you",S.g.join(", ")):""}
     </div>
-    <p class="sm">No answer in 30 minutes and it moves to a backup approver. You do not fill this in again.</p>
+    <p class="sm">No answer in 15 minutes and it moves to a backup approver. You do not fill this in again.</p>
     <button class="btn" onclick="send()">Send request</button>
     <button class="btn plain" onclick="back()">Edit</button>`;
 

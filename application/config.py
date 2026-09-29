@@ -1,5 +1,6 @@
 """Settings from the environment, or from a .env file when one exists."""
 
+import json
 import os
 
 from dotenv import load_dotenv
@@ -27,8 +28,48 @@ MAIN_APPROVER = _required("MAIN_APPROVER")
 BACKUP_APPROVER = os.getenv("BACKUP_APPROVER", "").strip() or MAIN_APPROVER
 GUARD = os.getenv("GUARD", "").strip() or MAIN_APPROVER
 
+# The reasons the visitor form offers, the same list as REASONS in
+# static/app.js. "Other" also covers every reason the visitor typed in.
+REASONS = ("See a student", "See an office", "Delivery", "Event", "Other")
+
+
+def _approvers():
+    """Each reason's (main, backup) approver.
+
+    Every reason starts with MAIN_APPROVER and BACKUP_APPROVER. APPROVERS
+    changes some of them, as JSON: {"Delivery": ["+91...", "+91..."]}.
+    A reason it does not name keeps the two defaults. A wrong name stops the
+    start, because a typo would otherwise send that reason to the defaults.
+    """
+    table = dict.fromkeys(REASONS, (MAIN_APPROVER, BACKUP_APPROVER))
+    raw = os.getenv("APPROVERS", "").strip()
+    if not raw:
+        return table
+    for reason, numbers in json.loads(raw).items():
+        if reason not in table:
+            raise RuntimeError(f"APPROVERS names {reason!r}, which is not one of {REASONS}")
+        if isinstance(numbers, str):
+            numbers = [numbers]
+        if not numbers or not str(numbers[0]).strip():
+            raise RuntimeError(f"APPROVERS gives no number for {reason!r}")
+        main = str(numbers[0]).strip()
+        backup = str(numbers[1]).strip() if len(numbers) > 1 else main
+        table[reason] = (main, backup)
+    return table
+
+
+APPROVERS = _approvers()
+
+
+def approvers_for(reason):
+    """(main, backup) for a visit's reason. A typed-in reason counts as Other."""
+    return APPROVERS.get(reason, APPROVERS["Other"])
+
 # The guard types this on the gate page. Entry and exit need it.
 GATE_KEY = _required("GATE_KEY")
+# The admin page lists every request. It takes ADMIN_KEY, or the gate key
+# while ADMIN_KEY is not set.
+ADMIN_KEY = os.getenv("ADMIN_KEY", "").strip() or GATE_KEY
 
 GATE_DESK_PHONE = _required("GATE_DESK_PHONE")
 
@@ -43,7 +84,7 @@ TEMPLATE_LANGUAGE = os.getenv("TEMPLATE_LANGUAGE", "en").strip()
 # disabled template: plain text is lost for a quiet approver, and the visitor
 # is told the request went out. Off, the visitor is told it failed.
 TEMPLATE_FALLBACK = os.getenv("TEMPLATE_FALLBACK", "").strip().lower() in ("1", "true", "yes")
-ESCALATE_MINUTES = _int("ESCALATE_MINUTES", 30)
+ESCALATE_MINUTES = _int("ESCALATE_MINUTES", 15)
 
 # Days a visit record is kept. The privacy screen states this number.
 RETAIN_DAYS = _int("RETAIN_DAYS", 90)

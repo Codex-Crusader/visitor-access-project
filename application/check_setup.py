@@ -22,9 +22,15 @@ for name in ("MAIN_APPROVER", "BACKUP_APPROVER", "GATE_DESK_PHONE"):
     value = getattr(config, name)
     if not value.startswith("+"):
         fail(f"{name} is {value}. It must start with a plus and the country code.")
+for reason, pair in config.APPROVERS.items():
+    for value in pair:
+        if not value.startswith("+"):
+            fail(f"APPROVERS gives {value} for {reason}. It must start with a plus.")
 
 print(f"Phone number ID {config.META_PHONE_NUMBER_ID}")
 print(f"Approver        {config.MAIN_APPROVER}")
+for reason, (main, backup) in config.APPROVERS.items():
+    print(f"  {reason:<14} {main}, backup {backup}")
 print(f"Signature check {'on' if config.META_APP_SECRET else 'off (META_APP_SECRET empty)'}")
 print()
 

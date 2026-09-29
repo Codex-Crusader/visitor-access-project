@@ -51,8 +51,19 @@ CREATE TABLE IF NOT EXISTS photos (
 
 -- The escalation sweep, the purge and the open-request list all filter on
 -- status and created_at. Without this they scan every row every 30 seconds.
-CREATE INDEX IF NOT EXISTS visits_status_created ON visits (status, created_at);
-CREATE INDEX IF NOT EXISTS visits_created ON visits (created_at);
+-- The admin list pages through visits newest first. reference breaks a tie
+-- between two visits made in the same second, so it is in both indexes, and
+-- a page starts where the last one ended instead of counting past the rows
+-- before it. The old two-column indexes are dropped: a prefix of the new
+-- ones serves every query they served.
+DROP INDEX IF EXISTS visits_status_created;
+DROP INDEX IF EXISTS visits_created;
+CREATE INDEX IF NOT EXISTS visits_status_created_ref ON visits (status, created_at, reference);
+CREATE INDEX IF NOT EXISTS visits_created_ref ON visits (created_at, reference);
+-- The gate board's expected list: approved passes by decision time. Passes
+-- that nobody used pile up over the retention period, so without this the
+-- board reads all of them every 30 seconds.
+CREATE INDEX IF NOT EXISTS visits_status_decided ON visits (status, decided_at);
 -- The purge also deletes old message ids every 30 seconds. Without this it
 -- reads the whole table each time to find the few that are old.
 CREATE INDEX IF NOT EXISTS seen_messages_seen ON seen_messages (seen);
@@ -188,6 +199,65 @@ def at_gate(expected_hours):
     return [to_dict(row) for row in expected], [to_dict(row) for row in inside]
 
 
+# Everything the admin page shows. Never SELECT * here: the token is the
+# visitor's private status link and must not leave the server.
+ADMIN_FIELDS = (
+    "visits.reference, name, phone, address, reason, visiting, guests, status,"
+    " created_at, escalated_at, decided_at, entered_at, exited_at"
+)
+
+
+def _like(text):
+    """A LIKE pattern that matches text anywhere, with % and _ taken literally."""
+    escaped = text.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    return f"%{escaped}%"
+
+
+def admin_page(statuses=None, search="", after=None, limit=50):
+    """One page of visits for the admin list, newest first.
+
+    Returns (visits, cursor). Pass cursor back as `after` for the next page.
+    It is None on the last page. A page is a range read on an index that
+    starts right after the previous page's last row, so page 50 costs the same
+    as page 1. OFFSET would read and throw away every row before the page.
+    """
+    where, args = [], []
+    if statuses:
+        where.append(f"status IN ({', '.join('?' * len(statuses))})")
+        args += statuses
+    if after:
+        where.append("(created_at, visits.reference) < (?, ?)")
+        args += after
+    if search:
+        # A search reads rows until it fills a page, so a rare word can read
+        # the whole table. That is at most one retention period of visits.
+        where.append(
+            "(name LIKE ? ESCAPE '\\' OR phone LIKE ? ESCAPE '\\'"
+            " OR visits.reference LIKE ? ESCAPE '\\' OR visiting LIKE ? ESCAPE '\\')"
+        )
+        args += [_like(search)] * 4
+    sql = (
+        f"SELECT {ADMIN_FIELDS}, photos.taken_at AS photo_at FROM visits"
+        " LEFT JOIN photos ON photos.reference = visits.reference"
+        + (" WHERE " + " AND ".join(where) if where else "")
+        + " ORDER BY created_at DESC, visits.reference DESC LIMIT ?"
+    )
+    with connect() as conn:
+        # One row more than the page tells whether another page exists.
+        rows = conn.execute(sql, (*args, limit + 1)).fetchall()
+    visits = [to_dict(row) for row in rows[:limit]]
+    more = len(rows) > limit
+    cursor = (visits[-1]["created_at"], visits[-1]["reference"]) if more else None
+    return visits, cursor
+
+
+def status_counts():
+    """How many stored visits have each status. One pass over the status index."""
+    with connect() as conn:
+        rows = conn.execute("SELECT status, COUNT(*) FROM visits GROUP BY status").fetchall()
+    return dict(map(tuple, rows))
+
+
 def open_requests():
     with connect() as conn:
         rows = conn.execute(
@@ -310,15 +380,20 @@ def is_new_message(message_id):
 
 def purge_old():
     """Delete visits after the retention period. Returns how many went."""
+    cutoff = _ago(config.RETAIN_DAYS)
     with connect() as conn:
+        # A photo goes with its visit, so the photos of the visits about to go
+        # are deleted first, in the same transaction and with the same cutoff.
+        # This reads only the expired visits. The old way asked every photo
+        # whether its visit still existed, every 30 seconds.
+        conn.execute(
+            "DELETE FROM photos WHERE reference IN"
+            " (SELECT reference FROM visits WHERE created_at < ?)",
+            (cutoff,),
+        )
         removed = conn.execute(
-            "DELETE FROM visits WHERE created_at < ?", (_ago(config.RETAIN_DAYS),)
+            "DELETE FROM visits WHERE created_at < ?", (cutoff,)
         ).rowcount
         conn.execute("DELETE FROM seen_messages WHERE seen < ?", (_ago(1),))
-        # A photo goes with its visit. reference is the key of both tables,
-        # so this is an index lookup per photo, not a scan per photo.
-        conn.execute(
-            "DELETE FROM photos WHERE reference NOT IN (SELECT reference FROM visits)"
-        )
         conn.execute("DELETE FROM photo_waits WHERE asked < ?", (_ago(1),))
     return removed

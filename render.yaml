@@ -28,10 +28,16 @@ services:
         sync: false
       - key: GATE_KEY
         sync: false
+      # Optional. The admin page uses the gate key while this is not set.
+      - key: ADMIN_KEY
+        sync: false
+      # Optional. Each reason's main and backup approver, as JSON.
+      - key: APPROVERS
+        sync: false
       - key: GATE_DESK_PHONE
         sync: false
       - key: ESCALATE_MINUTES
-        value: "30"
+        value: "15"
       - key: RETAIN_DAYS
         value: "90"
       # A proxy sits in front on Render, so read the caller's address from the

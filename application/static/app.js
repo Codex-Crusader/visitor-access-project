@@ -6,7 +6,7 @@ const SEND_TIMEOUT = 75000;   // a sleeping free server can take ~50s to wake
 const LIVE_VIEWS = ["status", "home", "inout"];
 const MAX_GUESTS = 10;        // the server keeps no more than this
 const S = {s:"home", f:{name:"",phone:"",address:"",reason:"",other:"",visiting:"",guest:""}, g:[], e:{}, adding:0,
-  visit:null, cfg:{gate_desk_phone:"",escalate_minutes:30,retain_days:90}, err:"", hist:[], sheet:0,
+  visit:null, cfg:{gate_desk_phone:"",escalate_minutes:15,retain_days:90}, err:"", hist:[], sheet:0,
   wait:POLL_EVERY, down:0};
 
 const el = i=>document.getElementById(i);

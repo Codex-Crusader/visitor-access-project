@@ -18,7 +18,7 @@ The gate page at `/gate` asks for the gate key once. After that it shows:
    never checked out stands out.
 3. **Expected**: every pass approved in the last 24 hours and not used yet.
    An older pass still works. It only leaves this list.
-4. **Refresh the lists**, **Download visit log** and **Change gate key**.
+4. **Refresh the lists**, **Download log** and **Change gate key**.
 
 Tap a name to open that pass, the same as typing its code. The lists
 refresh every 30 seconds and after every entry or exit. When a refresh fails,
@@ -29,6 +29,52 @@ The lists come from `GET /api/gate/board` with the `X-Gate-Key` header. It
 returns only open visits, and for each one only the code, name, person
 visited, guests, status and the approval and entry times. `BOARD_HOURS` and
 `LONG_HOURS` set the 24 and 8 hours, in `app.py` and `static/gate.js`.
+
+The badge in the top corner says Live while the lists are fresh and Offline
+after a refresh fails. If the saved gate key is wrong, the page forgets it and
+asks for the key again. The page follows the phone's light or dark setting.
+
+## The admin page
+
+The admin page at `/admin` lists every stored request, newest first, 50 at a
+time. It asks for `ADMIN_KEY` once. While `ADMIN_KEY` is not set, the gate key
+opens it.
+
+1. The tiles count the requests by status. Tap a tile to show only that
+   status. Waiting is pending and escalated together.
+2. The search box finds a name, phone number, code or person visited.
+3. Tap a request to see the address, the guests, its two approvers and every
+   time: requested, sent to backup, decided, entered, gate photo and exited.
+4. Show more loads the next 50.
+5. The table at the end shows who approves each reason.
+
+The page reads `GET /api/admin/visits` and `GET /api/admin/summary` with the
+`X-Admin-Key` header. Neither returns the visitor's private token. Download
+CSV gives the same log as the gate page.
+
+## Approvers for each reason
+
+Each reason on the form has a main approver and a backup approver. A request
+goes to the main approver for its reason. After `ESCALATE_MINUTES` with no
+answer, it goes to the backup for that reason. A reason the visitor types in
+counts as Other.
+
+Only the two approvers of a reason can decide its requests. An approver who
+sends YES or NO with the code of another reason gets "goes to another
+approver". An approver who sends anything else sees only the requests of their
+own reasons.
+
+Every reason uses `MAIN_APPROVER` and `BACKUP_APPROVER` until `APPROVERS`
+changes it. `APPROVERS` is JSON. It names only the reasons that differ:
+
+```
+APPROVERS={"Delivery": ["+919000000001", "+919000000002"], "Event": ["+919000000003", "+919000000004"]}
+```
+
+The reasons are `See a student`, `See an office`, `Delivery`, `Event` and
+`Other`, the same list as `REASONS` in `config.py` and `static/app.js`. A name
+that is not on the list stops the app at start, so a typo cannot send a reason
+to the wrong person. Put each new number on the Meta recipient list too.
 
 ## How it works
 
@@ -126,7 +172,7 @@ guess one. The code therefore never opens anything on its own.
 ## The visit log
 
 Every request keeps its own row, including the exact times it was approved, the
-visitor entered, and the visitor left. The gate page has a **Download visit log**
+visitor entered, and the visitor left. The gate page has a **Download log**
 button that saves the whole history as a CSV file, and the same data is at
 `GET /api/export.csv` with the `X-Gate-Key` header.
 
@@ -151,6 +197,29 @@ Records are deleted `RETAIN_DAYS` after they are created, 90 days by default.
 The privacy screen in the visitor app states that same number, so the promise and
 the code agree. Change one and change the other.
 
+## How the work grows
+
+In this section, n is the number of stored visits, and k is the number of rows
+that an operation returns or changes. An index is a sorted copy of some columns
+that SQLite can search without reading every row.
+
+| Work                                  | Cost                  | How                                         |
+|---------------------------------------|-----------------------|---------------------------------------------|
+| Look up a pass, decide, enter, exit   | O(log n)              | The code is the primary key                 |
+| Escalation check, every 30 seconds    | O(log n + k)          | Index on status and created time            |
+| Gate board, every 30 seconds          | O(log n + k)          | Index on status and decision time           |
+| Purge, every 30 seconds               | O(log n + k)          | Reads only expired visits and their photos  |
+| One admin page, first or fiftieth     | O(log n + 50)         | Starts after the last row of the page before |
+| Admin counts by status                | O(n)                  | One pass over an index, not the table       |
+| Admin search                          | O(n) at worst         | Reads rows until the page is full           |
+| CSV export                            | O(n)                  | It returns every row                        |
+| Rate limit, per request               | O(1) on average       | Old times fall off the front of a queue     |
+
+A pass code has four digits, so there are 9000 codes. A new code is picked at
+random and tried up to 20 times. When most codes are in use, for example 8000
+visits kept for 90 days, a request can fail to find a free code. Keep
+`RETAIN_DAYS` times the visits per day well under 9000.
+
 ## Files
 
 | File                                 | What it holds                                                     |
@@ -162,10 +231,11 @@ the code agree. Change one and change the other.
 | `check_setup.py`                     | Checks your settings and sends one test message                   |
 | `test_app.py`                        | Runs the whole flow with WhatsApp stubbed out                     |
 | `test_concurrency.py`                | Hammers the app from many threads to check the races              |
-| `test_form.js`                       | Checks the two web pages in a real DOM. Needs `npm install jsdom` |
+| `test_form.js`                       | Checks the web pages in a real DOM. Needs `npm install jsdom`     |
 | `ruff.toml`, `eslint.config.mjs`     | Linter settings, and why two rules are off                        |
 | `static/index.html`, `static/app.js` | The visitor app                                                   |
 | `static/gate.html`, `static/gate.js` | The gate desk page                                                |
+| `static/admin.html`, `static/admin.js` | The admin page with every request                               |
 | `render.yaml`, `Procfile`            | How the host starts the app                                       |
 
 ## Settings
@@ -178,10 +248,12 @@ the code agree. Change one and change the other.
 | `META_APP_SECRET`      | App secret. Leave empty to skip the signature check      |
 | `MAIN_APPROVER`        | Approver number, like `+911234567890`                    |
 | `BACKUP_APPROVER`      | Backup approver. Defaults to the main approver           |
+| `APPROVERS`            | Optional JSON: other approvers for some reasons          |
 | `GUARD`                | Gate desk number. Defaults to the main approver          |
 | `GATE_KEY`             | Password for the gate page. Keep it off the internet     |
+| `ADMIN_KEY`            | Password for the admin page. Defaults to the gate key    |
 | `GATE_DESK_PHONE`      | Number shown on the "Call gate desk" button              |
-| `ESCALATE_MINUTES`     | Minutes before the backup approver is asked. Default 30  |
+| `ESCALATE_MINUTES`     | Minutes before the backup approver is asked. Default 15  |
 | `RETAIN_DAYS`          | Days a record is kept before deletion. Default 90        |
 | `REQUESTS_PER_HOUR`    | New requests allowed per address per hour. Default 60    |
 | `BEHIND_PROXY`         | Set to `true` on Render. Leave unset on your own machine |

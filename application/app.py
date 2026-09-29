@@ -190,6 +190,11 @@ def gate_key_ok():
     return hmac.compare_digest(request.headers.get("X-Gate-Key", ""), config.GATE_KEY)
 
 
+def admin_key_ok():
+    """ADMIN_KEY, which is the gate key until ADMIN_KEY is set."""
+    return hmac.compare_digest(request.headers.get("X-Admin-Key", ""), config.ADMIN_KEY)
+
+
 def signature_ok():
     if not config.META_APP_SECRET:
         return True
@@ -203,10 +208,24 @@ def signature_ok():
 
 
 def is_approver(phone):
+    """True when this number approves at least one reason."""
     return any(
         whatsapp.same_number(phone, who)
-        for who in (config.MAIN_APPROVER, config.BACKUP_APPROVER)
+        for pair in config.APPROVERS.values()
+        for who in pair
     )
+
+
+def approves(phone, visit):
+    """True when this number is the main or the backup approver for the visit's reason."""
+    return any(
+        whatsapp.same_number(phone, who) for who in config.approvers_for(visit["reason"])
+    )
+
+
+def waiting_for(phone):
+    """The open requests this approver can decide, oldest first."""
+    return [visit for visit in db.open_requests() if approves(phone, visit)]
 
 
 def is_guard(phone):
@@ -235,6 +254,11 @@ def index():
 @app.get("/gate")
 def gate():
     return send_from_directory(STATIC, "gate.html")
+
+
+@app.get("/admin")
+def admin():
+    return send_from_directory(STATIC, "admin.html")
 
 
 @app.get("/api/config")
@@ -359,7 +383,10 @@ def export_csv():
     """The whole visit log, including every entry and exit time."""
     if not gate_key_ok():
         return jsonify(error="Wrong gate key"), 403
+    return visit_log()
 
+
+def visit_log():
     buffer = io.StringIO()
     writer = csv.writer(buffer)
     writer.writerow(EXPORT_COLUMNS)
@@ -374,6 +401,68 @@ def export_csv():
         mimetype="text/csv",
         headers={"Content-Disposition": f'attachment; filename="visits-{stamp}.csv"'},
     )
+
+
+# The status filters on the admin page. "waiting" is both open statuses.
+ADMIN_FILTERS = {
+    "all": None,
+    "waiting": db.OPEN_STATUSES,
+    "approved": (db.APPROVED,),
+    "inside": (db.INSIDE,),
+    "closed": (db.CLOSED,),
+    "declined": (db.DECLINED,),
+}
+ADMIN_PAGE = 50
+
+
+@app.get("/api/admin/visits")
+def admin_visits():
+    """One page of every stored request, newest first.
+
+    The next page is asked for with the cursor this one returned, as
+    ?after=<created_at>|<reference>.
+    """
+    if not admin_key_ok():
+        return jsonify(error="Wrong admin key"), 403
+    status = request.args.get("status", "all")
+    if status not in ADMIN_FILTERS:
+        return jsonify(error="Unknown status filter"), 400
+    search = " ".join(request.args.get("q", "").split())[:MAX_LENGTH]
+    after = None
+    if request.args.get("after"):
+        parts = request.args["after"].split("|")
+        if len(parts) != 2:
+            return jsonify(error="Bad page cursor"), 400
+        after = tuple(parts)
+
+    visits, cursor = db.admin_page(ADMIN_FILTERS[status], search, after, ADMIN_PAGE)
+    for visit in visits:
+        visit["approvers"] = list(config.approvers_for(visit["reason"]))
+    return jsonify(visits=visits, next="|".join(cursor) if cursor else None)
+
+
+@app.get("/api/admin/summary")
+def admin_summary():
+    """Counts by status, and who approves each reason."""
+    if not admin_key_ok():
+        return jsonify(error="Wrong admin key"), 403
+    return jsonify(
+        counts=db.status_counts(),
+        approvers=[
+            {"reason": reason, "main": main, "backup": backup}
+            for reason, (main, backup) in config.APPROVERS.items()
+        ],
+        escalate_minutes=config.ESCALATE_MINUTES,
+        retain_days=config.RETAIN_DAYS,
+    )
+
+
+@app.get("/api/admin/export.csv")
+def admin_export_csv():
+    """The same log as the gate desk export, for the admin key."""
+    if not admin_key_ok():
+        return jsonify(error="Wrong admin key"), 403
+    return visit_log()
 
 
 @app.get("/webhook/whatsapp")
@@ -392,7 +481,7 @@ def handle_decide(sender, status, reference):
     if not is_approver(sender):
         return "Only the approver can decide a request."
     if reference is None:
-        waiting = db.open_requests()
+        waiting = waiting_for(sender)
         if len(waiting) != 1:
             return whatsapp.waiting_body(waiting)
         reference = waiting[0]["reference"]
@@ -400,6 +489,9 @@ def handle_decide(sender, status, reference):
     visit = db.get(reference)
     if visit is None:
         return f"No request has reference {reference}."
+    # Each reason has its own two approvers. Nobody decides another's request.
+    if not approves(sender, visit):
+        return f"{reference} goes to another approver. You cannot decide it."
     if not db.decide(reference, status):
         return f"{reference} was already {visit['status']}."
     return f"{reference} is now {status}.\n\n{whatsapp.brief(visit)}"
@@ -505,7 +597,7 @@ def answer_message(sender, text, photo):
         return handle_gate(sender, value, reference)
     if kind == "lookup":
         return handle_lookup(sender, reference)
-    return whatsapp.waiting_body(db.open_requests()) if is_approver(sender) else whatsapp.HELP
+    return whatsapp.waiting_body(waiting_for(sender)) if is_approver(sender) else whatsapp.HELP
 
 
 def escalate_due():

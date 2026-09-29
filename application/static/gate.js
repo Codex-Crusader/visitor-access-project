@@ -38,10 +38,15 @@ function setKey(value) {
   try { localStorage.setItem("gatekey", value); } catch { /* nothing to undo */ }
 }
 
-function forgetKey() {
+// A wrong key comes back as its own kind of error, so every caller can send
+// the guard back to the key box. Before, a saved wrong key stayed saved: the
+// lists only said they could not load, and the key box was hidden.
+class WrongKey extends Error {}
+
+function forgetKey(why = "") {
   try { localStorage.removeItem("gatekey"); } catch { /* it was never stored */ }
   visit = null;
-  notice = "";
+  notice = why;
   board = null;
   boardAt = null;
   boardError = "";
@@ -57,9 +62,18 @@ const BANNER = {
   escalated:["wait", "Not approved yet", "Do not let them in."],
 };
 
+const svg = d => `<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
+const ICON = {
+  good: svg('<circle cx="12" cy="12" r="10"/><path d="m7.5 12.5 3 3 6-6.5"/>'),
+  wait: svg('<circle cx="12" cy="12" r="10"/><path d="M12 7v5l3 2"/>'),
+  bad:  svg('<circle cx="12" cy="12" r="10"/><path d="m15 9-6 6M9 9l6 6"/>'),
+};
+const banner = (tone, title, line) =>
+  `<div class="state ${tone}">${ICON[tone]}<div><h2>${x(title)}</h2><p>${x(line)}</p></div></div>`;
+
 const fact = (k, v) => `<div><span>${k}</span><b>${x(v || "—")}</b></div>`;
-const problem = t => `<div class="state bad"><h2>Cannot do that</h2><p>${x(t)}</p></div>`;
-const working = t => `<div class="state wait"><h2>${x(t)}</h2><p>This can take up to a minute if the server was asleep.</p></div>`;
+const problem = t => banner("bad", "Cannot do that", t);
+const working = t => `<div class="state wait"><span class="spin"></span><div><h2>${x(t)}</h2><p>This can take up to a minute if the server was asleep.</p></div></div>`;
 
 // The try covers the network only. A server that answers and refuses is not a
 // failure of the call, so those two refusals are raised after the try ends.
@@ -77,7 +91,7 @@ async function call(url, options) {
   } finally {
     clearTimeout(timer);
   }
-  if (r.status === 403) throw new Error("That gate key is not right. Check it and save it again.");
+  if (r.status === 403) throw new WrongKey("That gate key is not right. Type it again.");
   if (!r.ok) throw new Error(data.error || `Something went wrong (${r.status})`);
   return data;
 }
@@ -102,7 +116,17 @@ function section(title, list, empty, line) {
     <div class="list">${list.length ? list.map(line).join("") : `<div class="empty">${empty}</div>`}</div>`;
 }
 
+// The badge in the header: green while the lists are fresh, amber after a
+// failed refresh.
+function renderLive() {
+  const live = el("live");
+  live.hidden = !key() || (!board && !boardError);
+  live.classList.toggle("off", !!boardError);
+  el("liveText").textContent = boardError ? "Offline" : "Live";
+}
+
 function renderBoard() {
+  renderLive();
   if (!board) {
     boardBox.innerHTML = boardError ? problem(`Could not load the lists. ${boardError}`) : "";
     return;
@@ -133,11 +157,11 @@ function render() {
     : "First, type the gate key your admin gave you.";
 
   if (!haveKey) {
+    renderLive();
     out.innerHTML = `
       ${notice ? problem(notice) : ""}
       <label for="k">Gate key</label>
-      <input id="k" type="password" style="text-transform:none;letter-spacing:normal;font-size:1rem"
-             enterkeyhint="go">
+      <input id="k" class="key" type="password" autocomplete="current-password" enterkeyhint="go">
       <button class="btn" onclick="saveKey()">Save key</button>`;
     const box = el("k");
     box.onkeydown = e => { if (e.key === "Enter") saveKey(); };
@@ -175,7 +199,7 @@ function render() {
 
   out.innerHTML = `
     ${notice ? problem(notice) : ""}
-    <div class="state ${tone}"><h2>${x(title)}</h2><p>${x(line)}</p></div>
+    ${banner(tone, title, line)}
     <div class="facts">
       ${fact("Code", visit.reference)}
       ${details}
@@ -195,6 +219,7 @@ async function loadBoard() {
     boardAt = new Date().toISOString();
     boardError = "";
   } catch (err) {
+    if (err instanceof WrongKey) return forgetKey(err.message);
     boardError = err.message;
   }
   if (!busy) renderBoard();
@@ -228,6 +253,8 @@ async function look() {
   try {
     visit = await call(`/api/pass/${encodeURIComponent(code)}`);
   } catch (err) {
+    busy = "";
+    if (err instanceof WrongKey) return forgetKey(err.message);
     notice = err.message;
   }
   busy = "";
@@ -248,6 +275,8 @@ async function act(action) {
   try {
     visit = await call(`/api/pass/${encodeURIComponent(visit.reference)}/${action}`, {method: "POST"});
   } catch (err) {
+    busy = "";
+    if (err instanceof WrongKey) return forgetKey(err.message);
     notice = err.message;
     // The refusal above is what the guard needs. A failed re-read adds nothing.
     try { visit = await call(`/api/pass/${encodeURIComponent(visit.reference)}`); } catch { /* keep the refusal */ }
@@ -264,13 +293,18 @@ async function downloadLog() {
   render();
   try {
     const r = await fetch("/api/export.csv", {headers: {"X-Gate-Key": key()}});
-    if (r.status === 403) notice = "That gate key is not right.";
-    else if (!r.ok) notice = `Could not download (${r.status})`;
+    if (r.status === 403) {
+      busy = "";
+      return forgetKey("That gate key is not right. Type it again.");
+    }
+    if (!r.ok) notice = `Could not download (${r.status})`;
     else {
       const blob = await r.blob();
       const a = document.createElement("a");
       a.href = URL.createObjectURL(blob);
-      a.download = "visits.csv";
+      // The server names the file with the date, as visits-2026-09-29.csv.
+      const named = /filename="([^"]+)"/.exec(r.headers.get("Content-Disposition") || "");
+      a.download = named ? named[1] : "visits.csv";
       a.click();
       URL.revokeObjectURL(a.href);
     }
@@ -297,7 +331,7 @@ boardBox.onclick = e => {
 };
 el("refresh").onclick = () => void loadBoard();
 el("log").onclick = () => void downloadLog();
-el("rekey").onclick = forgetKey;
+el("rekey").onclick = () => forgetKey();
 // A hidden tab does not need fresh lists. It catches up when shown again.
 setInterval(() => { if (!document.hidden) void loadBoard(); }, BOARD_EVERY);
 document.addEventListener("visibilitychange", () => { if (!document.hidden) void loadBoard(); });

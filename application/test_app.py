@@ -24,6 +24,7 @@ os.environ.update(
 )
 
 import app as application
+import config
 import db
 import whatsapp
 
@@ -493,9 +494,112 @@ assert db.get(old["reference"]) is None
 assert client.get(f"/api/visit/{old['token']}").status_code == 404
 # Today's records survive the purge.
 assert db.get(a["reference"]) is not None
+# A photo goes with its visit, and the photos of kept visits stay.
+gone, kept = new_request(), new_request()
+with db.connect() as conn:
+    for made in (gone, kept):
+        conn.execute("INSERT INTO photos (reference, media_id, taken_at) VALUES (?, ?, ?)",
+                     (made["reference"], "media.x", db.now()))
+    conn.execute("UPDATE visits SET created_at = ? WHERE reference = ?",
+                 ("2020-01-01T00:00:00+00:00", gone["reference"]))
+db.purge_old()
+assert db.photo_of(gone["reference"]) is None
+assert db.photo_of(kept["reference"]) is not None
+print("  old visits and their photos deleted, today's kept")
+
+print("each reason has its own two approvers")
+
+DELIVERY_MAIN, DELIVERY_BACKUP = "+919000000001", "+919000000002"
+real_approvers = config.APPROVERS
+config.APPROVERS = {**real_approvers, "Delivery": (DELIVERY_MAIN, DELIVERY_BACKUP)}
+try:
+    delivery = client.post("/api/requests", json={**payload, "reason": "Delivery"}).get_json()
+    assert templates[-1][0] == DELIVERY_MAIN, templates[-1]
+    student = new_request()
+    assert templates[-1][0] == "+911234567890", templates[-1]
+    # A reason the visitor typed in goes to the approvers for Other.
+    client.post("/api/requests", json={**payload, "reason": "Fix the lift"})
+    assert templates[-1][0] == config.APPROVERS["Other"][0], templates[-1]
+
+    # Nobody decides a request of a reason they do not approve.
+    refused_reply = say(APPROVER, f"YES {delivery['reference']}")
+    assert "another approver" in refused_reply, refused_reply
+    assert db.get(delivery["reference"])["status"] == "pending"
+    wrong = say(DELIVERY_MAIN[1:], f"YES {student['reference']}")
+    assert "another approver" in wrong, wrong
+    # Each approver's waiting list holds only their own reasons.
+    waiting_delivery = [v["reference"] for v in application.waiting_for(DELIVERY_MAIN)]
+    assert waiting_delivery == [delivery["reference"]], waiting_delivery
+    assert delivery["reference"] not in [
+        v["reference"] for v in application.waiting_for(APPROVER)]
+    # The backup for the reason can decide it, before or after escalation.
+    assert "is now approved" in say(DELIVERY_BACKUP[1:], f"YES {delivery['reference']}")
+    assert db.get(delivery["reference"])["status"] == "approved"
+
+    # Escalation goes to the backup of the request's own reason.
+    late = client.post("/api/requests", json={**payload, "reason": "Delivery"}).get_json()
+    with db.connect() as conn:
+        conn.execute("UPDATE visits SET created_at = ? WHERE reference = ?",
+                     (db._ago(1 / 24), late["reference"]))
+    application.escalate_due()
+    assert templates[-1][0] == DELIVERY_BACKUP, templates[-1]
+    assert templates[-1][1][0] == late["reference"]
+finally:
+    config.APPROVERS = real_approvers
+print("  routing, deciding, waiting lists and escalation all follow the reason")
+
+print("the admin list")
+ADMIN = {"X-Admin-Key": "test-gate-key"}
+# ADMIN_KEY is not set in this test, so the gate key opens the admin page.
+assert config.ADMIN_KEY == "test-gate-key"
+for path in ("/api/admin/visits", "/api/admin/summary", "/api/admin/export.csv"):
+    assert client.get(path).status_code == 403, path
+    assert client.get(path, headers={"X-Admin-Key": "guess"}).status_code == 403, path
+assert client.get("/admin").status_code == 200
+
+# More than one page of visits. The rate limit would refuse some of them.
+for number in range(60):
+    application.forget_hits()
+    made = client.post("/api/requests", json={**payload, "name": f"Page Test {number}"})
+    assert made.status_code == 201, made.get_data(as_text=True)
+application.forget_hits()
+total = sum(db.status_counts().values())
+seen, cursor, pages = [], None, 0
+while True:
+    query = f"/api/admin/visits?after={cursor}" if cursor else "/api/admin/visits"
+    page = client.get(query, headers=ADMIN).get_json()
+    pages += 1
+    for row in page["visits"]:
+        # The token is the visitor's private status link. It never leaves.
+        assert "token" not in row, row
+        assert row["approvers"] == list(config.approvers_for(row["reason"]))
+    seen += [row["reference"] for row in page["visits"]]
+    cursor = page["next"]
+    if not cursor:
+        break
+    cursor = cursor.replace("+", "%2B")
+assert len(seen) == len(set(seen)) == total, (len(seen), len(set(seen)), total)
+assert pages == -(-total // application.ADMIN_PAGE), pages
+times = [db.get(r)["created_at"] for r in seen]
+assert times == sorted(times, reverse=True)
+
+waiting = client.get("/api/admin/visits?status=waiting", headers=ADMIN).get_json()["visits"]
+assert waiting and {v["status"] for v in waiting} <= {"pending", "escalated"}
+found = client.get("/api/admin/visits?q=page%20test%2042", headers=ADMIN).get_json()
+assert [v["name"] for v in found["visits"]] == ["Page Test 42"], found
+# % and _ in a search are letters, not wildcards.
+assert client.get("/api/admin/visits?q=%25", headers=ADMIN).get_json()["visits"] == []
+assert client.get("/api/admin/visits?status=nope", headers=ADMIN).status_code == 400
+assert client.get("/api/admin/visits?after=x", headers=ADMIN).status_code == 400
+
+summary = client.get("/api/admin/summary", headers=ADMIN).get_json()
+assert sum(summary["counts"].values()) == total
+assert [a["reason"] for a in summary["approvers"]] == list(config.REASONS)
+assert client.get("/api/admin/export.csv", headers=ADMIN).status_code == 200
+print(f"  {total} visits over {pages} pages, none twice, none missed, no token")
 
 print("pages are served")
-for path in ("/", "/app.js", "/gate", "/gate.js"):
+for path in ("/", "/app.js", "/gate", "/gate.js", "/admin", "/admin.js"):
     assert client.get(path).status_code == 200, path
 cfg = client.get("/api/config").get_json()
 assert cfg["escalate_minutes"] == 30 and cfg["retain_days"] == 1

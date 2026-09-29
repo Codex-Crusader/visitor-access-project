@@ -10,87 +10,130 @@
 <style>
 :root{
  --ink:#0F1822;--soft:#5A6979;--line:#E2E8EE;--paper:#fff;--mute:#F5F8FB;
- --brand:#16325B;--brand2:#27599C;--tint:#EDF2F9;
- --go:#0C6B47;--goBg:#E8F5EF;--goLn:#A8D8C3;
+ --brand:#16325B;--brand2:#27599C;--tint:#EDF2F9;--accent:#16325B;
+ --go:#0C6B47;--goBg:#E8F5EF;--goLn:#A8D8C3;--goBtn:#0C6B47;
  --wait:#8A5710;--waitBg:#FDF4E6;--waitLn:#EBCE9E;
  --stop:#992724;--stopBg:#FBEDEB;--stopLn:#E9B6B0;
  --bg:#D9E1EA;--r:14px;--sh:0 1px 2px rgba(16,30,50,.06),0 1px 1px rgba(16,30,50,.04);
 }
-@media (prefers-color-scheme:dark){:root:not([data-theme=light]){--bg:#0A1017}}
-:root[data-theme=dark]{--bg:#0A1017}
+/* Before, only the page behind the card turned dark, so a guard at night
+   read a white card on a black screen. Now every colour has a dark value. */
+@media (prefers-color-scheme:dark){:root:not([data-theme=light]){
+ --ink:#E4EBF3;--soft:#93A3B5;--line:#243243;--paper:#111A24;--mute:#0C141D;
+ --brand:#2A5DA3;--brand2:#7AA9EA;--tint:#16263A;--accent:#9CC0F2;
+ --go:#5CCB9A;--goBg:#0F2A20;--goLn:#1F5A41;--goBtn:#12805A;
+ --wait:#EBB866;--waitBg:#2A2013;--waitLn:#5B4521;
+ --stop:#F2958D;--stopBg:#2D1616;--stopLn:#6B2E2A;
+ --bg:#070C12;--sh:0 1px 2px rgba(0,0,0,.4);
+}}
+:root[data-theme=dark]{
+ --ink:#E4EBF3;--soft:#93A3B5;--line:#243243;--paper:#111A24;--mute:#0C141D;
+ --brand:#2A5DA3;--brand2:#7AA9EA;--tint:#16263A;--accent:#9CC0F2;
+ --go:#5CCB9A;--goBg:#0F2A20;--goLn:#1F5A41;--goBtn:#12805A;
+ --wait:#EBB866;--waitBg:#2A2013;--waitLn:#5B4521;
+ --stop:#F2958D;--stopBg:#2D1616;--stopLn:#6B2E2A;
+ --bg:#070C12;--sh:0 1px 2px rgba(0,0,0,.4);
+}
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+/* A class that sets display would otherwise beat the hidden attribute. */
+[hidden]{display:none!important}
 body{margin:0;min-height:100dvh;background:var(--bg);color:var(--ink);
  font:17px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
  display:flex;justify-content:center;-webkit-font-smoothing:antialiased}
 button{font:inherit;color:inherit;cursor:pointer;border:0;background:none}
 :focus-visible{outline:3px solid var(--brand2);outline-offset:2px}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
 
-.app{width:100%;max-width:520px;background:var(--paper);min-height:100dvh;padding:22px 22px 40px}
-h1{margin:0 0 4px;font-size:1.5rem;font-weight:750;letter-spacing:-.02em}
-.sub{margin:0 0 24px;color:var(--soft);font-size:.95rem}
+.app{width:100%;max-width:520px;background:var(--paper);min-height:100dvh}
+@media(min-width:600px){.app{margin:22px 0;min-height:auto;border-radius:22px;overflow:hidden;
+ box-shadow:0 24px 60px rgba(10,22,38,.22),0 2px 8px rgba(10,22,38,.1);align-self:flex-start}}
+.top{display:flex;align-items:center;justify-content:space-between;gap:12px;
+ padding:18px 22px 16px;color:#fff;background:linear-gradient(140deg,#16325B,#27599C)}
+.top h1{margin:0;font-size:1.3rem;font-weight:750;letter-spacing:-.02em}
+.top small{display:block;font-size:.8rem;opacity:.78;letter-spacing:.02em}
+.live{display:flex;align-items:center;gap:7px;padding:6px 11px;border-radius:999px;
+ background:rgba(255,255,255,.14);font-size:.8rem;font-weight:600;white-space:nowrap}
+.live i{width:8px;height:8px;border-radius:50%;background:#7BE0B0;box-shadow:0 0 0 3px rgba(123,224,176,.25)}
+.live.off i{background:#F5C06B;box-shadow:0 0 0 3px rgba(245,192,107,.25)}
+.main{padding:20px 22px 40px}
+.sub{margin:0 0 18px;color:var(--soft);font-size:.95rem}
 label{display:block;font-weight:650;font-size:.84rem;letter-spacing:.02em;margin:0 0 7px}
 input{width:100%;padding:16px;border:1px solid var(--line);border-radius:12px;background:var(--mute);
  font:inherit;color:inherit;text-transform:uppercase;letter-spacing:.08em;
  font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:1.3rem;text-align:center}
-input:focus{background:var(--paper);border-color:var(--brand2);outline:none;box-shadow:0 0 0 3px rgba(39,89,156,.12)}
+input:focus{background:var(--paper);border-color:var(--brand2);outline:none;box-shadow:0 0 0 3px rgba(39,89,156,.18)}
+input.key{text-transform:none;letter-spacing:normal;font-size:1rem;text-align:left;font-family:inherit}
 .btn{display:block;width:100%;padding:16px;border-radius:var(--r);background:var(--brand);color:#fff;
- font-weight:650;margin-top:12px;border:1px solid var(--brand);box-shadow:var(--sh)}
+ font-weight:650;margin-top:12px;border:1px solid var(--brand);box-shadow:var(--sh);transition:transform .12s ease}
 .btn:active{transform:scale(.988)}
 .btn[disabled]{opacity:.5;cursor:default}
-.btn.go{background:var(--go);border-color:var(--go)}
+.btn.go{background:var(--goBtn);border-color:var(--goBtn)}
 .btn.plain{background:var(--paper);color:var(--ink);border-color:var(--line);font-weight:600}
+.btn.plain:active{background:var(--mute)}
 
-.state{border-radius:var(--r);padding:16px;margin:22px 0 16px;border:1px solid}
+.state{display:flex;gap:12px;align-items:flex-start;border-radius:var(--r);padding:16px;margin:20px 0 16px;border:1px solid}
 .state h2{margin:0 0 3px;font-size:1.2rem;font-weight:700;letter-spacing:-.01em}
 .state p{margin:0;font-size:.93rem;opacity:.92}
+.ic{width:24px;height:24px;flex:none;margin-top:1px}
 .good{background:var(--goBg);border-color:var(--goLn);color:var(--go)}
 .wait{background:var(--waitBg);border-color:var(--waitLn);color:var(--wait)}
 .bad{background:var(--stopBg);border-color:var(--stopLn);color:var(--stop)}
+.spin{width:22px;height:22px;flex:none;border:3px solid currentColor;border-top-color:transparent;
+ border-radius:50%;animation:sp .8s linear infinite;opacity:.8}
+@keyframes sp{to{transform:rotate(360deg)}}
 
 .facts{border:1px solid var(--line);border-radius:var(--r);padding:2px 16px;margin-bottom:18px;box-shadow:var(--sh)}
 .facts div{display:flex;justify-content:space-between;gap:14px;padding:13px 0;font-size:.93rem;border-bottom:1px solid var(--line)}
 .facts div:last-child{border:0}
 .facts span{color:var(--soft)}
-.facts b{text-align:right;font-weight:650}
+.facts b{text-align:right;font-weight:650;overflow-wrap:anywhere}
 
 /* The board: who is inside now and who is expected, so the guard works from a
    list rather than typing every code. */
 .sec{display:flex;align-items:center;gap:8px;margin:28px 0 10px;font-size:1rem;font-weight:700}
-.count{min-width:26px;padding:1px 8px;border-radius:999px;background:var(--tint);color:var(--brand);
+.count{min-width:26px;padding:1px 8px;border-radius:999px;background:var(--tint);color:var(--accent);
  font-size:.85rem;text-align:center}
 .list{border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--sh);overflow:hidden}
 .row{display:flex;justify-content:space-between;align-items:center;gap:12px;width:100%;
  padding:13px 16px;text-align:left;border-bottom:1px solid var(--line);background:var(--paper)}
 .row:last-child{border-bottom:0}
 .row:hover{background:var(--mute)}
-.row small{display:block;color:var(--soft);font-size:.82rem;font-weight:500}
-.row b{font-weight:650}
+.row>span:first-child{min-width:0}
+.row small{display:block;color:var(--soft);font-size:.82rem;font-weight:500;overflow-wrap:anywhere}
+.row b{font-weight:650;overflow-wrap:anywhere}
 .row .side{text-align:right;flex-shrink:0}
 .row code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-weight:650;letter-spacing:.04em}
 .row.long{background:var(--waitBg)}
 .row.long .side small{color:var(--wait);font-weight:650}
 .empty{padding:14px 16px;color:var(--soft);font-size:.93rem}
 .updated{margin:10px 0 0;color:var(--soft);font-size:.82rem}
-.tools{margin-top:28px;padding-top:6px;border-top:1px solid var(--line)}
+.tools{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:28px;padding-top:18px;border-top:1px solid var(--line)}
+.tools .btn{margin:0;padding:13px 10px;font-size:.92rem}
+.tools .btn:first-child{grid-column:1/-1}
 </style>
 </head>
 <body>
 <div class="app">
-  <h1>Gate Desk</h1>
-  <p class="sub" id="sub">Type the code on the visitor's pass.</p>
-  <div id="entry" hidden>
-    <label for="code">Pass code</label>
-    <input id="code" placeholder="VR-0000" autocomplete="off" autocapitalize="characters"
-           spellcheck="false" inputmode="text" enterkeyhint="go">
-    <button class="btn" id="look">Check pass</button>
-  </div>
-  <div id="out"></div>
-  <div id="board" hidden></div>
-  <div id="tools" class="tools" hidden>
-    <button class="btn plain" id="refresh">Refresh the lists</button>
-    <button class="btn plain" id="log">Download visit log</button>
-    <button class="btn plain" id="rekey">Change gate key</button>
-  </div>
+  <header class="top">
+    <div><h1>Gate Desk</h1><small>Campus visitor access</small></div>
+    <span class="live" id="live" hidden><i></i><span id="liveText">Live</span></span>
+  </header>
+  <main class="main">
+    <p class="sub" id="sub">Type the code on the visitor's pass.</p>
+    <div id="entry" hidden>
+      <label for="code">Pass code</label>
+      <input id="code" placeholder="VR-0000" autocomplete="off" autocapitalize="characters"
+             spellcheck="false" inputmode="text" enterkeyhint="go">
+      <button class="btn" id="look">Check pass</button>
+    </div>
+    <div id="out"></div>
+    <div id="board" hidden></div>
+    <div id="tools" class="tools" hidden>
+      <button class="btn plain" id="refresh">Refresh the lists</button>
+      <button class="btn plain" id="log">Download log</button>
+      <button class="btn plain" id="rekey">Change gate key</button>
+    </div>
+  </main>
 </div>
 <script src="gate.js"></script>
 </body>

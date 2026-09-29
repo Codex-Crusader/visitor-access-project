@@ -313,7 +313,90 @@ async function boardChecks() {
   ok("an empty list says so", $("board").innerHTML.includes("Nobody is inside."));
 }
 
-void boardChecks().then(() => {
+// ------------------------------------------- a wrong gate key is dropped
+async function wrongKeyChecks() {
+  console.log("gate desk: a saved wrong key goes back to the key box");
+  const desk = boot("gate.html", "gate.js", {
+    fetch: () => Promise.resolve({status: 403, ok: false, json: () => Promise.resolve({})}),
+  });
+  const $ = id => desk.document.getElementById(id);
+  desk.eval('localStorage.setItem("gatekey","wrong")');
+  await desk.eval("loadBoard()");
+  ok("the key is forgotten", desk.eval('localStorage.getItem("gatekey")') === null);
+  ok("the key box is back", !!$("k"));
+  ok("it says the key was wrong", $("out").innerHTML.includes("gate key is not right"));
+  ok("the lists and tools hide again", $("board").hidden && $("tools").hidden);
+  ok("the live badge hides", $("live").hidden);
+
+  desk.eval('localStorage.setItem("gatekey","wrong")');
+  desk.eval("render()");
+  $("code").value = "4022";
+  await desk.eval("look()");
+  ok("a pass lookup with a wrong key drops it too", !!$("k"));
+
+  desk.eval('localStorage.setItem("gatekey","k")');
+  desk.eval("render()");
+  $("rekey").click();
+  ok("Change gate key shows no stray message", !$("out").innerHTML.includes("Cannot do that"));
+
+  const css = read("gate.html") + read("admin.html");
+  ok("both pages let hidden win over a display rule",
+     (css.match(/\[hidden\]\{display:none!important\}/g) || []).length === 2);
+}
+
+// ------------------------------------------------------------- admin page
+async function adminChecks() {
+  console.log("admin page: every request, a page at a time");
+  const row = n => ({reference: `VR-${1000 + n}`, name: n ? `Visitor ${n}` : "Kiran <b>",
+    phone: "9876543210", address: "Karjat", reason: "Delivery", visiting: "Office",
+    guests: n % 2 ? ["Ravi"] : [], status: n % 3 ? "pending" : "inside",
+    created_at: "2026-09-29T10:00:00+00:00", approvers: ["+911", "+912"]});
+  const calls = [];
+  const pages = {
+    first: {visits: [row(0), row(1)], next: "2026-09-29T10:00:00+00:00|VR-1001"},
+    second: {visits: [row(2)], next: null},
+  };
+  const admin = boot("admin.html", "admin.js", {
+    fetch: url => {
+      calls.push(url);
+      const body = url.includes("/summary")
+        ? {counts: {pending: 2, inside: 1}, escalate_minutes: 15, retain_days: 90,
+           approvers: [{reason: "Delivery", main: "+911", backup: "+912"}]}
+        : url.includes("after=") ? pages.second : pages.first;
+      return Promise.resolve({status: 200, ok: true, json: () => Promise.resolve(body)});
+    },
+  });
+  const $ = id => admin.document.getElementById(id);
+  ok("without a key it asks for one", !!$("k") && calls.length === 0);
+  ok("without a key the header buttons hide", $("nav").hidden);
+
+  $("k").value = "key";
+  admin.eval("saveKey()");
+  await new Promise(done => setTimeout(done, 0));
+  await new Promise(done => setTimeout(done, 0));
+  const tiles = [...$("tiles").querySelectorAll(".tile b")].map(b => b.textContent);
+  ok("the tiles count all and waiting", tiles[0] === "3" && tiles[1] === "2");
+  ok("the first page shows", $("list").querySelectorAll("details").length === 2);
+  ok("names are escaped", $("list").innerHTML.includes("Kiran &lt;b&gt;"));
+  ok("Show more is offered", !$("more").hidden);
+  ok("the approvers table shows", $("approvers").innerHTML.includes("+912"));
+  ok("the escalation time shows", $("rules").textContent.includes("15 minutes"));
+
+  $("more").click();
+  await new Promise(done => setTimeout(done, 0));
+  await new Promise(done => setTimeout(done, 0));
+  const asked = calls.find(u => u.includes("after="));
+  ok("the next page asks after the last row",
+     !!asked && decodeURIComponent(asked).includes("after=2026-09-29T10:00:00+00:00|VR-1001"));
+  ok("the next page is added below", $("list").querySelectorAll("details").length === 3);
+  ok("on the last page Show more goes", $("more").hidden);
+
+  $("tiles").querySelector('[data-filter="inside"]').click();
+  await new Promise(done => setTimeout(done, 0));
+  ok("a tile filters the list", calls.some(u => u.includes("status=inside")));
+}
+
+void boardChecks().then(wrongKeyChecks).then(adminChecks).then(() => {
   console.log();
   console.log(failures ? `${failures} check(s) FAILED` : "all form checks passed");
   process.exit(failures ? 1 : 0);

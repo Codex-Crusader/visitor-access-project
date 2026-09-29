@@ -19,7 +19,7 @@ export default [
       globals: {
         window: "readonly", document: "readonly", localStorage: "readonly",
         fetch: "readonly", setTimeout: "readonly", clearTimeout: "readonly", setInterval: "readonly",
-        AbortController: "readonly", URL: "readonly", console: "readonly",
+        AbortController: "readonly", URL: "readonly", URLSearchParams: "readonly", console: "readonly",
         require: "readonly", module: "readonly", __dirname: "readonly",
         process: "readonly",
       },

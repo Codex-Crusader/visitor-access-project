@@ -284,8 +284,10 @@ def notify(phone, visit, escalated=False):
 
 
 def notify_approver(visit):
-    return notify(config.MAIN_APPROVER, visit)
+    main, _ = config.approvers_for(visit["reason"])
+    return notify(main, visit)
 
 
 def notify_backup(visit):
-    return notify(config.BACKUP_APPROVER, visit, escalated=True)
+    _, backup = config.approvers_for(visit["reason"])
+    return notify(backup, visit, escalated=True)
