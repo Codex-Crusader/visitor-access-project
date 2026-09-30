@@ -12,13 +12,17 @@ const ESC = {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"};
 const x = s => String(s).replace(/[&<>"']/g, c => ESC[c]);
 const hm = t => t ? new Date(t).toLocaleTimeString([], {hour:"2-digit", minute:"2-digit"}) : "—";
 
-// A pass code is VR-0000. WhatsApp already accepts the four digits on their
-// own, so the gate page accepts them too and puts the VR- back.
-const CODE = /^(?:VR[- ]?)?(\d{4})$/i;
+// The visitor's pass shows an entry code, and after entry an exit code, such
+// as KT-4821. The guard may type it as kt4821 or KT 4821. A reference is
+// VR-0000, and WhatsApp accepts its four digits alone, so this page does too.
+const PASS_CODE = /^([A-HJ-NP-Z]{2})-?(\d{4})$/;
+const REFERENCE = /^(?:VR-?)?(\d{4})$/;
 const tidy = text => {
-  const trimmed = text.trim();
-  const found = CODE.exec(trimmed);
-  return found ? `VR-${found[1]}` : trimmed.toUpperCase();
+  const squeezed = text.replace(/\s+/g, "").toUpperCase();
+  const ref = REFERENCE.exec(squeezed);
+  if (ref) return `VR-${ref[1]}`;
+  const code = PASS_CODE.exec(squeezed);
+  return code ? `${code[1]}-${code[2]}` : squeezed;
 };
 
 let visit = null;
@@ -55,7 +59,7 @@ function forgetKey(why = "") {
 }
 
 const BANNER = {
-  approved: ["good", "Let them in", "Pass is valid. Record the entry."],
+  approved: ["good", "Let them in", "Pass is valid."],
   inside:   ["good", "Inside now", "Record the exit when they leave."],
   closed:   ["bad", "Pass closed", "This visit is over. The code no longer works."],
   declined: ["bad", "Declined", "Do not let them in."],
@@ -73,6 +77,22 @@ const banner = (tone, title, line) =>
   `<div class="state ${tone}">${ICON[tone]}<div><h2>${x(title)}</h2><p>${x(line)}</p></div></div>`;
 
 const fact = (k, v) => `<div><span>${k}</span><b>${x(v || "—")}</b></div>`;
+
+// The button needs the code from the visitor's pass: the entry code records
+// the entry, and the exit code the exit. A tap on the board opens the pass by
+// reference, which shows who it is and records nothing.
+const NEED = {
+  approved: ["entry", `<button class="btn go" onclick="act('entry')">Record entry</button>`,
+             "To record the entry, type the entry code on the visitor's pass."],
+  inside:   ["exit", `<button class="btn" onclick="act('exit')">Record exit</button>`,
+             "To record the exit, type the exit code on the visitor's pass. It shows there once they are inside."],
+};
+
+function nextStep(v) {
+  const [kind, button, hint] = NEED[v.status] || [];
+  if (!kind) return "";
+  return v.code_kind === kind ? button : `<p class="sub">${hint}</p>`;
+}
 const problem = t => banner("bad", "Cannot do that", t);
 const working = t => `<div class="state wait"><span class="spin"></span><div><h2>${x(t)}</h2><p>This can take up to a minute if the server was asleep.</p></div></div>`;
 
@@ -144,7 +164,7 @@ function renderBoard() {
       v => row(v, `Approved ${hm(v.decided_at)}`, false)) +
     `<p class="updated">${boardError
       ? `Could not refresh. These lists are from ${hm(boardAt)}. ${x(boardError)}`
-      : `Updated ${hm(boardAt)}. Tap a name to open the pass.`}</p>`;
+      : `Updated ${hm(boardAt)}. Tap a name to see who it is.`}</p>`;
 }
 
 function render() {
@@ -183,9 +203,6 @@ function render() {
   }
 
   const [tone, title, line] = BANNER[visit.status] || ["wait", visit.status, ""];
-  const buttons =
-    visit.status === "approved" ? `<button class="btn go" onclick="act('entry')">Record entry</button>` :
-    visit.status === "inside"   ? `<button class="btn" onclick="act('exit')">Record exit</button>` : "";
 
   // Once the visit is over the server sends times and nothing else, so the
   // desk stops showing the visitor's name, phone number and address.
@@ -202,12 +219,13 @@ function render() {
     ${notice ? problem(notice) : ""}
     ${banner(tone, title, line)}
     <div class="facts">
-      ${fact("Code", visit.reference)}
+      ${visit.code ? fact(visit.code_kind === "entry" ? "Entry code" : "Exit code", visit.code) : ""}
+      ${fact("Reference", visit.reference)}
       ${details}
       ${visit.entered_at ? fact("Entered", hm(visit.entered_at)) : ""}
       ${visit.exited_at ? fact("Exited", hm(visit.exited_at)) : ""}
     </div>
-    ${buttons}
+    ${nextStep(visit)}
     <button class="btn plain" onclick="clear_()">Next visitor</button>`;
 }
 
@@ -247,12 +265,17 @@ async function look() {
     render();
     return;
   }
+  await show(code);
+}
+
+// Opens a pass by the code the guard typed, or by reference after a tap.
+async function show(key) {
   visit = null;
   notice = "";
   busy = "Checking the pass";
   render();
   try {
-    visit = await call(`/api/pass/${encodeURIComponent(code)}`);
+    visit = await call(`/api/pass/${encodeURIComponent(key)}`);
   } catch (err) {
     busy = "";
     if (err instanceof WrongKey) return forgetKey(err.message);
@@ -262,25 +285,27 @@ async function look() {
   render();
 }
 
-// A tap on a name in either list opens that pass, the same as typing its code.
+// A tap on a name in either list shows who it is. The code box stays empty,
+// ready for the code on the visitor's pass, which the buttons need.
 function openPass(reference) {
-  codeBox.value = reference;
+  codeBox.value = "";
   window.scrollTo(0, 0);
-  void look();
+  void show(reference).then(() => codeBox.focus());
 }
 
 async function act(action) {
+  const code = visit.code;
   notice = "";
   busy = action === "entry" ? "Recording the entry" : "Recording the exit";
   render();
   try {
-    visit = await call(`/api/pass/${encodeURIComponent(visit.reference)}/${action}`, {method: "POST"});
+    visit = await call(`/api/pass/${encodeURIComponent(code)}/${action}`, {method: "POST"});
   } catch (err) {
     busy = "";
     if (err instanceof WrongKey) return forgetKey(err.message);
     notice = err.message;
     // The refusal above is what the guard needs. A failed re-read adds nothing.
-    try { visit = await call(`/api/pass/${encodeURIComponent(visit.reference)}`); } catch { /* keep the refusal */ }
+    try { visit = await call(`/api/pass/${encodeURIComponent(code)}`); } catch { /* keep the refusal */ }
   }
   busy = "";
   render();

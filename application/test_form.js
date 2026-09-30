@@ -223,9 +223,20 @@ S.s = "inout"; call("render");
 ok("the pass card is gone", !el("view").innerHTML.includes("VR-4022"));
 ok("the pass card element is gone", !el("view").innerHTML.includes('class="pass'));
 
-S.visit.status = "inside";
+// The server sends the entry code while approved and the exit code while
+// inside. The card shows that one code and never the approver's reference.
+const card = () => (el("view").querySelector(".pass b") || {textContent: ""}).textContent;
+Object.assign(S.visit, {status: "approved", entry_code: "KT-4821"});
 S.s = "inout"; call("render");
-ok("a live pass still shows its code", el("view").innerHTML.includes("VR-4022"));
+ok("an approved pass shows the entry code", card() === "KT-4821"
+   && el("view").innerHTML.includes("Entry pass"));
+ok("the pass card never shows the reference", !el("view").querySelector(".pass").innerHTML.includes("VR-4022"));
+delete S.visit.entry_code;
+Object.assign(S.visit, {status: "inside", exit_code: "RM-0937"});
+call("render");
+ok("inside, the pass shows the exit code", card() === "RM-0937"
+   && el("view").innerHTML.includes("Exit pass") && !el("view").innerHTML.includes("KT-4821"));
+ok("and says the entry code no longer works", el("view").innerHTML.includes("no longer opens the gate"));
 
 // ----------------------------------------------- gate desk hides it too
 console.log("gate desk: a closed pass shows times only");
@@ -236,7 +247,7 @@ gate.eval('visit = {reference:"VR-4022", status:"closed", guests:[],' +
           ' entered_at:"2026-09-20T10:30:00Z", exited_at:"2026-09-20T12:00:00Z"}');
 gRender();
 ok("the banner says the pass is closed", gOut().includes("Pass closed"));
-ok("the code and the times still show",
+ok("the reference and the times still show",
    gOut().includes("VR-4022") && gOut().includes("Entered") && gOut().includes("Exited"));
 ok("no name row", !gOut().includes(">Name<"));
 ok("no phone row", !gOut().includes(">Phone<"));
@@ -250,7 +261,26 @@ gate.eval('visit = {reference:"VR-4022", status:"approved", name:"Asha Rao",' +
           ' guests:[], decided_at:"2026-09-20T10:05:00Z"}');
 gRender();
 ok("an open pass still shows the visitor", gOut().includes("Asha Rao"));
-ok("an open pass still offers Record entry", gOut().includes("Record entry"));
+ok("opened by reference, it offers no button", !gOut().includes("Record entry"));
+ok("and asks for the entry code instead", gOut().includes("type the entry code"));
+gate.eval('visit = {...visit, code: "KT-4821", code_kind: "entry"}');
+gRender();
+ok("opened by its entry code, it offers Record entry", gOut().includes("Record entry"));
+ok("and names the code the guard typed", gOut().includes("Entry code") && gOut().includes("KT-4821"));
+gate.eval('visit = {...visit, status: "approved", code: "RM-0937", code_kind: "exit"}');
+gRender();
+ok("an exit code offers no entry", !gOut().includes("Record entry") && gOut().includes("type the entry code"));
+gate.eval('visit = {...visit, status: "inside", entered_at: "2026-09-20T10:30:00Z"}');
+gRender();
+ok("inside, the exit code offers Record exit", gOut().includes("Record exit"));
+gate.eval('visit = {...visit, code: "KT-4821", code_kind: "entry"}');
+gRender();
+ok("inside, the entry code offers no exit", !gOut().includes("Record exit") && gOut().includes("type the exit code"));
+// The guard may type the code any way. The page sends it in one form.
+ok("kt 4821 becomes KT-4821", gate.eval('tidy(" kt 4821 ")') === "KT-4821");
+ok("kt-4821 becomes KT-4821", gate.eval('tidy("kt-4821")') === "KT-4821");
+ok("four digits are still a reference", gate.eval('tidy("4022")') === "VR-4022");
+ok("I and O are not code letters", gate.eval('tidy("io4821")') === "IO4821");
 
 // ------------------------------------------------ the gate desk board
 async function boardChecks() {
@@ -271,11 +301,15 @@ async function boardChecks() {
   };
   const PASS = {reference: "VR-3333", status: "approved", name: "Kiran", phone: "9876543210",
                 visiting: "2024SEPVUGP0009", reason: "Delivery", guests: [], decided_at: ago(hour)};
+  // What the server sends for the entry code, and after the entry is recorded.
+  const TYPED = {...PASS, code: "KT-4821", code_kind: "entry"};
+  const ENTERED = {...TYPED, status: "inside", entered_at: ago(0)};
   const calls = [];
   const desk = boot("gate.html", "gate.js", {
     fetch: url => {
       calls.push(url);
-      const body = url.includes("/api/gate/board") ? BOARD : PASS;
+      const body = url.includes("/api/gate/board") ? BOARD
+        : url.endsWith("/entry") ? ENTERED : url.includes("KT-4821") ? TYPED : PASS;
       return Promise.resolve({status: 200, ok: true, json: () => Promise.resolve(body)});
     },
   });
@@ -303,9 +337,23 @@ async function boardChecks() {
   await new Promise(done => setTimeout(done, 0));
   await new Promise(done => setTimeout(done, 0));
   ok("tapping a name opens that pass", calls.some(u => u === "/api/pass/VR-3333"));
-  ok("the code box holds the code", byId("code").value === "VR-3333");
-  ok("the pass offers Record entry", byId("out").innerHTML.includes("Record entry"));
+  ok("the pass shows who it is", byId("out").innerHTML.includes("Kiran"));
+  ok("a tap alone offers no Record entry", !byId("out").innerHTML.includes("Record entry"));
+  ok("the code box stays empty for the visitor's code", byId("code").value === "");
   ok("the board stays under the pass", byId("board").innerHTML.includes("Inside now"));
+
+  // The guard types the entry code from the visitor's pass.
+  byId("code").value = "kt 4821";
+  await desk.eval("look()");
+  ok("the typed code is sent in one form", calls.includes("/api/pass/KT-4821"));
+  ok("the entry code offers Record entry", byId("out").innerHTML.includes("Record entry"));
+  await desk.eval("act('entry')");
+  ok("the entry is recorded with the entry code", calls.includes("/api/pass/KT-4821/entry"));
+  ok("no request ever used the reference to act", !calls.some(u => /VR-\d{4}\/(entry|exit)/.test(u)));
+  ok("inside, it asks for the exit code", byId("out").innerHTML.includes("type the exit code"));
+  // act() refreshes the lists in the background. Let that finish first.
+  await new Promise(done => setTimeout(done, 0));
+  await new Promise(done => setTimeout(done, 0));
 
   // A failed refresh keeps the lists and says how old they are.
   desk.fetch = () => Promise.reject(new Error("offline"));

@@ -153,7 +153,7 @@ input.bad:focus{border-color:var(--stop);background:var(--stopBg);box-shadow:0 0
 </div>
 <script>
 
-const REF="VR-4821",ESC=15,DEC=25;
+const REF="VR-4821",ENTRY="KT-3950",ESC=15,DEC=25;
 const REASONS=["See a student","See an office","Delivery","Event","Other"];
 const MAX_GUESTS=10;
 const S={s:"home",min:804,f:{name:"",phone:"",address:"",reason:"",other:"",visiting:"",guest:""},g:[],e:{},
@@ -298,7 +298,7 @@ function view(){
   case "inout":{
     if(S.st!=="approved") return `<h2>No pass yet</h2><p>Your pass appears here once a request is approved.</p>
       <button class="btn" onclick="go(S.st==='none'?'step1':'status')">${S.st==="none"?"Request a Visit":"Check my request"}</button>`;
-    return `<div class="pass"><span class="ptop">Entry pass</span><b>${REF}</b>
+    return `<div class="pass"><span class="ptop">Entry pass</span><b>${ENTRY}</b>
       <span class="pass-cut"></span>
       <span class="pass-foot">${x(S.f.name||"Visitor")}${S.g.length?" +"+S.g.length:""} · today</span></div>
       <p class="sm">Show this at the gate. The guard looks it up. Saved on this phone, so it works without signal.</p>

@@ -28,7 +28,7 @@ services:
         sync: false
       - key: GATE_KEY
         sync: false
-      # Optional. The admin page uses the gate key while this is not set.
+      # Required, and different from GATE_KEY. The app does not start without it.
       - key: ADMIN_KEY
         sync: false
       # Optional. Each reason's main and backup approver, as JSON.

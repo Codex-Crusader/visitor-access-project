@@ -11,17 +11,21 @@ API_URL = f"https://graph.facebook.com/v21.0/{config.META_PHONE_NUMBER_ID}/messa
 TIMEOUT_SECONDS = 15
 
 CODE = re.compile(r"^(?:VR-)?(\d{4})$", re.IGNORECASE)
+# An entry or exit code, as KT-4821. A guard may type kt4821 or KT 4821.
+GATE_CODE = re.compile(r"^([A-HJ-NP-Z]{2})-?(\d{4})$")
 
 # One phone number can be approver and guard, so each job has its own word.
 DECIDE_WORDS = {"YES": db.APPROVED, "NO": db.DECLINED}
-GATE_WORDS = {"IN": "entry", "OUT": "exit"}
+GATE_WORDS = {"IN": db.ENTRY, "OUT": db.EXIT}
 
 HELP = (
-    "Send a code like VR-4022 to look it up.\n"
-    "YES <code> approves. NO <code> declines.\n"
-    "IN <code>, then a photo of the visitor, records entry.\n"
-    "OUT <code> records exit."
+    "Send a reference like VR-4022, or a pass code like KT-4821, to look it up.\n"
+    "YES <reference> approves. NO <reference> declines.\n"
+    "IN <entry code>, then a photo of the visitor, records entry.\n"
+    "OUT <exit code> records exit.\n"
+    "The entry code and the exit code are on the visitor's pass."
 )
+EXAMPLES = {db.ENTRY: "IN KT-4821", db.EXIT: "OUT RM-0937"}
 
 
 def digits(phone):
@@ -137,21 +141,35 @@ GATE_LINES = {
     db.PENDING: "Not approved yet. Do not let them in.",
     db.ESCALATED: "Not approved yet. Do not let them in.",
     db.DECLINED: "Declined. Do not let them in.",
-    db.APPROVED: "Approved. Reply IN {ref}, then send a photo of the visitor.",
-    db.INSIDE: "Inside now. Reply OUT {ref} to record the exit.",
-    db.CLOSED: "Closed. The visit is over and this code is finished.",
+    db.APPROVED: "Approved. Reply IN and the entry code on the visitor's pass,"
+                 " then send a photo of the visitor.",
+    db.INSIDE: "Inside now. Reply OUT and the exit code on the visitor's pass"
+               " to record the exit.",
+    db.CLOSED: "Closed. The visit is over and its codes are finished.",
+}
+# When the guard sent the code that does the next step, the reply repeats it.
+# A reply only ever repeats a code the sender typed, so an approver who looks
+# up a reference never learns a gate code.
+NEXT_STEP = {
+    (db.APPROVED, db.ENTRY): "Approved. Reply IN {code}, then send a photo of the visitor.",
+    (db.INSIDE, db.EXIT): "Inside now. Reply OUT {code} to record the exit.",
 }
 
 
-def pass_body(visit):
-    """What the guard sees after sending a code.
+def gate_line(visit, code=None, kind=None):
+    line = NEXT_STEP.get((visit["status"], kind))
+    return line.format(code=code) if line else GATE_LINES[visit["status"]]
+
+
+def pass_body(visit, code=None, kind=None):
+    """What the guard sees after sending a reference or a pass code.
 
     A closed visit is over, so it answers with times and nothing personal.
     The same rule as the gate page and the pass endpoint.
     """
     if visit["status"] == db.CLOSED:
         lines = [
-            GATE_LINES[db.CLOSED].format(ref=visit["reference"]),
+            gate_line(visit),
             "",
             f"Reference: {visit['reference']}",
             f"Entered: {visit['entered_at']}",
@@ -160,7 +178,7 @@ def pass_body(visit):
         return "\n".join(lines)
 
     lines = [
-        GATE_LINES[visit["status"]].format(ref=visit["reference"]),
+        gate_line(visit, code, kind),
         "",
         f"Reference: {visit['reference']}",
         f"Name: {visit['name']}",
@@ -177,11 +195,11 @@ def pass_body(visit):
     return "\n".join(lines)
 
 
-def photo_request(visit):
+def photo_request(visit, code):
     """What the guard reads after IN, while the visitor waits at the gate."""
     return (
         f"Take a photo of {visit['name']} and send it here.\n"
-        f"{visit['reference']} is let in once the photo arrives."
+        f"{code} is let in once the photo arrives."
     )
 
 
@@ -190,27 +208,39 @@ def normalize_reference(text):
     return f"VR-{found.group(1)}" if found else None
 
 
+def normalize_gate_code(text):
+    """KT-4821 from kt4821, KT 4821 or kt-4821. None for anything else."""
+    found = GATE_CODE.match("".join(text.split()).upper())
+    if not found or found.group(1) == "VR":
+        return None
+    return f"{found.group(1)}-{found.group(2)}"
+
+
 def read_reply(body):
     """Work out what the sender wants.
 
-    Returns (kind, value, reference) where kind is one of:
-    decide, gate, lookup, help.
+    Returns (kind, value, key) where kind is one of: decide, gate, lookup,
+    help. The key is a reference for decide, the code as typed for gate, and
+    a reference or a pass code for lookup.
     """
     parts = body.strip().split()
     if not parts:
         return "help", None, None
 
     word = parts[0].upper()
-    rest = parts[1] if len(parts) > 1 else ""
 
     if word in DECIDE_WORDS:
-        return "decide", DECIDE_WORDS[word], normalize_reference(rest)
+        return "decide", DECIDE_WORDS[word], normalize_reference(parts[1] if len(parts) > 1 else "")
+    # A code may come with a space in it, as KT 4821, so the rest is joined.
+    rest = "".join(parts[1:])
     if word in GATE_WORDS:
-        return "gate", GATE_WORDS[word], normalize_reference(rest)
+        # Whatever was typed goes on, so a wrong code is named in the reply.
+        return "gate", GATE_WORDS[word], normalize_gate_code(rest) or rest.upper() or None
 
-    reference = normalize_reference(parts[0])
-    if reference and len(parts) == 1:
-        return "lookup", None, reference
+    whole = "".join(parts)
+    key = normalize_reference(whole) or normalize_gate_code(whole)
+    if key:
+        return "lookup", None, key
     return "help", None, None
 
 

@@ -4,6 +4,7 @@ import json
 import random
 import secrets
 import sqlite3
+import string
 from datetime import datetime, timedelta, timezone
 
 import config
@@ -48,6 +49,17 @@ CREATE TABLE IF NOT EXISTS photos (
   media_id  TEXT NOT NULL,
   taken_at  TEXT NOT NULL
 );
+
+-- The codes on the visitor's pass. Each visit has one entry code and one
+-- exit code, and each code does only its own job at the gate. The reference
+-- stays with the approvers and opens nothing. The primary key keeps every
+-- code unique across both kinds, so no exit code can equal an entry code.
+CREATE TABLE IF NOT EXISTS gate_codes (
+  code      TEXT PRIMARY KEY,
+  reference TEXT NOT NULL,
+  kind      TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS gate_codes_reference ON gate_codes (reference);
 
 -- The escalation sweep, the purge and the open-request list all filter on
 -- status and created_at. Without this they scan every row every 30 seconds.
@@ -104,14 +116,34 @@ def to_dict(row):
 
 
 CODE_ATTEMPTS = 20
+ENTRY = "entry"
+EXIT = "exit"
+# No I or O, which read as 1 and 0 on a phone screen.
+CODE_LETTERS = "".join(c for c in string.ascii_uppercase if c not in "IO")
+
+
+def new_gate_code():
+    """A random code such as KT-4821. VR is left out, because VR-4821 is a reference.
+
+    The codes come from secrets, not random: a code that lets a person onto
+    the campus must not be predictable from the ones before it.
+    """
+    while True:
+        letters = "".join(secrets.choice(CODE_LETTERS) for _ in range(2))
+        if letters != "VR":
+            return f"{letters}-{secrets.randbelow(10000):04d}"
 
 
 def create(fields, guests):
-    """Insert a visit. Retries when two requests pick the same code at once."""
+    """Insert a visit and its two codes. Retries when a code is already taken."""
     for _ in range(CODE_ATTEMPTS):
         reference = f"VR-{random.randint(1000, 9999)}"
         try:
             with connect() as conn:
+                conn.executemany(
+                    "INSERT INTO gate_codes (code, reference, kind) VALUES (?, ?, ?)",
+                    [(new_gate_code(), reference, ENTRY), (new_gate_code(), reference, EXIT)],
+                )
                 conn.execute(
                     "INSERT INTO visits (reference, token, name, phone, address,"
                     " reason, visiting, guests, status, created_at)"
@@ -151,10 +183,32 @@ def get_by_token(token):
     return _one("token", token)
 
 
+def codes_of(reference) -> dict[str, str]:
+    """{"entry": code, "exit": code} for a visit, or {} when it has none."""
+    with connect() as conn:
+        rows = conn.execute(
+            "SELECT kind, code FROM gate_codes WHERE reference = ?", (reference,)
+        ).fetchall()
+    return dict(rows)
+
+
+def by_code(code):
+    """(visit, kind) for an entry or exit code, or (None, None)."""
+    with connect() as conn:
+        row = conn.execute(
+            "SELECT reference, kind FROM gate_codes WHERE code = ?", (code,)
+        ).fetchone()
+    if row is None:
+        return None, None
+    visit = get(row["reference"])
+    return (visit, row["kind"]) if visit is not None else (None, None)
+
+
 def delete(reference):
     with connect() as conn:
         conn.execute("DELETE FROM visits WHERE reference = ?", (reference,))
         conn.execute("DELETE FROM photos WHERE reference = ?", (reference,))
+        conn.execute("DELETE FROM gate_codes WHERE reference = ?", (reference,))
 
 
 def all_visits():
@@ -380,15 +434,16 @@ def purge_old():
     """Delete visits after the retention period. Returns how many went."""
     cutoff = ago(config.RETAIN_DAYS)
     with connect() as conn:
-        # A photo goes with its visit, so the photos of the visits about to go
-        # are deleted first, in the same transaction and with the same cutoff.
-        # This reads only the expired visits. The old way asked every photo
-        # whether its visit still existed, every 30 seconds.
-        conn.execute(
-            "DELETE FROM photos WHERE reference IN"
-            " (SELECT reference FROM visits WHERE created_at < ?)",
-            (cutoff,),
-        )
+        # A photo and the two codes go with their visit, so they are deleted
+        # first, in the same transaction and with the same cutoff. This reads
+        # only the expired visits. The old way asked every photo whether its
+        # visit still existed, every 30 seconds.
+        for table in ("photos", "gate_codes"):
+            conn.execute(
+                f"DELETE FROM {table} WHERE reference IN"
+                " (SELECT reference FROM visits WHERE created_at < ?)",
+                (cutoff,),
+            )
         removed = conn.execute(
             "DELETE FROM visits WHERE created_at < ?", (cutoff,)
         ).rowcount

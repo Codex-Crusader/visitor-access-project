@@ -67,9 +67,20 @@ def approvers_for(reason):
 
 # The guard types this on the gate page. Entry and exit need it.
 GATE_KEY = _required("GATE_KEY")
-# The admin page lists every request. It takes ADMIN_KEY, or the gate key
-# while ADMIN_KEY is not set.
-ADMIN_KEY = os.getenv("ADMIN_KEY", "").strip() or GATE_KEY
+
+
+def read_admin_key():
+    """The admin page's own key. Every guard holds the gate key, so the gate
+    key must not open the admin list, and the app will not start with it."""
+    key = _required("ADMIN_KEY")
+    if key == GATE_KEY:
+        raise RuntimeError(
+            "ADMIN_KEY must differ from GATE_KEY, or every guard can open the admin page"
+        )
+    return key
+
+
+ADMIN_KEY = read_admin_key()
 
 GATE_DESK_PHONE = _required("GATE_DESK_PHONE")
 

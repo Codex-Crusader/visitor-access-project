@@ -6,6 +6,7 @@ It sends no WhatsApp messages and uses a throwaway database.
 
 import logging
 import os
+import re
 import tempfile
 
 os.environ.update(
@@ -17,6 +18,7 @@ os.environ.update(
     BACKUP_APPROVER="+911234567890",
     GUARD="+911234567890",
     GATE_KEY="test-gate-key",
+    ADMIN_KEY="test-admin-key",
     GATE_DESK_PHONE="+912200000000",
     ESCALATE_MINUTES="30",
     RETAIN_DAYS="1",
@@ -44,6 +46,19 @@ whatsapp.send_template = fake_template
 db.init()
 client = application.app.test_client()
 KEY = {"X-Gate-Key": "test-gate-key"}
+ADMIN = {"X-Admin-Key": "test-admin-key"}
+# A gate code: two letters without I or O, a dash, four digits.
+GATE_CODE = re.compile(r"^[A-HJ-NP-Z]{2}-\d{4}$")
+
+
+def entry_of(made):
+    """The entry code. The server and the visitor's pass are the only holders."""
+    return db.codes_of(made["reference"])["entry"]
+
+
+def exit_of(made):
+    return db.codes_of(made["reference"])["exit"]
+
 
 counter = [0]
 
@@ -248,6 +263,27 @@ mine = client.get(f"/api/visit/{token}")
 assert mine.status_code == 200 and mine.get_json()["name"] == "Asha Rao"
 assert client.get("/api/visit/not-a-real-token").status_code == 404
 
+print("each pass has its own entry code and exit code")
+entry_code, exit_code = entry_of(visit), exit_of(visit)
+assert GATE_CODE.match(entry_code) and GATE_CODE.match(exit_code), (entry_code, exit_code)
+assert entry_code != exit_code
+# The reference is for approvers. It opens nothing, so it never looks like a gate code.
+assert code.startswith("VR-")
+# The letters change from pass to pass, not only the digits.
+application.forget_hits()
+letters = {entry_of(new_request())[:2] for _ in range(12)}
+application.forget_hits()
+assert len(letters) > 1, letters
+# The generator itself: 2000 codes, no I or O to misread as 1 or 0, never VR.
+made_codes = [db.new_gate_code() for _ in range(2000)]
+assert all(GATE_CODE.match(c) and not c.startswith("VR") for c in made_codes)
+assert len({c[:2] for c in made_codes}) > 400, "the letters must vary widely"
+# The visitor sees no code while the request waits for a decision.
+waiting_view = client.get(f"/api/visit/{token}").get_json()
+assert "entry_code" not in waiting_view and "exit_code" not in waiting_view
+# The response to the request itself carries no code either.
+assert entry_code not in str(visit) and exit_code not in str(visit)
+
 print("webhook verification")
 ok = client.get("/webhook/whatsapp", query_string={
     "hub.mode": "subscribe", "hub.verify_token": "visitor-access-verify",
@@ -276,36 +312,63 @@ assert client.get(f"/api/visit/{token}").get_json()["status"] == "approved"
 print("  duplicate delivery ignored")
 
 assert "already approved" in say(APPROVER, f"NO {code}")
+# Once approved, the visitor's pass shows the entry code, and only that one.
+approved_view = client.get(f"/api/visit/{token}").get_json()
+assert approved_view["entry_code"] == entry_code, approved_view
+assert "exit_code" not in approved_view and exit_code not in str(approved_view)
 
 print("gate over whatsapp")
-# A bare code is a lookup.
+# A bare reference is a lookup. It shows the visitor and neither code.
 looked = say(APPROVER, code)
 assert "Approved" in looked and "Asha Rao" in looked
-assert say(APPROVER, code.lower().replace("vr-", "")) .count("Asha Rao") == 1
+assert entry_code not in looked and exit_code not in looked, looked
+assert say(APPROVER, code.lower().replace("vr-", "")).count("Asha Rao") == 1
+# The entry code looks the pass up too, typed any way, and says to use it with IN.
+by_entry = say(APPROVER, entry_code.lower().replace("-", " "))
+assert f"IN {entry_code}" in by_entry and exit_code not in by_entry, by_entry
 
+# Up to here nobody typed the exit code, so no message may hold it.
+assert not any(exit_code in body for _, body in sent)
 # OUT before IN is refused.
-assert "Not checked in" in say(APPROVER, f"OUT {code}")
+assert "Not checked in" in say(APPROVER, f"OUT {exit_code}")
+# Neither the reference nor the exit code lets anyone in.
+assert "No pass has entry code" in say(APPROVER, f"IN {code}")
+assert "exit code" in say(APPROVER, f"IN {exit_code}")
+assert client.get(f"/api/visit/{token}").get_json()["status"] == "approved"
 # A photo with no IN before it lets nobody in.
 assert "No entry is waiting" in snap(APPROVER)
 # IN only asks for the photo, and names the person to photograph.
-asked = say(APPROVER, f"IN {code}")
-assert "Take a photo of Asha Rao" in asked and code in asked, asked
+asked = say(APPROVER, f"IN {entry_code.lower()}")
+assert "Take a photo of Asha Rao" in asked and entry_code in asked, asked
 assert client.get(f"/api/visit/{token}").get_json()["status"] == "approved"
-# The photo lets them in.
-assert "Inside now" in snap(APPROVER)
+# The photo lets them in. The reply cannot hold the exit code: the guard has
+# not seen it yet, and only the visitor's pass shows it.
+went_in_reply = snap(APPROVER)
+assert "Inside now" in went_in_reply and exit_code not in went_in_reply, went_in_reply
 entered = client.get(f"/api/visit/{token}").get_json()
 assert entered["status"] == "inside" and entered["entered_at"]
 assert db.photo_of(code)["taken_at"] == entered["entered_at"]
+# Inside, the visitor's pass swaps the entry code for the exit code.
+assert entered["exit_code"] == exit_code and "entry_code" not in entered, entered
+# No approval message carried either code.
+assert not any(c in value for _, values in templates for value in values
+               for c in (entry_code, exit_code))
 # A second photo on the same IN lets nobody else in, and a second IN is refused.
 assert "No entry is waiting" in snap(APPROVER)
-assert "Already inside" in say(APPROVER, f"IN {code}")
-# The OUT command closes it. After that, the code is dead.
-assert "Closed" in say(APPROVER, f"OUT {code}")
-assert client.get(f"/api/visit/{token}").get_json()["status"] == "closed"
-assert "closed" in say(APPROVER, f"IN {code}").lower()
-assert "No pass has code VR-9999" in say(APPROVER, "IN VR-9999")
-assert "Add the code" in say(APPROVER, "IN")
-print("  lookup, entry, exit and decommission all correct")
+assert "Already inside" in say(APPROVER, f"IN {entry_code}")
+# The entry code never records the exit.
+assert "entry code" in say(APPROVER, f"OUT {entry_code}")
+assert client.get(f"/api/visit/{token}").get_json()["status"] == "inside"
+# The OUT command with the exit code closes it. After that, both codes are dead.
+assert "Closed" in say(APPROVER, f"OUT {exit_code}")
+closed_view = client.get(f"/api/visit/{token}").get_json()
+assert closed_view["status"] == "closed"
+assert "entry_code" not in closed_view and "exit_code" not in closed_view
+assert "closed" in say(APPROVER, f"IN {entry_code}").lower()
+assert "No pass has entry code ZZ-0000" in say(APPROVER, "IN ZZ-0000")
+assert "Add the entry code" in say(APPROVER, "IN")
+assert "Add the exit code" in say(APPROVER, "OUT")
+print("  lookup, entry, exit and decommission all correct, each with its own code")
 
 print("the gate photo")
 
@@ -322,14 +385,14 @@ def status_of(made):
 
 # Two INs in a row: the photo goes to the second, and the reply says which.
 first, second_in = approved(), approved()
-say(APPROVER, f"IN {first['reference']}")
-say(APPROVER, f"IN {second_in['reference']}")
+say(APPROVER, f"IN {entry_of(first)}")
+say(APPROVER, f"IN {entry_of(second_in)}")
 went_in = snap(APPROVER)
 assert second_in["reference"] in went_in and "Inside now" in went_in, went_in
 assert status_of(first) == "approved" and status_of(second_in) == "inside"
 
 # An IN older than the time limit is dead. The photo must not let anyone in.
-say(APPROVER, f"IN {first['reference']}")
+say(APPROVER, f"IN {entry_of(first)}")
 with db.connect() as conn:
     conn.execute("UPDATE photo_waits SET asked = ?", ("2020-01-01T00:00:00+00:00",))
 late = snap(APPROVER)
@@ -337,14 +400,14 @@ assert "No entry is waiting" in late and str(application.PHOTO_MINUTES) in late,
 assert status_of(first) == "approved"
 
 # The web gate let the visitor in while the guard was taking the photo.
-say(APPROVER, f"IN {first['reference']}")
-client.post(f"/api/pass/{first['reference']}/entry", headers=KEY)
+say(APPROVER, f"IN {entry_of(first)}")
+client.post(f"/api/pass/{entry_of(first)}/entry", headers=KEY)
 assert "Already inside" in snap(APPROVER)
 assert db.photo_of(first["reference"]) is None
 
 # A photo from a stranger gets no answer and changes nothing.
 third = approved()
-say(APPROVER, f"IN {third['reference']}")
+say(APPROVER, f"IN {entry_of(third)}")
 assert snap(STRANGER) == ""
 assert status_of(third) == "approved"
 
@@ -378,17 +441,32 @@ print("  IN asks for a photo, and only the photo lets the visitor in")
 print("gate over the web page")
 second = new_request()
 say(APPROVER, f"YES {second['reference']}")
-ref2 = second["reference"]
-assert client.get(f"/api/pass/{ref2}", headers=KEY).status_code == 200
-assert client.get(f"/api/pass/{ref2.lower()}", headers=KEY).status_code == 200
-assert client.post(f"/api/pass/{ref2}/exit", headers=KEY).status_code == 409
-entered = client.post(f"/api/pass/{ref2}/entry", headers=KEY)
+ref2, entry2, exit2 = second["reference"], entry_of(second), exit_of(second)
+# The reference opens the details, which is what a tap on the board does.
+# It says which code it was, so the page knows whether to offer a button.
+by_reference = client.get(f"/api/pass/{ref2.lower()}", headers=KEY)
+assert by_reference.status_code == 200 and "code_kind" not in by_reference.get_json()
+assert entry2 not in by_reference.get_data(as_text=True)
+assert exit2 not in by_reference.get_data(as_text=True)
+typed = client.get(f"/api/pass/{entry2.lower().replace('-', '')}", headers=KEY).get_json()
+assert typed["code_kind"] == "entry" and typed["code"] == entry2, typed
+assert exit2 not in str(typed)
+# Only the entry code records the entry, and only the exit code the exit.
+assert client.post(f"/api/pass/{ref2}/entry", headers=KEY).status_code == 404
+wrong_kind = client.post(f"/api/pass/{exit2}/entry", headers=KEY)
+assert wrong_kind.status_code == 409 and "exit code" in wrong_kind.get_json()["error"]
+assert client.post(f"/api/pass/{exit2}/exit", headers=KEY).status_code == 409
+entered = client.post(f"/api/pass/{entry2}/entry", headers=KEY)
 assert entered.status_code == 200 and entered.get_json()["status"] == "inside"
-assert client.post(f"/api/pass/{ref2}/entry", headers=KEY).status_code == 409
-left = client.post(f"/api/pass/{ref2}/exit", headers=KEY)
+assert exit2 not in entered.get_data(as_text=True)
+assert client.post(f"/api/pass/{entry2}/entry", headers=KEY).status_code == 409
+assert client.post(f"/api/pass/{ref2}/exit", headers=KEY).status_code == 404
+wrong_kind = client.post(f"/api/pass/{entry2}/exit", headers=KEY)
+assert wrong_kind.status_code == 409 and "entry code" in wrong_kind.get_json()["error"]
+left = client.post(f"/api/pass/{exit2}/exit", headers=KEY)
 assert left.status_code == 200 and left.get_json()["status"] == "closed"
-for action in ("entry", "exit"):
-    dead = client.post(f"/api/pass/{ref2}/{action}", headers=KEY)
+for dead_code, action in ((entry2, "entry"), (exit2, "exit")):
+    dead = client.post(f"/api/pass/{dead_code}/{action}", headers=KEY)
     assert dead.status_code == 409 and "closed" in dead.get_json()["error"]
 
 print("a closed pass stops showing the visitor")
@@ -407,7 +485,7 @@ for field in PERSONAL:
 assert "Asha Rao" not in gone.get_data(as_text=True)
 assert "token" not in shut
 # The refusal that comes back with it must not smuggle the details through.
-refused_body = client.post(f"/api/pass/{ref2}/entry", headers=KEY).get_json()
+refused_body = client.post(f"/api/pass/{entry2}/entry", headers=KEY).get_json()
 for field in PERSONAL:
     assert field not in refused_body["visit"], field
 # The same rule over WhatsApp.
@@ -422,6 +500,7 @@ say(APPROVER, f"YES {live['reference']}")
 open_pass = client.get(f"/api/pass/{live['reference']}", headers=KEY).get_json()
 for field in PERSONAL:
     assert open_pass[field], field
+assert "code_kind" not in open_pass
 assert client.post(f"/api/pass/{ref2}/sideways", headers=KEY).status_code == 404
 assert client.post("/api/pass/VR-9999/entry", headers=KEY).status_code == 404
 assert client.get(f"/api/pass/{ref2}", headers={"X-Gate-Key": "wrong"}).status_code == 403
@@ -441,6 +520,10 @@ assert waiting_one["reference"] not in expected_refs + inside_refs  # pending
 shown = board["expected"][0]
 assert set(shown) == {"reference", "name", "visiting", "guests", "status",
                     "decided_at", "entered_at"}, set(shown)
+# The board is the one list every guard sees. It must hold no gate code.
+board_text = client.get("/api/gate/board", headers=KEY).get_data(as_text=True)
+assert not any(c in board_text for c in (entry_of(live), exit_of(live),
+                                        entry_of(second_in), exit_of(second_in)))
 # Inside is ordered longest first, so whoever never left is at the top.
 entered = [v["entered_at"] for v in board["inside"]]
 assert entered == sorted(entered), entered
@@ -456,7 +539,7 @@ print(f"  {len(board['inside'])} inside, {len(board['expected'])} expected")
 print("a declined pass never opens the gate")
 bad = new_request()
 say(APPROVER, f"NO {bad['reference']}")
-refused = client.post(f"/api/pass/{bad['reference']}/entry", headers=KEY)
+refused = client.post(f"/api/pass/{entry_of(bad)}/entry", headers=KEY)
 assert refused.status_code == 409 and "Declined" in refused.get_json()["error"]
 
 print("several waiting requests")
@@ -489,8 +572,12 @@ old = new_request()
 with db.connect() as conn:
     conn.execute("UPDATE visits SET created_at = ? WHERE reference = ?",
                  ("2020-01-01T00:00:00+00:00", old["reference"]))
+old_entry = entry_of(old)
 assert db.purge_old() >= 1
 assert db.get(old["reference"]) is None
+# Its codes go with it, so a purged pass can never be looked up again.
+assert db.codes_of(old["reference"]) == {}
+assert db.by_code(old_entry) == (None, None)
 assert client.get(f"/api/visit/{old['token']}").status_code == 404
 # Today's records survive the purge.
 assert db.get(a["reference"]) is not None
@@ -505,7 +592,13 @@ with db.connect() as conn:
 db.purge_old()
 assert db.photo_of(gone["reference"]) is None
 assert db.photo_of(kept["reference"]) is not None
-print("  old visits and their photos deleted, today's kept")
+# No code outlives its visit, including those of requests deleted after a
+# failed send.
+with db.connect() as conn:
+    orphans = conn.execute("SELECT COUNT(*) FROM gate_codes WHERE reference NOT IN"
+                           " (SELECT reference FROM visits)").fetchone()[0]
+assert orphans == 0, orphans
+print("  old visits, their photos and their codes deleted, today's kept")
 
 print("each reason has its own two approvers")
 
@@ -549,13 +642,24 @@ finally:
 print("  routing, deciding, waiting lists and escalation all follow the reason")
 
 print("the admin list")
-ADMIN = {"X-Admin-Key": "test-gate-key"}
-# ADMIN_KEY is not set in this test, so the gate key opens the admin page.
-assert config.ADMIN_KEY == "test-gate-key"
+# A guard holds the gate key. It must never open the admin list.
 for path in ("/api/admin/visits", "/api/admin/summary", "/api/admin/export.csv"):
     assert client.get(path).status_code == 403, path
     assert client.get(path, headers={"X-Admin-Key": "guess"}).status_code == 403, path
+    assert client.get(path, headers={"X-Admin-Key": "test-gate-key"}).status_code == 403, path
 assert client.get("/admin").status_code == 200
+# The app refuses to start without its own ADMIN_KEY, or with the gate key as
+# the admin key, because either one would let the guards in.
+for bad_key in ("", "test-gate-key", " test-gate-key "):
+    os.environ["ADMIN_KEY"] = bad_key
+    try:
+        config.read_admin_key()
+    except RuntimeError as problem:
+        assert "ADMIN_KEY" in str(problem), problem
+    else:
+        raise AssertionError(f"ADMIN_KEY {bad_key!r} must stop the start")
+os.environ["ADMIN_KEY"] = "test-admin-key"
+assert config.read_admin_key() == "test-admin-key"
 
 # More than one page of visits. The rate limit would refuse some of them.
 for number in range(60):
@@ -596,7 +700,15 @@ summary = client.get("/api/admin/summary", headers=ADMIN).get_json()
 assert sum(summary["counts"].values()) == total
 assert [a["reason"] for a in summary["approvers"]] == list(config.REASONS)
 assert client.get("/api/admin/export.csv", headers=ADMIN).status_code == 200
-print(f"  {total} visits over {pages} pages, none twice, none missed, no token")
+# No list, summary or export holds a gate code. Only the visitor's pass does.
+live_codes = (entry_of(live), exit_of(live))
+for path, headers in (("/api/admin/visits", ADMIN),
+                      (f"/api/admin/visits?q={live['reference']}", ADMIN),
+                      ("/api/admin/summary", ADMIN), ("/api/admin/export.csv", ADMIN),
+                      ("/api/export.csv", KEY)):
+    answer = client.get(path, headers=headers).get_data(as_text=True)
+    assert not any(c in answer for c in live_codes), path
+print(f"  {total} visits over {pages} pages, none twice, none missed, no token, no code")
 
 print("pages are served")
 for path in ("/", "/app.js", "/gate", "/gate.js", "/admin", "/admin.js", "/download.js"):

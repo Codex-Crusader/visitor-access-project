@@ -9,7 +9,7 @@ os.environ.update(
     META_TOKEN="t", META_PHONE_NUMBER_ID="1", META_VERIFY_TOKEN="v",
     META_APP_SECRET="", MAIN_APPROVER="+911234567890",
     BACKUP_APPROVER="+911234567890", GUARD="+911234567890",
-    GATE_KEY="k", GATE_DESK_PHONE="+912200000000",
+    GATE_KEY="k", ADMIN_KEY="a", GATE_DESK_PHONE="+912200000000",
     ESCALATE_MINUTES="30", RETAIN_DAYS="1",
     # This suite tests database contention, not the rate limit.
     REQUESTS_PER_HOUR="100000", GATE_TRIES_PER_HOUR="100000",
@@ -55,7 +55,9 @@ print(f"submitted {N} at once -> {len(codes)} created, {N - len(codes)} failed")
 assert len(codes) == N, [r.status_code for r in made if r.status_code != 201][:3]
 assert len(set(codes)) == N, f"duplicate codes: {[c for c, n in Counter(codes).items() if n > 1]}"
 assert len(set(tokens)) == N, "duplicate tokens"
-print("  every code unique, every token unique")
+gate_codes = [c for ref in codes for c in db.codes_of(ref).values()]
+assert len(gate_codes) == 2 * N and len(set(gate_codes)) == 2 * N, "missing or shared gate codes"
+print("  every code unique, every token unique, two gate codes each")
 
 # --- Approve them all at once ---
 def approve(code):
@@ -75,8 +77,9 @@ results = []
 def race(action):
     """Twenty guards press the same button on the same pass at once."""
     results.clear()
+    code = db.codes_of(target)[action]
     def press():
-        r = client.post(f"/api/pass/{target}/{action}", headers=KEY)
+        r = client.post(f"/api/pass/{code}/{action}", headers=KEY)
         with lock:
             results.append(r.status_code)
     racers = [threading.Thread(target=press) for _ in range(20)]
@@ -99,9 +102,10 @@ assert db.get(target)["status"] == "closed"
 
 # --- Many different visitors entering and exiting at once ---
 busy = codes[1:41]
-def cycle(code):
-    client.post(f"/api/pass/{code}/entry", headers=KEY)
-    client.post(f"/api/pass/{code}/exit", headers=KEY)
+def cycle(reference):
+    pass_codes = db.codes_of(reference)
+    client.post(f"/api/pass/{pass_codes['entry']}/entry", headers=KEY)
+    client.post(f"/api/pass/{pass_codes['exit']}/exit", headers=KEY)
 threads = [threading.Thread(target=cycle, args=(c,)) for c in busy]
 for t in threads:
     t.start()

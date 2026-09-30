@@ -49,6 +49,12 @@ REFUSALS = {
         db.CLOSED: "This pass is closed. The visit is over.",
     },
 }
+# Each code does only its own job. The refusal names the code the guard needs.
+WRONG_KIND = {
+    db.ENTRY: "{code} is the exit code. The entry needs the entry code on the visitor's pass.",
+    db.EXIT: "{code} is the entry code. The exit needs the exit code, which the"
+             " visitor's pass shows once they are inside.",
+}
 
 
 # Every field is one line of plain text. These characters are not text:
@@ -296,6 +302,12 @@ def read_visit(token):
     visit = db.get_by_token(token)
     if visit is None:
         return jsonify(error="No request with that token"), 404
+    # The pass shows one code at a time: the entry code until the guard lets
+    # the visitor in, then the exit code. Before approval and after the exit,
+    # neither.
+    showing = {db.APPROVED: db.ENTRY, db.INSIDE: db.EXIT}.get(visit["status"])
+    if showing:
+        visit[f"{showing}_code"] = db.codes_of(visit["reference"]).get(showing)
     return jsonify(visit)
 
 
@@ -314,11 +326,27 @@ def gate_view(visit):
     return {key: [] if key == "guests" else visit[key] for key in CLOSED_PASS}
 
 
-@app.get("/api/pass/<reference>")
-def read_pass(reference):
+def typed_pass(visit, code, kind):
+    """The pass as the guard's code opened it. It names only that code."""
+    return {**gate_view(visit), "code": code, "code_kind": kind}
+
+
+@app.get("/api/pass/<key>")
+def read_pass(key):
+    """A pass by the code the guard typed, or by reference for a tap on the board.
+
+    A reference shows the visitor and records nothing, so the page offers a
+    button only when the guard typed the code from the visitor's pass.
+    """
     if not gate_key_ok():
         return jsonify(error="Wrong gate key"), 403
-    visit = db.get(reference.upper())
+    code = whatsapp.normalize_gate_code(key)
+    if code:
+        visit, kind = db.by_code(code)
+        if visit is None:
+            return jsonify(error="No pass with that code"), 404
+        return jsonify(typed_pass(visit, code, kind))
+    visit = db.get(whatsapp.normalize_reference(key) or key.upper())
     if visit is None:
         return jsonify(error="No pass with that code"), 404
     return jsonify(gate_view(visit))
@@ -336,28 +364,37 @@ def gate_board():
     return jsonify(expected=expected, inside=inside)
 
 
-@app.post("/api/pass/<reference>/<action>")
-def gate_action(reference, action):
+@app.post("/api/pass/<key>/<action>")
+def gate_action(key, action):
+    """Records an entry with the entry code, or an exit with the exit code.
+
+    The reference never records anything. It is on the approver's messages
+    and the gate board, so it proves nothing about who holds the pass.
+    """
     if not gate_key_ok():
         return jsonify(error="Wrong gate key"), 403
     if action not in GATE_ACTIONS:
         return jsonify(error="Unknown action"), 404
 
-    visit = db.get(reference.upper())
+    code = whatsapp.normalize_gate_code(key)
+    visit, kind = db.by_code(code) if code else (None, None)
     if visit is None:
-        return jsonify(error="No pass with that code"), 404
+        return jsonify(error="No pass has that code. Type the code on the visitor's pass."), 404
+    if kind != action:
+        return jsonify(error=WRONG_KIND[action].format(code=code),
+                       visit=typed_pass(visit, code, kind)), 409
 
     apply_action, required = GATE_ACTIONS[action]
     if visit["status"] != required:
         return jsonify(error=REFUSALS[action][visit["status"]],
-                       visit=gate_view(visit)), 409
+                       visit=typed_pass(visit, code, kind)), 409
 
     # The update itself decides. Two guards pressing at once must not both win.
     if not apply_action(visit["reference"]):
         fresh = db.get(visit["reference"])
         return jsonify(error=REFUSALS[action][fresh["status"]],
-                       visit=gate_view(fresh)), 409
-    return jsonify(gate_view(db.get(visit["reference"])))
+                       visit=typed_pass(fresh, code, kind)), 409
+    return jsonify(typed_pass(db.get(visit["reference"]), code, kind))
 
 
 EXPORT_COLUMNS = (
@@ -497,25 +534,30 @@ def handle_decide(sender, status, reference):
     return f"{reference} is now {status}.\n\n{whatsapp.brief(visit)}"
 
 
-def handle_gate(sender, action, reference):
+def handle_gate(sender, action, code):
+    """IN takes the entry code and OUT the exit code, both from the visitor's pass."""
     if not is_guard(sender):
         return "Only the gate desk can record entry and exit."
-    if reference is None:
-        return f"Add the code. For example: IN VR-4022.\n\n{whatsapp.HELP}"
+    if code is None:
+        return (f"Add the {action} code from the visitor's pass."
+                f" For example: {whatsapp.EXAMPLES[action]}.\n\n{whatsapp.HELP}")
 
-    visit = db.get(reference)
+    visit, kind = db.by_code(code)
     if visit is None:
-        return f"No pass has code {reference}."
+        return f"No pass has {action} code {code}. Use the code on the visitor's pass."
+    if kind != action:
+        return WRONG_KIND[action].format(code=code)
 
     apply_action, required = GATE_ACTIONS[action]
     if visit["status"] != required:
         return REFUSALS[action][visit["status"]]
 
+    reference = visit["reference"]
     # Over WhatsApp the entry needs a photo of the visitor. IN only asks for
     # it. The photo itself lets them in, see handle_photo.
-    if action == "entry":
+    if action == db.ENTRY:
         db.wait_for_photo(whatsapp.digits(sender), reference)
-        return whatsapp.photo_request(visit)
+        return whatsapp.photo_request(visit, code)
 
     if not apply_action(reference):
         return REFUSALS[action][db.get(reference)["status"]]
@@ -533,7 +575,7 @@ def handle_photo(sender, media_id):
     if reference is None:
         return (
             "No entry is waiting for a photo.\n"
-            f"Send IN <code>, then the photo within {PHOTO_MINUTES} minutes."
+            f"Send IN <entry code>, then the photo within {PHOTO_MINUTES} minutes."
         )
 
     visit = db.get(reference)
@@ -544,12 +586,16 @@ def handle_photo(sender, media_id):
     return whatsapp.pass_body(visit)
 
 
-def handle_lookup(sender, reference):
+def handle_lookup(sender, key):
+    """A reference or a pass code. The reply repeats only the code that was sent."""
     if not is_guard(sender) and not is_approver(sender):
         return None
-    visit = db.get(reference)
+    visit, kind = db.by_code(key)
+    if visit is not None:
+        return whatsapp.pass_body(visit, key, kind)
+    visit = db.get(key)
     if visit is None:
-        return f"No pass has code {reference}."
+        return f"No pass has code {key}."
     return whatsapp.pass_body(visit)
 
 
@@ -590,13 +636,13 @@ def answer_message(sender, text, photo):
     if photo:
         return handle_photo(sender, photo)
 
-    kind, value, reference = whatsapp.read_reply(text)
+    kind, value, key = whatsapp.read_reply(text)
     if kind == "decide":
-        return handle_decide(sender, value, reference)
+        return handle_decide(sender, value, key)
     if kind == "gate":
-        return handle_gate(sender, value, reference)
+        return handle_gate(sender, value, key)
     if kind == "lookup":
-        return handle_lookup(sender, reference)
+        return handle_lookup(sender, key)
     return whatsapp.waiting_body(waiting_for(sender)) if is_approver(sender) else whatsapp.HELP
 
 

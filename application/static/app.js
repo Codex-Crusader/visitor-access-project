@@ -164,11 +164,11 @@ function view(){
     return `${offlineNote()}
       <div class="pass ${out?"out":"in"}">
       <span class="ptop"><span class="pass-arrow">${out?"&uarr;":"&darr;"}</span>${out?"Exit pass":"Entry pass"}</span>
-      <b>${x(S.visit.reference)}</b>
+      <b>${x((out?S.visit.exit_code:S.visit.entry_code)||"—")}</b>
       <span class="pass-cut"></span>
       <span class="pass-foot">${x(S.visit.name||"Visitor")}${S.visit.guests.length?" +"+S.visit.guests.length:""} &middot; today</span>
       <span class="pass-way">${out?"On your way out":"Coming in"}</span></div>
-      <p class="sm">${out?"Show this again on the way out. The guard closes it.":"Show this at the gate. The guard looks it up and takes your photo, then lets you in."}</p>
+      <p class="sm">${out?"Show this exit code on the way out. It is new: the code you came in with no longer opens the gate.":"Show this at the gate. The guard looks it up and takes your photo, then lets you in."}</p>
       ${gate()}
       <button class="btn plain" onclick="home()">Go to home</button>`;}
 

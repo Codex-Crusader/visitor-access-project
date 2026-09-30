@@ -2,9 +2,10 @@
 
 A visitor fills in a web form. The server sends the details to an approver on
 WhatsApp. The approver replies YES or NO. The visitor sees the decision on the
-same page within three seconds. At the gate, a guard checks the code, takes a
-photo of the visitor, records the entry and the exit, and the code then stops
-working.
+same page within three seconds. At the gate, the guard checks the entry code
+on the visitor's pass, takes a photo and records the entry. On the way out, the
+pass shows a different code, the exit code, and the guard uses it to record the
+exit. After that, neither code works.
 
 The guard works either from a web page or from WhatsApp.
 
@@ -12,7 +13,7 @@ The guard works either from a web page or from WhatsApp.
 
 The gate page at `/gate` asks for the gate key once. After that it shows:
 
-1. A box for a pass code, as before.
+1. A box for the code on the visitor's pass.
 2. **Inside now**: everyone who entered and has not left, longest first. A
    visitor inside for more than 8 hours has a yellow row, so a visitor who
    never checked out is easy to see.
@@ -20,13 +21,14 @@ The gate page at `/gate` asks for the gate key once. After that it shows:
    An older pass still works. It only leaves this list.
 4. **Refresh the lists**, **Download log** and **Change gate key**.
 
-Tap a name to open that pass, the same as typing its code. The lists
+Tap a name to see who it is. A tap records nothing. To record an entry or an
+exit, type the code on the visitor's pass. The lists
 refresh every 30 seconds and after every entry or exit. When a refresh fails,
 the page keeps the last lists and says how old they are. A wrong gate key is
 named as the reason.
 
 The lists come from `GET /api/gate/board` with the `X-Gate-Key` header. It
-returns only open visits, and for each one only the code, name, person
+returns only open visits, and for each one only the reference, name, person
 visited, guests, status and the approval and entry times. `BOARD_HOURS` and
 `LONG_HOURS` set the 24 and 8 hours, in `app.py` and `static/gate.js`.
 
@@ -37,12 +39,13 @@ asks for the key again. The page follows the phone's light or dark setting.
 ## The admin page
 
 The admin page at `/admin` lists every stored request, newest first, 50 at a
-time. It asks for `ADMIN_KEY` once. While `ADMIN_KEY` is not set, the gate key
-opens it.
+time. It asks for `ADMIN_KEY` once. The gate key never opens it, because every
+guard holds the gate key. The app does not start without `ADMIN_KEY`, or when
+`ADMIN_KEY` is the same as `GATE_KEY`.
 
 1. The tiles count the requests by status. Tap a tile to show only that
    status. Waiting is pending and escalated together.
-2. The search box finds a name, phone number, code or person visited.
+2. The search box finds a name, phone number, reference or person visited.
 3. Tap a request to see the address, the guests, its two approvers and every
    time: requested, sent to the backup, decided, entered, gate photo and exited.
 4. The Show more button loads the next 50.
@@ -60,7 +63,7 @@ answer, it goes to the backup for that reason. A reason the visitor types in
 counts as the reason Other.
 
 Only the two approvers of a reason can decide its requests. An approver who
-sends YES or NO with the code of another reason gets "goes to another
+sends YES or NO with the reference of another reason gets "goes to another
 approver". An approver who sends anything else sees only the requests of their
 own reasons.
 
@@ -79,20 +82,47 @@ to the wrong person. Put each new number on the Meta recipient list too.
 ## How it works
 
 1. The browser posts the form to `POST /api/requests`.
-2. The server stores the request and gives it two things: a short code like
-   `VR-4022` that people read aloud, and a long private token for the browser.
+2. The server stores the request and gives it four things: a reference like
+   `VR-4022` for the approvers, an entry code and an exit code like `KT-4821`
+   for the gate, and a long private token for the browser.
 3. The server sends one WhatsApp message to the main approver, as an approved
    template, see "The approval template".
 4. The approver replies `YES VR-4022` or `NO VR-4022`.
 5. Meta posts that reply to `POST /webhook/whatsapp`.
 6. The server records the decision.
 7. The visitor's page asks `GET /api/visit/<token>` every three seconds.
-8. At the gate, the guard sends `IN VR-4022` and then a photo of the visitor.
-   The photo records the entry. Later, `OUT VR-4022` records the exit.
+8. At the gate, the guard sends `IN` with the entry code on the visitor's pass,
+   and then a photo of the visitor. The photo records the entry. Later, `OUT`
+   with the exit code records the exit.
 
 If no reply arrives within `ESCALATE_MINUTES`, the server sends the same details
 to the backup approver. Escalation never decides anything. Only a YES or a NO
 changes the status.
+
+## Entry and exit codes
+
+Each pass has two codes, and each code does only its own job.
+
+1. Once the request is approved, the visitor's pass shows the entry code. The
+   entry code records the entry and nothing else.
+2. When the guard records the entry, the pass shows the exit code instead. The
+   exit code records the exit and nothing else.
+3. The reference, such as `VR-4022`, is for the approvers. At the gate it shows
+   who the visitor is, but it records nothing.
+
+A code is two letters and four digits, such as `KT-4821`. The letters leave out
+I and O, which look like 1 and 0, and they are never VR, so a code never looks
+like a reference. The server picks each code with the Python `secrets` module,
+so one code tells nothing about the next. There are about 5.7 million codes.
+The guard can type `kt4821` or `KT 4821`.
+
+No message, list or export shows a gate code. Only the visitor's own page shows
+one, and only the code for the next step. A WhatsApp reply repeats a code only
+when the sender typed that code.
+
+The visitor's page must load once after the entry to show the exit code. It
+asks the server every three seconds, so this needs a connection for a moment
+while the visitor is inside.
 
 ## The life of a pass
 
@@ -105,17 +135,17 @@ pending ──(no reply in time)──> escalated
                  │
         approved │ declined
                  │
-   (guard sends IN, then a photo)
+   (guard sends IN and the entry code, then a photo)
                  │
               inside
                  │
-         (guard records exit)
+   (guard records exit with the exit code)
                  │
               closed
 ```
 
-A closed code is dead. Nothing works on it again, and it stops showing the
-visitor. The visitor app drops the pass and forgets the code. The gate page and
+A closed pass is dead. Neither code works on it again, and it stops showing
+the visitor. The visitor app drops the pass and forgets the codes. The gate page and
 the WhatsApp lookup answer with the entry and exit times and nothing personal.
 The privacy screen promises the gate desk sees the details while the visit is
 open, so a finished visit has to stop answering. The CSV export still holds the
@@ -126,17 +156,18 @@ whole log for whoever runs the campus.
 One phone number can be the approver, the backup approver and the guard at the
 same time, so each job has its own word.
 
-| You send      | What happens                                              |
-|---------------|-----------------------------------------------------------|
-| `VR-4022`     | Shows the pass and says what you can do next              |
-| `YES VR-4022` | Approves the request                                      |
-| `NO VR-4022`  | Declines the request                                      |
-| `IN VR-4022`  | Asks for a photo, and names the visitor to photograph     |
-| a photo       | Records the entry for the last `IN`                       |
-| `OUT VR-4022` | Records the exit                                          |
-| anything else | Sends back the request that is waiting, with full details |
+| You send      | What happens                                                |
+|---------------|-------------------------------------------------------------|
+| `VR-4022`     | Shows the pass by its reference                             |
+| `KT-4821`     | Shows the pass and says what you can do next with that code |
+| `YES VR-4022` | Approves the request                                        |
+| `NO VR-4022`  | Declines the request                                        |
+| `IN KT-4821`  | With the entry code: asks for a photo of the named visitor  |
+| a photo       | Records the entry for the last `IN`                         |
+| `OUT RM-0937` | With the exit code: records the exit                        |
+| anything else | Sends back the request that is waiting, with full details   |
 
-`YES` and `NO` work without a code when exactly one request is waiting. The
+`YES` and `NO` work without a reference when exactly one request is waiting. The
 server ignores every number that is not in `MAIN_APPROVER`, `BACKUP_APPROVER`
 or `GUARD`.
 
@@ -148,8 +179,9 @@ sends it. That photo records the entry, and the server answers with the pass.
 
 - The photo must come within 10 minutes of the `IN`. After that, send `IN`
   again. `PHOTO_MINUTES` in `app.py` sets this time.
-- Each `IN` replaces the one before it. If you send `IN VR-4022` and then
-  `IN VR-5100`, the photo lets in VR-5100, and the reply names that code.
+- Each `IN` replaces the one before it. If you send `IN KT-4821` and then
+  `IN PB-5100`, the photo lets in the visitor of PB-5100, and the reply names
+  that visitor.
 - One photo lets in one person. A second photo on the same `IN` does nothing.
 - Only the `GUARD` number can send the photo. A photo from any other number
   changes nothing.
@@ -161,12 +193,14 @@ same thing, so change both together.
 
 ## Two kinds of address, on purpose
 
-The short code has only 9,000 possibilities, so it is not a secret. Anyone could
-guess one. The code therefore never opens anything on its own.
+The reference has only 9,000 possibilities, so it is not a secret. Anyone could
+guess one. It therefore never opens anything on its own, and at the gate it
+records nothing at all.
 
 - The visitor's browser reads `GET /api/visit/<token>`. The token is 22
   characters of random text, so nobody can guess another visitor's request.
-- The gate reads and writes `/api/pass/<code>`, and every one of those calls
+- The gate reads `/api/pass/<code or reference>` and records with
+  `/api/pass/<entry or exit code>/<entry or exit>`. Every one of those calls
   needs the `X-Gate-Key` header. The guard types that key once on the gate page.
 
 ## The visit log
@@ -205,7 +239,7 @@ that SQLite can search without reading every row.
 
 | Work                                | Cost            | How                                          |
 |-------------------------------------|-----------------|----------------------------------------------|
-| Look up a pass, decide, enter, exit | O(log n)        | The code is the primary key                  |
+| Look up a pass, decide, enter, exit | O(log n)        | Each reference and code is a primary key     |
 | Escalation check, every 30 seconds  | O(log n + k)    | Index on status and created time             |
 | Gate board, every 30 seconds        | O(log n + k)    | Index on status and decision time            |
 | Purge, every 30 seconds             | O(log n + k)    | Reads only expired visits and their photos   |
@@ -215,10 +249,11 @@ that SQLite can search without reading every row.
 | CSV export                          | O(n)            | It returns every row                         |
 | Rate limit, per request             | O(1) on average | Old times fall off the front of a queue      |
 
-A pass code has four digits, so there are 9000 codes. A new code is picked at
-random and tried up to 20 times. When most codes are in use, for example 8000
-visits kept for 90 days, a request can fail to find a free code. Keep
-`RETAIN_DAYS` times the visits per day well under 9000.
+A reference has four digits, so there are 9000 references. A new reference is
+picked at random and tried up to 20 times. When most references are in use, for
+example 8000 visits kept for 90 days, a request can fail to find a free one.
+Keep `RETAIN_DAYS` times the visits per day well under 9000. The gate codes have
+about 5.7 million values, so they do not run short.
 
 ## Files
 
@@ -252,7 +287,7 @@ visits kept for 90 days, a request can fail to find a free code. Keep
 | `APPROVERS`            | Optional JSON: other approvers for some reasons          |
 | `GUARD`                | Gate desk number. Defaults to the main approver          |
 | `GATE_KEY`             | Password for the gate page. Keep it off the internet     |
-| `ADMIN_KEY`            | Password for the admin page. Defaults to the gate key    |
+| `ADMIN_KEY`            | Password for the admin page. Must differ from `GATE_KEY` |
 | `GATE_DESK_PHONE`      | Number shown on the "Call gate desk" button              |
 | `ESCALATE_MINUTES`     | Minutes before the backup approver is asked. Default 15  |
 | `RETAIN_DAYS`          | Days a record is kept before deletion. Default 90        |
@@ -391,16 +426,18 @@ and choose Never for expiry.
 
 1. Open your address and send a request.
 2. Read the WhatsApp message on your phone.
-3. Reply `YES VR-4022`, using the code from the message.
-4. Watch the page turn green and show the entry pass.
-5. Send `IN VR-4022` on WhatsApp. The reply asks for a photo.
+3. Reply `YES VR-4022`, using the reference from the message.
+4. Watch the page turn green and show the entry pass with its entry code.
+5. Send `IN` and the entry code on WhatsApp, for example `IN KT-4821`. The reply
+   asks for a photo.
 6. Take a photo in the same chat and send it. You can also use `/gate` in a
    browser instead of steps 5 and 6.
-7. The visitor page changes to "Inside campus" by itself.
-8. Send `OUT VR-4022`. The visitor page says "Visit complete".
-9. Send the code once more. It says the pass is closed.
+7. The visitor page changes to "Inside campus" by itself, and the pass now
+   shows the exit code.
+8. Send `OUT` and the exit code. The visitor page says "Visit complete".
+9. Send the exit code once more. It says the pass is closed.
 
-To show a decline, reply `NO` with the code.
+To show a decline, reply `NO` with the reference.
 
 To show escalation, set `ESCALATE_MINUTES=1` and restart. Send a request and do
 not reply. After one minute the backup approver gets the same details.
@@ -431,8 +468,8 @@ not reply. After one minute the backup approver gets the same details.
 ```
 
 The first runs the whole flow without sending any WhatsApp message: approval,
-decline, escalation, repeated deliveries, the code-guessing defense, both gate
-routes, the photo at the gate, the export, and the delete-after-retention rule.
+decline, escalation, repeated deliveries, the code-guessing defense, the entry
+and exit codes and where they may appear, the admin key, both gate routes, the photo at the gate, the export, and the delete-after-retention rule.
 
 The second proves the app survives load: sixty visitors submitting at the same
 instant all get unique codes, and twenty guards pressing Record entry on the same
@@ -498,17 +535,19 @@ every request. Set it to `true` only when a proxy really is in front.
   is no record of which guard pressed the button. It also unlocks the full export,
   so anyone with the key can download every visitor's name, phone and address.
   A guard types it once per device. The page asks for it before it shows anything
-  else, because a code without a key can do nothing.
+  else, because a code without a key can do nothing. The admin page has its
+  own key, so a guard cannot open it.
 - Only WhatsApp asks for a photo. The **Record entry** button on the gate page
   still lets a visitor in without one. Use WhatsApp at the gate if every entry
   must have a photo.
 - The approver is one fixed number. A real deployment would look up the student
   being visited and message that person.
-- The 4-digit code is short enough to guess, which is why it never works on its
-  own. Do not make it do more than it does here.
+- The 4-digit reference is short enough to guess, which is why it never works on
+  its own and records nothing at the gate. Do not make it do more than it does
+  here.
 - A visitor's browser holds the only link to their request. Clear the browser
-  data, or switch phone, and they cannot reach it again, because the short code
+  data, or switch phone, and they cannot reach it again, because the reference
   deliberately retrieves nothing. They must send a new request. This is the
-  price of not letting anyone read a stranger's details by guessing a code.
+  price of not letting anyone read a stranger's details by guessing a reference.
 - Records live in a file on the server. On a free host with no disk, a fresh build
   wipes them. Download the CSV before redeploying if the log matters.
