@@ -19,6 +19,8 @@ import whatsapp
 
 STATIC = Path(__file__).parent / "static"
 app = Flask(__name__, static_folder=str(STATIC), static_url_path="")
+if config.ADMIN_LOCKED:
+    app.logger.warning(config.ADMIN_LOCKED)
 
 FIELDS = ("name", "phone", "address", "reason", "visiting")
 BACKGROUND_SECONDS = 30
@@ -196,9 +198,17 @@ def gate_key_ok():
     return hmac.compare_digest(request.headers.get("X-Gate-Key", ""), config.GATE_KEY)
 
 
-def admin_key_ok():
-    """ADMIN_KEY, which is the gate key until ADMIN_KEY is set."""
-    return hmac.compare_digest(request.headers.get("X-Admin-Key", ""), config.ADMIN_KEY)
+def admin_refusal():
+    """Why an admin call is refused, or None when the key is right.
+
+    While ADMIN_KEY is missing, the page is locked for everyone. The lock is
+    checked first, so an empty key never matches an empty ADMIN_KEY.
+    """
+    if config.ADMIN_LOCKED:
+        return jsonify(error=config.ADMIN_LOCKED), 503
+    if not hmac.compare_digest(request.headers.get("X-Admin-Key", ""), config.ADMIN_KEY):
+        return jsonify(error="Wrong admin key"), 403
+    return None
 
 
 def signature_ok():
@@ -459,8 +469,9 @@ def admin_visits():
     The next page is asked for with the cursor this one returned, as
     ?after=<created_at>|<reference>.
     """
-    if not admin_key_ok():
-        return jsonify(error="Wrong admin key"), 403
+    refused = admin_refusal()
+    if refused:
+        return refused
     status = request.args.get("status", "all")
     if status not in ADMIN_FILTERS:
         return jsonify(error="Unknown status filter"), 400
@@ -481,8 +492,9 @@ def admin_visits():
 @app.get("/api/admin/summary")
 def admin_summary():
     """Counts by status, and who approves each reason."""
-    if not admin_key_ok():
-        return jsonify(error="Wrong admin key"), 403
+    refused = admin_refusal()
+    if refused:
+        return refused
     return jsonify(
         counts=db.status_counts(),
         approvers=[
@@ -497,8 +509,9 @@ def admin_summary():
 @app.get("/api/admin/export.csv")
 def admin_export_csv():
     """The same log as the gate desk export, for the admin key."""
-    if not admin_key_ok():
-        return jsonify(error="Wrong admin key"), 403
+    refused = admin_refusal()
+    if refused:
+        return refused
     return visit_log()
 
 

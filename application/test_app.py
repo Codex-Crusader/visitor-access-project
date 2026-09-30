@@ -648,18 +648,30 @@ for path in ("/api/admin/visits", "/api/admin/summary", "/api/admin/export.csv")
     assert client.get(path, headers={"X-Admin-Key": "guess"}).status_code == 403, path
     assert client.get(path, headers={"X-Admin-Key": "test-gate-key"}).status_code == 403, path
 assert client.get("/admin").status_code == 200
-# The app refuses to start without its own ADMIN_KEY, or with the gate key as
-# the admin key, because either one would let the guards in.
+# With no ADMIN_KEY, or the gate key as ADMIN_KEY, the admin page is locked.
+# Either one would otherwise let the guards in. The rest of the app runs.
 for bad_key in ("", "test-gate-key", " test-gate-key "):
     os.environ["ADMIN_KEY"] = bad_key
-    try:
-        config.read_admin_key()
-    except RuntimeError as problem:
-        assert "ADMIN_KEY" in str(problem), problem
-    else:
-        raise AssertionError(f"ADMIN_KEY {bad_key!r} must stop the start")
+    locked_key, why = config.read_admin_key()
+    assert locked_key == "" and "ADMIN_KEY" in why, (bad_key, why)
 os.environ["ADMIN_KEY"] = "test-admin-key"
-assert config.read_admin_key() == "test-admin-key"
+assert config.read_admin_key() == ("test-admin-key", "")
+# Locked, every admin call is refused, even an empty key that would match an
+# empty ADMIN_KEY, and even the right key from before.
+real_admin = config.ADMIN_KEY, config.ADMIN_LOCKED
+os.environ["ADMIN_KEY"] = ""
+config.ADMIN_KEY, config.ADMIN_LOCKED = config.read_admin_key()
+try:
+    for path in ("/api/admin/visits", "/api/admin/summary", "/api/admin/export.csv"):
+        for headers in ({}, {"X-Admin-Key": ""}, {"X-Admin-Key": "test-gate-key"}, ADMIN):
+            locked = client.get(path, headers=headers)
+            assert locked.status_code == 503, (path, headers, locked.status_code)
+            assert "ADMIN_KEY" in locked.get_json()["error"], path
+    # The gate and the visitor form do not depend on the admin key.
+    assert client.get("/api/gate/board", headers=KEY).status_code == 200
+finally:
+    os.environ["ADMIN_KEY"] = "test-admin-key"
+    config.ADMIN_KEY, config.ADMIN_LOCKED = real_admin
 
 # More than one page of visits. The rate limit would refuse some of them.
 for number in range(60):

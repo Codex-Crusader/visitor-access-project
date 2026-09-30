@@ -70,17 +70,22 @@ GATE_KEY = _required("GATE_KEY")
 
 
 def read_admin_key():
-    """The admin page's own key. Every guard holds the gate key, so the gate
-    key must not open the admin list, and the app will not start with it."""
-    key = _required("ADMIN_KEY")
+    """(key, why locked). The admin page's own key.
+
+    Every guard holds the gate key, so the gate key never opens the admin
+    list. Without a key of its own the admin page stays locked, and the rest
+    of the app runs as usual.
+    """
+    key = os.getenv("ADMIN_KEY", "").strip()
+    if not key:
+        return "", "The admin page is locked until ADMIN_KEY is set on the server."
     if key == GATE_KEY:
-        raise RuntimeError(
-            "ADMIN_KEY must differ from GATE_KEY, or every guard can open the admin page"
-        )
-    return key
+        return "", ("The admin page is locked: ADMIN_KEY must differ from GATE_KEY,"
+                    " because every guard holds the gate key.")
+    return key, ""
 
 
-ADMIN_KEY = read_admin_key()
+ADMIN_KEY, ADMIN_LOCKED = read_admin_key()
 
 GATE_DESK_PHONE = _required("GATE_DESK_PHONE")
 

@@ -40,8 +40,9 @@ asks for the key again. The page follows the phone's light or dark setting.
 
 The admin page at `/admin` lists every stored request, newest first, 50 at a
 time. It asks for `ADMIN_KEY` once. The gate key never opens it, because every
-guard holds the gate key. The app does not start without `ADMIN_KEY`, or when
-`ADMIN_KEY` is the same as `GATE_KEY`.
+guard holds the gate key. Without `ADMIN_KEY`, or when it is the same as
+`GATE_KEY`, the admin page stays locked and the server log says why. The rest
+of the app runs as usual.
 
 1. The tiles count the requests by status. Tap a tile to show only that
    status. Waiting is pending and escalated together.
