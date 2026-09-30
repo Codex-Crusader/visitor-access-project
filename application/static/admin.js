@@ -1,3 +1,4 @@
+/* global saveFile */  // from download.js, which admin.html loads first
 const CALL_TIMEOUT = 75000;  // a sleeping free server can take ~50s to wake
 const SEARCH_WAIT = 300;     // ms after the last key press before a search runs
 
@@ -13,8 +14,12 @@ const FILTERS = [
   ["all", "All"], ["waiting", "Waiting"], ["approved", "Approved"],
   ["inside", "Inside"], ["closed", "Closed"], ["declined", "Declined"],
 ];
-const WORD = {pending: "Waiting", escalated: "With backup", approved: "Approved",
-              inside: "Inside", closed: "Closed", declined: "Declined"};
+// Each status as [the pill's data-tone, the word on the pill].
+const STATUS = {
+  pending: ["wait", "Waiting"], escalated: ["wait", "With backup"],
+  approved: ["go", "Approved"], inside: ["go", "Inside"],
+  declined: ["stop", "Declined"], closed: ["done", "Closed"],
+};
 
 let rows = [];
 let next = null;
@@ -72,19 +77,23 @@ function count(name) {
 
 function renderTiles() {
   el("tiles").innerHTML = FILTERS.map(([name, label]) =>
-    `<button class="tile" data-filter="${name}" aria-pressed="${filter === name}">
+    `<button class="tile" data-filter="${name}">
        <b>${count(name)}</b><span>${label}</span></button>`).join("");
+  for (const tile of el("tiles").children) {
+    tile.setAttribute("aria-pressed", tile.dataset.filter === filter ? "true" : "false");
+  }
 }
 
 const plus = v => v.guests.length ? ` +${v.guests.length}` : "";
 
 function item(v) {
   const [main1, backup] = v.approvers || [];
+  const [tone, word] = STATUS[v.status] || ["", v.status];
   return `<details><summary>
       <span><b>${x(v.name)}${plus(v)}</b><small>${x(v.phone)}</small></span>
       <span class="mid"><b>${x(v.reason)}</b><small>Visiting ${x(v.visiting)}</small></span>
       <span class="side"><code>${x(v.reference)}</code><br>
-        <span class="pill ${x(v.status)}">${x(WORD[v.status] || v.status)}</span></span>
+        <span class="pill" data-tone="${tone}">${x(word)}</span></span>
     </summary>
     <div class="more"><dl>
       <dt>Address</dt><dd>${x(v.address)}</dd>
@@ -230,18 +239,12 @@ async function downloadCsv() {
   try {
     const r = await fetch("/api/admin/export.csv", {headers: {"X-Admin-Key": key()}});
     if (r.status === 403) return forgetKey("That admin key is not right. Type it again.");
-    if (!r.ok) throw new Error(`Could not download (${r.status})`);
-    const blob = await r.blob();
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
-    const named = /filename="([^"]+)"/.exec(r.headers.get("Content-Disposition") || "");
-    a.download = named ? named[1] : "visits.csv";
-    a.click();
-    URL.revokeObjectURL(a.href);
+    if (r.ok) return await saveFile(r);
+    notice = `Could not download (${r.status})`;
   } catch (err) {
     notice = err.message;
-    renderNotice();
   }
+  renderNotice();
 }
 
 el("refresh").onclick = refresh;

@@ -1,3 +1,4 @@
+/* global saveFile */  // from download.js, which gate.html loads first
 const CALL_TIMEOUT = 75000;  // a sleeping free server can take ~50s to wake
 const BOARD_EVERY = 30000;   // how often the lists refresh by themselves
 const LONG_HOURS = 8;        // inside longer than this is marked on the board
@@ -106,7 +107,7 @@ function since(t, now) {
 const plus = v => v.guests && v.guests.length ? ` +${v.guests.length}` : "";
 
 function row(v, side, long) {
-  return `<button class="row${long ? " long" : ""}" data-ref="${x(v.reference)}">
+  return `<button class="row" data-long="${!!long}" data-ref="${x(v.reference)}">
       <span><b>${x(v.name)}${plus(v)}</b><small>Visiting ${x(v.visiting)}</small></span>
       <span class="side"><code>${x(v.reference)}</code><small>${side}</small></span></button>`;
 }
@@ -297,17 +298,8 @@ async function downloadLog() {
       busy = "";
       return forgetKey("That gate key is not right. Type it again.");
     }
-    if (!r.ok) notice = `Could not download (${r.status})`;
-    else {
-      const blob = await r.blob();
-      const a = document.createElement("a");
-      a.href = URL.createObjectURL(blob);
-      // The server names the file with the date, as visits-2026-09-29.csv.
-      const named = /filename="([^"]+)"/.exec(r.headers.get("Content-Disposition") || "");
-      a.download = named ? named[1] : "visits.csv";
-      a.click();
-      URL.revokeObjectURL(a.href);
-    }
+    if (r.ok) await saveFile(r);
+    else notice = `Could not download (${r.status})`;
   } catch (err) {
     notice = err.message;
   }

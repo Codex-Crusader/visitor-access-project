@@ -7,6 +7,7 @@
     "lint": "npx eslint static test_form.js"
   },
   "devDependencies": {
+    "@types/node": "^26.6.3",
     "jsdom": "^26.1.0"
   }
 }

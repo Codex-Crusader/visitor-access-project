@@ -91,10 +91,10 @@ summary .side{text-align:right}
 code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-weight:650;letter-spacing:.04em}
 .pill{display:inline-block;padding:2px 9px;border-radius:999px;font-size:.76rem;font-weight:700;
  border:1px solid;white-space:nowrap}
-.pill.pending,.pill.escalated{background:var(--waitBg);border-color:var(--waitLn);color:var(--wait)}
-.pill.approved,.pill.inside{background:var(--goBg);border-color:var(--goLn);color:var(--go)}
-.pill.declined{background:var(--stopBg);border-color:var(--stopLn);color:var(--stop)}
-.pill.closed{background:var(--mute);border-color:var(--line);color:var(--soft)}
+.pill[data-tone=wait]{background:var(--waitBg);border-color:var(--waitLn);color:var(--wait)}
+.pill[data-tone=go]{background:var(--goBg);border-color:var(--goLn);color:var(--go)}
+.pill[data-tone=stop]{background:var(--stopBg);border-color:var(--stopLn);color:var(--stop)}
+.pill[data-tone=done]{background:var(--mute);border-color:var(--line);color:var(--soft)}
 .more{padding:4px 16px 14px 16px;background:var(--mute);border-top:1px solid var(--line)}
 .more dl{display:grid;grid-template-columns:max-content 1fr;gap:6px 16px;margin:10px 0 0;font-size:.9rem}
 .more dt{color:var(--soft)}
@@ -125,6 +125,7 @@ th{color:var(--soft);font-weight:600;font-size:.8rem}
   </header>
   <main class="main" id="main"></main>
 </div>
+<script src="download.js"></script>
 <script src="admin.js"></script>
 </body>
 </html>

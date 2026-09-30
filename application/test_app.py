@@ -114,12 +114,12 @@ print("  created", code)
 print("the approval request goes out as a template")
 # Plain text reaches the approver only within 24 hours of their last message.
 # The template arrives at any time, so the request must use it.
-to, values = templates[-1]
-assert to == "+911234567890", to
-assert len(values) == 8, values
-assert values[0] == code and values[2] == "Asha Rao" and values[7] == "Ravi Rao", values
+approver, fields = templates[-1]
+assert approver == "+911234567890", approver
+assert len(fields) == 8, fields
+assert fields[0] == code and fields[2] == "Asha Rao" and fields[7] == "Ravi Rao", fields
 # Meta refuses an empty value and a line break inside a value.
-assert all(v and "\n" not in v for v in values), values
+assert all(v and "\n" not in v for v in fields), fields
 assert client.post("/api/requests", json={**payload, "guests": []}).status_code == 201
 assert templates[-1][1][7] == "No one", templates[-1][1]
 
@@ -142,13 +142,13 @@ def refused(*_args):
 
 whatsapp.send_template = refused
 try:
-    # By default a refused template is a failed request. Plain text would be
+    # By default, a refused template is a failed request. Plain text would be
     # lost for a quiet approver while the visitor was told it went out.
     assert application.config.TEMPLATE_FALLBACK is False
-    replies = len(sent)
+    sent_before = len(sent)
     refused_request = client.post("/api/requests", json=payload)
     assert refused_request.status_code == 502, refused_request.status_code
-    assert len(sent) == replies, "no plain text may go out without the fallback"
+    assert len(sent) == sent_before, "no plain text may go out without the fallback"
 
     # The backup approver's round fails the same way, and one failure stops
     # neither the other escalations nor the purge after them.
@@ -299,7 +299,7 @@ assert db.photo_of(code)["taken_at"] == entered["entered_at"]
 # A second photo on the same IN lets nobody else in, and a second IN is refused.
 assert "No entry is waiting" in snap(APPROVER)
 assert "Already inside" in say(APPROVER, f"IN {code}")
-# OUT closes it, and then the code is dead.
+# The OUT command closes it. After that, the code is dead.
 assert "Closed" in say(APPROVER, f"OUT {code}")
 assert client.get(f"/api/visit/{token}").get_json()["status"] == "closed"
 assert "closed" in say(APPROVER, f"IN {code}").lower()
@@ -497,9 +497,9 @@ assert db.get(a["reference"]) is not None
 # A photo goes with its visit, and the photos of kept visits stay.
 gone, kept = new_request(), new_request()
 with db.connect() as conn:
-    for made in (gone, kept):
+    for photographed in (gone, kept):
         conn.execute("INSERT INTO photos (reference, media_id, taken_at) VALUES (?, ?, ?)",
-                     (made["reference"], "media.x", db.now()))
+                     (photographed["reference"], "media.x", db.now()))
     conn.execute("UPDATE visits SET created_at = ? WHERE reference = ?",
                  ("2020-01-01T00:00:00+00:00", gone["reference"]))
 db.purge_old()
@@ -517,7 +517,7 @@ try:
     assert templates[-1][0] == DELIVERY_MAIN, templates[-1]
     student = new_request()
     assert templates[-1][0] == "+911234567890", templates[-1]
-    # A reason the visitor typed in goes to the approvers for Other.
+    # A reason the visitor typed in goes to the approvers for the reason Other.
     client.post("/api/requests", json={**payload, "reason": "Fix the lift"})
     assert templates[-1][0] == config.APPROVERS["Other"][0], templates[-1]
 
@@ -540,7 +540,7 @@ try:
     late = client.post("/api/requests", json={**payload, "reason": "Delivery"}).get_json()
     with db.connect() as conn:
         conn.execute("UPDATE visits SET created_at = ? WHERE reference = ?",
-                     (db._ago(1 / 24), late["reference"]))
+                     (db.ago(1 / 24), late["reference"]))
     application.escalate_due()
     assert templates[-1][0] == DELIVERY_BACKUP, templates[-1]
     assert templates[-1][1][0] == late["reference"]
@@ -560,8 +560,8 @@ assert client.get("/admin").status_code == 200
 # More than one page of visits. The rate limit would refuse some of them.
 for number in range(60):
     application.forget_hits()
-    made = client.post("/api/requests", json={**payload, "name": f"Page Test {number}"})
-    assert made.status_code == 201, made.get_data(as_text=True)
+    page_request = client.post("/api/requests", json={**payload, "name": f"Page Test {number}"})
+    assert page_request.status_code == 201, page_request.get_data(as_text=True)
 application.forget_hits()
 total = sum(db.status_counts().values())
 seen, cursor, pages = [], None, 0
@@ -599,7 +599,7 @@ assert client.get("/api/admin/export.csv", headers=ADMIN).status_code == 200
 print(f"  {total} visits over {pages} pages, none twice, none missed, no token")
 
 print("pages are served")
-for path in ("/", "/app.js", "/gate", "/gate.js", "/admin", "/admin.js"):
+for path in ("/", "/app.js", "/gate", "/gate.js", "/admin", "/admin.js", "/download.js"):
     assert client.get(path).status_code == 200, path
 cfg = client.get("/api/config").get_json()
 assert cfg["escalate_minutes"] == 30 and cfg["retain_days"] == 1

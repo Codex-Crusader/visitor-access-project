@@ -15,7 +15,7 @@ The gate page at `/gate` asks for the gate key once. After that it shows:
 1. A box for a pass code, as before.
 2. **Inside now**: everyone who entered and has not left, longest first. A
    visitor inside for more than 8 hours has a yellow row, so a visitor who
-   never checked out stands out.
+   never checked out is easy to see.
 3. **Expected**: every pass approved in the last 24 hours and not used yet.
    An older pass still works. It only leaves this list.
 4. **Refresh the lists**, **Download log** and **Change gate key**.
@@ -44,9 +44,9 @@ opens it.
    status. Waiting is pending and escalated together.
 2. The search box finds a name, phone number, code or person visited.
 3. Tap a request to see the address, the guests, its two approvers and every
-   time: requested, sent to backup, decided, entered, gate photo and exited.
-4. Show more loads the next 50.
-5. The table at the end shows who approves each reason.
+   time: requested, sent to the backup, decided, entered, gate photo and exited.
+4. The Show more button loads the next 50.
+5. The table at the end lists the two approvers for each reason.
 
 The page reads `GET /api/admin/visits` and `GET /api/admin/summary` with the
 `X-Admin-Key` header. Neither returns the visitor's private token. Download
@@ -57,7 +57,7 @@ CSV gives the same log as the gate page.
 Each reason on the form has a main approver and a backup approver. A request
 goes to the main approver for its reason. After `ESCALATE_MINUTES` with no
 answer, it goes to the backup for that reason. A reason the visitor types in
-counts as Other.
+counts as the reason Other.
 
 Only the two approvers of a reason can decide its requests. An approver who
 sends YES or NO with the code of another reason gets "goes to another
@@ -203,17 +203,17 @@ In this section, n is the number of stored visits, and k is the number of rows
 that an operation returns or changes. An index is a sorted copy of some columns
 that SQLite can search without reading every row.
 
-| Work                                  | Cost                  | How                                         |
-|---------------------------------------|-----------------------|---------------------------------------------|
-| Look up a pass, decide, enter, exit   | O(log n)              | The code is the primary key                 |
-| Escalation check, every 30 seconds    | O(log n + k)          | Index on status and created time            |
-| Gate board, every 30 seconds          | O(log n + k)          | Index on status and decision time           |
-| Purge, every 30 seconds               | O(log n + k)          | Reads only expired visits and their photos  |
-| One admin page, first or fiftieth     | O(log n + 50)         | Starts after the last row of the page before |
-| Admin counts by status                | O(n)                  | One pass over an index, not the table       |
-| Admin search                          | O(n) at worst         | Reads rows until the page is full           |
-| CSV export                            | O(n)                  | It returns every row                        |
-| Rate limit, per request               | O(1) on average       | Old times fall off the front of a queue     |
+| Work                                | Cost            | How                                          |
+|-------------------------------------|-----------------|----------------------------------------------|
+| Look up a pass, decide, enter, exit | O(log n)        | The code is the primary key                  |
+| Escalation check, every 30 seconds  | O(log n + k)    | Index on status and created time             |
+| Gate board, every 30 seconds        | O(log n + k)    | Index on status and decision time            |
+| Purge, every 30 seconds             | O(log n + k)    | Reads only expired visits and their photos   |
+| One admin page, first or fiftieth   | O(log n + 50)   | Starts after the last row of the page before |
+| Admin counts by status              | O(n)            | One pass over an index, not the table        |
+| Admin search                        | O(n) at worst   | Reads rows until the page is full            |
+| CSV export                          | O(n)            | It returns every row                         |
+| Rate limit, per request             | O(1) on average | Old times fall off the front of a queue      |
 
 A pass code has four digits, so there are 9000 codes. A new code is picked at
 random and tried up to 20 times. When most codes are in use, for example 8000
@@ -222,21 +222,22 @@ visits kept for 90 days, a request can fail to find a free code. Keep
 
 ## Files
 
-| File                                 | What it holds                                                     |
-|--------------------------------------|-------------------------------------------------------------------|
-| `app.py`                             | Flask routes, the escalation timer and the delete timer           |
-| `db.py`                              | SQLite storage                                                    |
-| `whatsapp.py`                        | Meta API send, message text, command reading                      |
-| `config.py`                          | Settings read from the environment                                |
-| `check_setup.py`                     | Checks your settings and sends one test message                   |
-| `test_app.py`                        | Runs the whole flow with WhatsApp stubbed out                     |
-| `test_concurrency.py`                | Hammers the app from many threads to check the races              |
-| `test_form.js`                       | Checks the web pages in a real DOM. Needs `npm install jsdom`     |
-| `ruff.toml`, `eslint.config.mjs`     | Linter settings, and why two rules are off                        |
-| `static/index.html`, `static/app.js` | The visitor app                                                   |
-| `static/gate.html`, `static/gate.js` | The gate desk page                                                |
-| `static/admin.html`, `static/admin.js` | The admin page with every request                               |
-| `render.yaml`, `Procfile`            | How the host starts the app                                       |
+| File                                   | What it holds                                                 |
+|----------------------------------------|---------------------------------------------------------------|
+| `app.py`                               | Flask routes, the escalation timer and the delete timer       |
+| `db.py`                                | SQLite storage                                                |
+| `whatsapp.py`                          | Meta API send, message text, command reading                  |
+| `config.py`                            | Settings read from the environment                            |
+| `check_setup.py`                       | Checks your settings and sends one test message               |
+| `test_app.py`                          | Runs the whole flow with WhatsApp stubbed out                 |
+| `test_concurrency.py`                  | Hammers the app from many threads to check the races          |
+| `test_form.js`                         | Checks the web pages in a real DOM. Needs `npm install jsdom` |
+| `ruff.toml`, `eslint.config.mjs`       | Linter settings, and why two rules are off                    |
+| `static/index.html`, `static/app.js`   | The visitor app                                               |
+| `static/gate.html`, `static/gate.js`   | The gate desk page                                            |
+| `static/admin.html`, `static/admin.js` | The admin page with every request                             |
+| `static/download.js`                   | Saves the CSV log. The gate page and the admin page share it  |
+| `render.yaml`, `Procfile`              | How the host starts the app                                   |
 
 ## Settings
 
@@ -320,7 +321,7 @@ WhatsApp Manager, under Message templates, with the same name and body.
 
 Meta reports a lost message later, through the same webhook. The app writes
 each one to the log as `WhatsApp could not deliver to <number>: error <code>`.
-Error 131047 means the 24 hour window.
+Error 131047 means the 24-hour window.
 
 ## Run it on your own machine
 
@@ -409,7 +410,7 @@ not reply. After one minute the backup approver gets the same details.
 - Error 190: the access token expired. Use a permanent token, see above.
 - Error 131030: the number is not on the Meta recipient list. Add it.
 - The visitor sees the request as sent, but the approver gets nothing: search
-  the Render log for `could not deliver`. Error 131047 means the 24 hour
+  the Render log for `could not deliver`. Error 131047 means the 24-hour
   window, see "The approval template". `Approval template refused` means the
   template is missing or still waiting for Meta's review.
 - Error 132001: the template does not exist, or Meta has not approved it yet.

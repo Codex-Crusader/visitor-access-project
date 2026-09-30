@@ -72,32 +72,27 @@ print("  all approved under load")
 # --- Twenty guards racing to check the SAME visitor in ---
 target = codes[0]
 results = []
-def race_in():
-    r = client.post(f"/api/pass/{target}/entry", headers=KEY)
-    with lock:
-        results.append(r.status_code)
+def race(action):
+    """Twenty guards press the same button on the same pass at once."""
+    results.clear()
+    def press():
+        r = client.post(f"/api/pass/{target}/{action}", headers=KEY)
+        with lock:
+            results.append(r.status_code)
+    racers = [threading.Thread(target=press) for _ in range(20)]
+    for racer in racers:
+        racer.start()
+    for racer in racers:
+        racer.join()
 
-threads = [threading.Thread(target=race_in) for _ in range(20)]
-for t in threads:
-    t.start()
-for t in threads:
-    t.join()
+race("entry")
 wins = results.count(200)
 print(f"  20 guards raced one entry -> {wins} accepted, {results.count(409)} refused")
 assert wins == 1, f"entry must happen exactly once, got {wins}"
 assert db.get(target)["status"] == "inside"
 
 # --- Racing exits on the same visitor ---
-results.clear()
-def race_out():
-    r = client.post(f"/api/pass/{target}/exit", headers=KEY)
-    with lock:
-        results.append(r.status_code)
-threads = [threading.Thread(target=race_out) for _ in range(20)]
-for t in threads:
-    t.start()
-for t in threads:
-    t.join()
+race("exit")
 print(f"  20 guards raced one exit  -> {results.count(200)} accepted, {results.count(409)} refused")
 assert results.count(200) == 1
 assert db.get(target)["status"] == "closed"

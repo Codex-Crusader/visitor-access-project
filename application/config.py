@@ -62,7 +62,7 @@ APPROVERS = _approvers()
 
 
 def approvers_for(reason):
-    """(main, backup) for a visit's reason. A typed-in reason counts as Other."""
+    """(main, backup) for a visit's reason. A typed-in reason counts as the reason Other."""
     return APPROVERS.get(reason, APPROVERS["Other"])
 
 # The guard types this on the gate page. Entry and exit need it.
@@ -80,7 +80,7 @@ GATE_DESK_PHONE = _required("GATE_DESK_PHONE")
 REQUEST_TEMPLATE = os.getenv("REQUEST_TEMPLATE", "visit_request").strip()
 TEMPLATE_LANGUAGE = os.getenv("TEMPLATE_LANGUAGE", "en").strip()
 # When Meta refuses the template, send plain text instead. Turn this on only
-# while Meta reviews a new template. In production it hides a paused or
+# while Meta reviews a new template. In production, it hides a paused or
 # disabled template: plain text is lost for a quiet approver, and the visitor
 # is told the request went out. Off, the visitor is told it failed.
 TEMPLATE_FALLBACK = os.getenv("TEMPLATE_FALLBACK", "").strip().lower() in ("1", "true", "yes")

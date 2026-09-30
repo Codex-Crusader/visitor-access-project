@@ -82,7 +82,7 @@ def now():
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
-def _ago(days):
+def ago(days):
     return (datetime.now(timezone.utc) - timedelta(days=days)).isoformat(timespec="seconds")
 
 
@@ -98,8 +98,6 @@ def init():
 
 
 def to_dict(row):
-    if row is None:
-        return None
     visit = dict(row)
     visit["guests"] = json.loads(visit["guests"])
     return visit
@@ -142,7 +140,7 @@ def _one(column, value):
         row = conn.execute(
             f"SELECT * FROM visits WHERE {column} = ?", (value,)
         ).fetchone()
-    return to_dict(row)
+    return to_dict(row) if row is not None else None
 
 
 def get(reference):
@@ -185,7 +183,7 @@ def at_gate(expected_hours):
     a visitor who never left is at the top. Two queries, each one a lookup on
     the status index, rather than one OR that reads the whole table.
     """
-    since = _ago(expected_hours / 24)
+    since = ago(expected_hours / 24)
     with connect() as conn:
         expected = conn.execute(
             f"SELECT {BOARD_FIELDS} FROM visits WHERE status = ? AND decided_at >= ?"
@@ -251,11 +249,11 @@ def admin_page(statuses=None, search="", after=None, limit=50):
     return visits, cursor
 
 
-def status_counts():
+def status_counts() -> dict[str, int]:
     """How many stored visits have each status. One pass over the status index."""
     with connect() as conn:
         rows = conn.execute("SELECT status, COUNT(*) FROM visits GROUP BY status").fetchall()
-    return dict(map(tuple, rows))
+    return dict(rows)
 
 
 def open_requests():
@@ -271,7 +269,7 @@ def due_for_escalation():
     with connect() as conn:
         rows = conn.execute(
             "SELECT * FROM visits WHERE status = ? AND created_at <= ?",
-            (PENDING, _ago(config.ESCALATE_MINUTES / 1440)),
+            (PENDING, ago(config.ESCALATE_MINUTES / 1440)),
         ).fetchall()
     return [to_dict(row) for row in rows]
 
@@ -340,7 +338,7 @@ def enter_with_photo(guard, minutes, media_id):
             "SELECT reference, asked FROM photo_waits WHERE guard = ?", (guard,)
         ).fetchone()
         conn.execute("DELETE FROM photo_waits WHERE guard = ?", (guard,))
-        if wait is None or wait["asked"] < _ago(minutes / 1440):
+        if wait is None or wait["asked"] < ago(minutes / 1440):
             return None, False
 
         reference, stamp = wait["reference"], now()
@@ -380,7 +378,7 @@ def is_new_message(message_id):
 
 def purge_old():
     """Delete visits after the retention period. Returns how many went."""
-    cutoff = _ago(config.RETAIN_DAYS)
+    cutoff = ago(config.RETAIN_DAYS)
     with connect() as conn:
         # A photo goes with its visit, so the photos of the visits about to go
         # are deleted first, in the same transaction and with the same cutoff.
@@ -394,6 +392,6 @@ def purge_old():
         removed = conn.execute(
             "DELETE FROM visits WHERE created_at < ?", (cutoff,)
         ).rowcount
-        conn.execute("DELETE FROM seen_messages WHERE seen < ?", (_ago(1),))
-        conn.execute("DELETE FROM photo_waits WHERE asked < ?", (_ago(1),))
+        conn.execute("DELETE FROM seen_messages WHERE seen < ?", (ago(1),))
+        conn.execute("DELETE FROM photo_waits WHERE asked < ?", (ago(1),))
     return removed

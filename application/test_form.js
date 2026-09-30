@@ -28,9 +28,15 @@ function boot(page, script, stubs) {
   w.Element.prototype.scrollIntoView = function () {};
   w.scrollTo = function () {};
   Object.assign(w, stubs);
-  const tag = w.document.createElement("script");
-  tag.textContent = read(script);
-  w.document.body.appendChild(tag);
+  // jsdom does not fetch a <script src>, so each one the page lists runs here,
+  // in the page's order. The page must list the script under test.
+  const sources = [...w.document.querySelectorAll("script[src]")].map(s => s.getAttribute("src"));
+  if (!sources.includes(script)) throw new Error(`${page} does not load ${script}`);
+  for (const src of sources) {
+    const tag = w.document.createElement("script");
+    tag.textContent = read(src);
+    w.document.body.appendChild(tag);
+  }
   return w;
 }
 
@@ -273,23 +279,23 @@ async function boardChecks() {
       return Promise.resolve({status: 200, ok: true, json: () => Promise.resolve(body)});
     },
   });
-  const $ = id => desk.document.getElementById(id);
-  ok("without a key the board stays hidden", $("board").hidden && $("tools").hidden);
+  const byId = id => desk.document.getElementById(id);
+  ok("without a key the board stays hidden", byId("board").hidden && byId("tools").hidden);
   ok("without a key nothing is asked of the server", calls.length === 0);
 
   desk.eval('localStorage.setItem("gatekey","k")');
   await desk.eval("loadBoard()");
   desk.eval("render()");
-  const html = $("board").innerHTML;
-  ok("with a key the board shows", !$("board").hidden && !$("tools").hidden);
+  const html = byId("board").innerHTML;
+  ok("with a key the board shows", !byId("board").hidden && !byId("tools").hidden);
   ok("inside comes before expected", html.indexOf("Inside now") < html.indexOf("Expected"));
-  const counts = [...$("board").querySelectorAll(".count")].map(c => c.textContent);
+  const counts = [...byId("board").querySelectorAll(".count")].map(c => c.textContent);
   ok("each list shows its count", counts.join() === "2,1");
   ok("a guest shows as +1", html.includes("Asha Rao +1"));
   ok("how long someone is inside shows", html.includes("In for 9 h"));
-  const rows = [...$("board").querySelectorAll(".row")];
-  ok("inside too long is marked", rows[0].classList.contains("long"));
-  ok("a short stay is not marked", !rows[1].classList.contains("long"));
+  const rows = [...byId("board").querySelectorAll(".row")];
+  ok("inside too long is marked", rows[0].matches("[data-long=true]"));
+  ok("a short stay is not marked", !rows[1].matches("[data-long=true]"));
   ok("names are escaped", html.includes("Kiran &lt;b&gt;") && !html.includes("Kiran <b>"));
   ok("the update time shows", html.includes("Updated"));
 
@@ -297,20 +303,20 @@ async function boardChecks() {
   await new Promise(done => setTimeout(done, 0));
   await new Promise(done => setTimeout(done, 0));
   ok("tapping a name opens that pass", calls.some(u => u === "/api/pass/VR-3333"));
-  ok("the code box holds the code", $("code").value === "VR-3333");
-  ok("the pass offers Record entry", $("out").innerHTML.includes("Record entry"));
-  ok("the board stays under the pass", $("board").innerHTML.includes("Inside now"));
+  ok("the code box holds the code", byId("code").value === "VR-3333");
+  ok("the pass offers Record entry", byId("out").innerHTML.includes("Record entry"));
+  ok("the board stays under the pass", byId("board").innerHTML.includes("Inside now"));
 
   // A failed refresh keeps the lists and says how old they are.
   desk.fetch = () => Promise.reject(new Error("offline"));
   await desk.eval("loadBoard()");
-  ok("a failed refresh keeps the lists", $("board").innerHTML.includes("Asha Rao"));
-  ok("and says they are old", $("board").innerHTML.includes("Could not refresh"));
+  ok("a failed refresh keeps the lists", byId("board").innerHTML.includes("Asha Rao"));
+  ok("and says they are old", byId("board").innerHTML.includes("Could not refresh"));
 
   BOARD.inside = []; BOARD.expected = [];
   desk.fetch = () => Promise.resolve({status: 200, ok: true, json: () => Promise.resolve(BOARD)});
   await desk.eval("loadBoard()");
-  ok("an empty list says so", $("board").innerHTML.includes("Nobody is inside."));
+  ok("an empty list says so", byId("board").innerHTML.includes("Nobody is inside."));
 }
 
 // ------------------------------------------- a wrong gate key is dropped
@@ -319,29 +325,29 @@ async function wrongKeyChecks() {
   const desk = boot("gate.html", "gate.js", {
     fetch: () => Promise.resolve({status: 403, ok: false, json: () => Promise.resolve({})}),
   });
-  const $ = id => desk.document.getElementById(id);
+  const byId = id => desk.document.getElementById(id);
   desk.eval('localStorage.setItem("gatekey","wrong")');
   await desk.eval("loadBoard()");
   ok("the key is forgotten", desk.eval('localStorage.getItem("gatekey")') === null);
-  ok("the key box is back", !!$("k"));
-  ok("it says the key was wrong", $("out").innerHTML.includes("gate key is not right"));
-  ok("the lists and tools hide again", $("board").hidden && $("tools").hidden);
-  ok("the live badge hides", $("live").hidden);
+  ok("the key box is back", !!byId("k"));
+  ok("it says the key was wrong", byId("out").innerHTML.includes("gate key is not right"));
+  ok("the lists and tools hide again", byId("board").hidden && byId("tools").hidden);
+  ok("the live badge hides", byId("live").hidden);
 
   desk.eval('localStorage.setItem("gatekey","wrong")');
   desk.eval("render()");
-  $("code").value = "4022";
+  byId("code").value = "4022";
   await desk.eval("look()");
-  ok("a pass lookup with a wrong key drops it too", !!$("k"));
+  ok("a pass lookup with a wrong key drops it too", !!byId("k"));
 
   desk.eval('localStorage.setItem("gatekey","k")');
   desk.eval("render()");
-  $("rekey").click();
-  ok("Change gate key shows no stray message", !$("out").innerHTML.includes("Cannot do that"));
+  byId("rekey").click();
+  ok("Change gate key shows no stray message", !byId("out").innerHTML.includes("Cannot do that"));
 
   const css = read("gate.html") + read("admin.html");
   ok("both pages let hidden win over a display rule",
-     (css.match(/\[hidden\]\{display:none!important\}/g) || []).length === 2);
+     (css.match(/\[hidden]\{display:none!important}/g) || []).length === 2);
 }
 
 // ------------------------------------------------------------- admin page
@@ -366,37 +372,79 @@ async function adminChecks() {
       return Promise.resolve({status: 200, ok: true, json: () => Promise.resolve(body)});
     },
   });
-  const $ = id => admin.document.getElementById(id);
-  ok("without a key it asks for one", !!$("k") && calls.length === 0);
-  ok("without a key the header buttons hide", $("nav").hidden);
+  const byId = id => admin.document.getElementById(id);
+  ok("without a key it asks for one", !!byId("k") && calls.length === 0);
+  ok("without a key the header buttons hide", byId("nav").hidden);
 
-  $("k").value = "key";
+  byId("k").value = "key";
   admin.eval("saveKey()");
   await new Promise(done => setTimeout(done, 0));
   await new Promise(done => setTimeout(done, 0));
-  const tiles = [...$("tiles").querySelectorAll(".tile b")].map(b => b.textContent);
+  const tiles = [...byId("tiles").querySelectorAll(".tile b")].map(b => b.textContent);
   ok("the tiles count all and waiting", tiles[0] === "3" && tiles[1] === "2");
-  ok("the first page shows", $("list").querySelectorAll("details").length === 2);
-  ok("names are escaped", $("list").innerHTML.includes("Kiran &lt;b&gt;"));
-  ok("Show more is offered", !$("more").hidden);
-  ok("the approvers table shows", $("approvers").innerHTML.includes("+912"));
-  ok("the escalation time shows", $("rules").textContent.includes("15 minutes"));
+  ok("the first page shows", byId("list").querySelectorAll("details").length === 2);
+  ok("names are escaped", byId("list").innerHTML.includes("Kiran &lt;b&gt;"));
+  const pills = [...byId("list").querySelectorAll(".pill")].map(p => `${p.dataset.tone}:${p.textContent}`);
+  ok("each status has its color and word", pills.join() === "go:Inside,wait:Waiting");
+  ok("Show more is offered", !byId("more").hidden);
+  ok("the approvers table shows", byId("approvers").innerHTML.includes("+912"));
+  ok("the escalation time shows", byId("rules").textContent.includes("15 minutes"));
 
-  $("more").click();
+  byId("more").click();
   await new Promise(done => setTimeout(done, 0));
   await new Promise(done => setTimeout(done, 0));
   const asked = calls.find(u => u.includes("after="));
   ok("the next page asks after the last row",
      !!asked && decodeURIComponent(asked).includes("after=2026-09-29T10:00:00+00:00|VR-1001"));
-  ok("the next page is added below", $("list").querySelectorAll("details").length === 3);
-  ok("on the last page Show more goes", $("more").hidden);
+  ok("the next page is added below", byId("list").querySelectorAll("details").length === 3);
+  ok("on the last page Show more goes", byId("more").hidden);
 
-  $("tiles").querySelector('[data-filter="inside"]').click();
+  byId("tiles").querySelector('[data-filter="inside"]').click();
   await new Promise(done => setTimeout(done, 0));
   ok("a tile filters the list", calls.some(u => u.includes("status=inside")));
+  const pressed = [...byId("tiles").querySelectorAll("[aria-pressed=true]")].map(t => t.dataset.filter);
+  ok("only the chosen tile shows as pressed", pressed.join() === "inside"
+     && byId("tiles").querySelectorAll("[aria-pressed=false]").length === 5);
 }
 
-void boardChecks().then(wrongKeyChecks).then(adminChecks).then(() => {
+// ------------------------------------------------------ the CSV download
+// Both pages download the same log. Each case answers the download with one
+// response and reports what the page did with it.
+async function downloadChecks() {
+  const cases = [
+    ["gate.html", "gate.js", "gatekey", "downloadLog()", "out"],
+    ["admin.html", "admin.js", "adminkey", "downloadCsv()", "notice"],
+  ];
+  for (const [page, script, storeKey, start, noticeBox] of cases) {
+    console.log(`${page}: the CSV download`);
+    const run = async answer => {
+      const saved = [];
+      const win = boot(page, script, {fetch: () => answer()});
+      win.URL.createObjectURL = () => "blob:log";
+      win.URL.revokeObjectURL = () => {};
+      win.HTMLAnchorElement.prototype.click = function () { saved.push(this.download); };
+      win.eval(`localStorage.setItem("${storeKey}","k")`);
+      win.eval("render()");
+      await win.eval(start);
+      const text = (win.document.getElementById(noticeBox) || {innerHTML: ""}).innerHTML;
+      return {saved, text, key: win.eval(`localStorage.getItem("${storeKey}")`)};
+    };
+    const file = {status: 200, ok: true, blob: () => Promise.resolve("a,b"),
+      headers: {get: () => 'attachment; filename="visits-2026-09-29.csv"'}};
+    let got = await run(() => Promise.resolve(file));
+    ok("the file saves under the server's name", got.saved.join() === "visits-2026-09-29.csv");
+    got = await run(() => Promise.resolve({...file, headers: {get: () => null}}));
+    ok("with no name it saves as visits.csv", got.saved.join() === "visits.csv");
+    got = await run(() => Promise.resolve({status: 500, ok: false}));
+    ok("a server error says so", got.text.includes("Could not download (500)") && !got.saved.length);
+    got = await run(() => Promise.resolve({status: 403, ok: false}));
+    ok("a wrong key is forgotten", got.key === null && !got.saved.length);
+    got = await run(() => Promise.reject(new Error("offline now")));
+    ok("a lost connection says so", got.text.includes("offline now"));
+  }
+}
+
+void boardChecks().then(wrongKeyChecks).then(adminChecks).then(downloadChecks).then(() => {
   console.log();
   console.log(failures ? `${failures} check(s) FAILED` : "all form checks passed");
   process.exit(failures ? 1 : 0);

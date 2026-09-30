@@ -103,8 +103,8 @@ input.key{text-transform:none;letter-spacing:normal;font-size:1rem;text-align:le
 .row b{font-weight:650;overflow-wrap:anywhere}
 .row .side{text-align:right;flex-shrink:0}
 .row code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-weight:650;letter-spacing:.04em}
-.row.long{background:var(--waitBg)}
-.row.long .side small{color:var(--wait);font-weight:650}
+.row[data-long=true]{background:var(--waitBg)}
+.row[data-long=true] .side small{color:var(--wait);font-weight:650}
 .empty{padding:14px 16px;color:var(--soft);font-size:.93rem}
 .updated{margin:10px 0 0;color:var(--soft);font-size:.82rem}
 .tools{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:28px;padding-top:18px;border-top:1px solid var(--line)}
@@ -135,6 +135,7 @@ input.key{text-transform:none;letter-spacing:normal;font-size:1rem;text-align:le
     </div>
   </main>
 </div>
+<script src="download.js"></script>
 <script src="gate.js"></script>
 </body>
 </html>

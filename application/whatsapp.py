@@ -72,7 +72,7 @@ def send_template(to_phone, values):
     })
 
 
-# The values for the visit_request template, in the order of its {{1}}..{{8}}:
+# The values for the visit_request template, in the order of its {{1}} to {{8}}:
 # reference, the line saying who is asked, then the six details.
 def template_values(visit, escalated=False):
     return [
@@ -241,7 +241,7 @@ def read_failures(payload):
 
     Meta accepts a message first and reports its delivery later, in the same
     webhook, as a status. A failed status is the only sign that a message
-    never arrived, for example error 131047, the 24 hour rule.
+    never arrived, for example error 131047, the 24-hour rule.
     """
     failures = []
     try:
