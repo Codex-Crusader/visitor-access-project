@@ -1,9 +1,10 @@
 """Hammer the app from many threads at once and check nothing corrupts."""
 
 import os
-import tempfile
 import threading
 from collections import Counter
+
+import testdb
 
 os.environ.update(
     META_TOKEN="t", META_PHONE_NUMBER_ID="1", META_VERIFY_TOKEN="v",
@@ -13,7 +14,7 @@ os.environ.update(
     ESCALATE_MINUTES="30", RETAIN_DAYS="1",
     # This suite tests database contention, not the rate limit.
     REQUESTS_PER_HOUR="100000", GATE_TRIES_PER_HOUR="100000",
-    DATABASE_PATH=os.path.join(tempfile.mkdtemp(), "load.db"),
+    DATABASE_URL=testdb.url(),
 )
 
 import app as application

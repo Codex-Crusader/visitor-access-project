@@ -115,4 +115,6 @@ REQUESTS_PER_HOUR = _int("REQUESTS_PER_HOUR", 60)
 # trusting it would let anyone fake their address.
 BEHIND_PROXY = os.getenv("BEHIND_PROXY", "").strip().lower() in ("1", "true", "yes")
 
-DATABASE_PATH = os.getenv("DATABASE_PATH", "visits.db")
+# The Postgres connection string, such as Neon's. Visits live there, so they
+# stay when Render deploys a new version. It holds the database password: keep it out of git.
+DATABASE_URL = _required("DATABASE_URL")

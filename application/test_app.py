@@ -7,7 +7,8 @@ It sends no WhatsApp messages and uses a throwaway database.
 import logging
 import os
 import re
-import tempfile
+
+import testdb
 
 os.environ.update(
     META_TOKEN="test-token",
@@ -22,7 +23,7 @@ os.environ.update(
     GATE_DESK_PHONE="+912200000000",
     ESCALATE_MINUTES="30",
     RETAIN_DAYS="1",
-    DATABASE_PATH=os.path.join(tempfile.mkdtemp(), "test.db"),
+    DATABASE_URL=testdb.url(),
 )
 
 import app as application
@@ -168,14 +169,14 @@ try:
     # The backup approver's round fails the same way, and one failure stops
     # neither the other escalations nor the purge after them.
     with db.connect() as conn:
-        conn.execute("UPDATE visits SET created_at = ? WHERE status = 'pending'",
+        conn.execute("UPDATE visits SET created_at = %s WHERE status = 'pending'",
                      ("2020-06-01T00:00:00+00:00",))
     caught.clear()
     application.escalate_due()
     assert any("backup approver" in line for line in caught), caught
     assert db.due_for_escalation(), "a failed escalation must stay due and be tried again"
     with db.connect() as conn:
-        conn.execute("UPDATE visits SET created_at = ? WHERE created_at = ?",
+        conn.execute("UPDATE visits SET created_at = %s WHERE created_at = %s",
                      (db.now(), "2020-06-01T00:00:00+00:00"))
 
     # While Meta reviews the template, TEMPLATE_FALLBACK sends plain text
@@ -394,7 +395,7 @@ assert status_of(first) == "approved" and status_of(second_in) == "inside"
 # An IN older than the time limit is dead. The photo must not let anyone in.
 say(APPROVER, f"IN {entry_of(first)}")
 with db.connect() as conn:
-    conn.execute("UPDATE photo_waits SET asked = ?", ("2020-01-01T00:00:00+00:00",))
+    conn.execute("UPDATE photo_waits SET asked = %s", ("2020-01-01T00:00:00+00:00",))
 late = snap(APPROVER)
 assert "No entry is waiting" in late and str(application.PHOTO_MINUTES) in late, late
 assert status_of(first) == "approved"
@@ -529,7 +530,7 @@ entered = [v["entered_at"] for v in board["inside"]]
 assert entered == sorted(entered), entered
 # A pass approved more than BOARD_HOURS ago leaves the list but still works.
 with db.connect() as conn:
-    conn.execute("UPDATE visits SET decided_at = ? WHERE reference = ?",
+    conn.execute("UPDATE visits SET decided_at = %s WHERE reference = %s",
                  ("2020-01-01T00:00:00+00:00", live["reference"]))
 board = client.get("/api/gate/board", headers=KEY).get_json()
 assert live["reference"] not in [v["reference"] for v in board["expected"]]
@@ -552,7 +553,7 @@ assert client.get(f"/api/visit/{a['token']}").get_json()["status"] == "approved"
 
 print("escalation never decides, it only asks again")
 with db.connect() as conn:
-    conn.execute("UPDATE visits SET created_at = ? WHERE reference = ?",
+    conn.execute("UPDATE visits SET created_at = %s WHERE reference = %s",
                  ("2020-01-01T00:00:00+00:00", b["reference"]))
 due = db.due_for_escalation()
 assert [v["reference"] for v in due] == [b["reference"]], due
@@ -570,7 +571,7 @@ assert ref2 not in [v["reference"] for v in db.due_for_escalation()]
 print("retention deletes records older than RETAIN_DAYS")
 old = new_request()
 with db.connect() as conn:
-    conn.execute("UPDATE visits SET created_at = ? WHERE reference = ?",
+    conn.execute("UPDATE visits SET created_at = %s WHERE reference = %s",
                  ("2020-01-01T00:00:00+00:00", old["reference"]))
 old_entry = entry_of(old)
 assert db.purge_old() >= 1
@@ -585,9 +586,9 @@ assert db.get(a["reference"]) is not None
 gone, kept = new_request(), new_request()
 with db.connect() as conn:
     for photographed in (gone, kept):
-        conn.execute("INSERT INTO photos (reference, media_id, taken_at) VALUES (?, ?, ?)",
+        conn.execute("INSERT INTO photos (reference, media_id, taken_at) VALUES (%s, %s, %s)",
                      (photographed["reference"], "media.x", db.now()))
-    conn.execute("UPDATE visits SET created_at = ? WHERE reference = ?",
+    conn.execute("UPDATE visits SET created_at = %s WHERE reference = %s",
                  ("2020-01-01T00:00:00+00:00", gone["reference"]))
 db.purge_old()
 assert db.photo_of(gone["reference"]) is None
@@ -595,8 +596,8 @@ assert db.photo_of(kept["reference"]) is not None
 # No code outlives its visit, including those of requests deleted after a
 # failed send.
 with db.connect() as conn:
-    orphans = conn.execute("SELECT COUNT(*) FROM gate_codes WHERE reference NOT IN"
-                           " (SELECT reference FROM visits)").fetchone()[0]
+    orphans = conn.execute("SELECT COUNT(*) AS n FROM gate_codes WHERE reference NOT IN"
+                           " (SELECT reference FROM visits)").fetchone()["n"]
 assert orphans == 0, orphans
 print("  old visits, their photos and their codes deleted, today's kept")
 
@@ -632,7 +633,7 @@ try:
     # Escalation goes to the backup of the request's own reason.
     late = client.post("/api/requests", json={**payload, "reason": "Delivery"}).get_json()
     with db.connect() as conn:
-        conn.execute("UPDATE visits SET created_at = ? WHERE reference = ?",
+        conn.execute("UPDATE visits SET created_at = %s WHERE reference = %s",
                      (db.ago(1 / 24), late["reference"]))
     application.escalate_due()
     assert templates[-1][0] == DELIVERY_BACKUP, templates[-1]
@@ -835,6 +836,24 @@ assert client.post("/api/requests", json={**payload, "phone": "123"}).status_cod
 assert application.hit_buckets() == 1, application.hit_buckets()
 print(f"  {application.MAX_CALLERS + 1} silent callers swept out, the live one kept")
 application.forget_hits()
+
+print("migrations run once, so a restart keeps every visit")
+kept_visit = new_request()
+assert db.init() == len(db.MIGRATIONS)
+assert db.init() == len(db.MIGRATIONS)
+with db.connect() as conn:
+    versions = [row["version"] for row in
+                conn.execute("SELECT version FROM schema_migrations ORDER BY version")]
+assert versions == list(range(1, len(db.MIGRATIONS) + 1)), versions
+assert db.get(kept_visit["reference"]) is not None
+# A step added later runs on the next start, and the visits stay.
+db.MIGRATIONS.append("ALTER TABLE visits ADD COLUMN test_note TEXT")
+try:
+    assert db.init() == len(db.MIGRATIONS)
+    assert db.get(kept_visit["reference"])["test_note"] is None
+finally:
+    db.MIGRATIONS.pop()
+print(f"  schema at version {len(db.MIGRATIONS)}, a new column added, visits kept")
 
 print()
 print("all checks passed")

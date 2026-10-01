@@ -36,6 +36,9 @@ services:
         sync: false
       - key: GATE_DESK_PHONE
         sync: false
+      # The Neon connection string. Visits live there, so they stay when Render deploys again.
+      - key: DATABASE_URL
+        sync: false
       - key: ESCALATE_MINUTES
         value: "15"
       - key: RETAIN_DAYS

@@ -9,4 +9,10 @@ dependencies = [
     # The host runs the app under gunicorn. requirements.txt lists it too,
     # and the two files have to agree.
     "gunicorn",
+    "psycopg[binary]",
+    "psycopg-pool",
 ]
+
+[dependency-groups]
+# The tests start a throwaway Postgres from this package. The app never uses it.
+dev = ["pgserver"]

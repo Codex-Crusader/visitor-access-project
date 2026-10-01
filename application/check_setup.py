@@ -32,6 +32,16 @@ print(f"Approver        {config.MAIN_APPROVER}")
 for reason, (main, backup) in config.APPROVERS.items():
     print(f"  {reason:<14} {main}, backup {backup}")
 print(f"Signature check {'on' if config.META_APP_SECRET else 'off (META_APP_SECRET empty)'}")
+
+# The app runs the migrations when it starts, so this runs them too, and a
+# wrong DATABASE_URL shows up here rather than at the first visit.
+import db  # noqa: E402
+
+try:
+    version = db.init()
+except Exception as error:
+    fail(f"Cannot use the database in DATABASE_URL. {error}")
+print(f"Database        reachable, schema version {version}")
 print()
 
 # The real request goes out as the template, so the test does too. A plain

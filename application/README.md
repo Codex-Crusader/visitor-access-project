@@ -236,7 +236,7 @@ the code agree. Change one and change the other.
 
 In this section, n is the number of stored visits, and k is the number of rows
 that an operation returns or changes. An index is a sorted copy of some columns
-that SQLite can search without reading every row.
+that Postgres can search without reading every row.
 
 | Work                                | Cost            | How                                          |
 |-------------------------------------|-----------------|----------------------------------------------|
@@ -260,8 +260,10 @@ about 5.7 million values, so they do not run short.
 
 | File                                   | What it holds                                                 |
 |----------------------------------------|---------------------------------------------------------------|
+| `USER_MANUAL.md`                       | What visitors, approvers, guards and admins do, step by step  |
 | `app.py`                               | Flask routes, the escalation timer and the delete timer       |
-| `db.py`                                | SQLite storage                                                |
+| `db.py`                                | Postgres storage, and the migrations that build its tables    |
+| `testdb.py`                            | Starts a throwaway Postgres for the two test files            |
 | `whatsapp.py`                          | Meta API send, message text, command reading                  |
 | `config.py`                            | Settings read from the environment                            |
 | `check_setup.py`                       | Checks your settings and sends one test message               |
@@ -289,6 +291,7 @@ about 5.7 million values, so they do not run short.
 | `GUARD`                | Gate desk number. Defaults to the main approver          |
 | `GATE_KEY`             | Password for the gate page. Keep it off the internet     |
 | `ADMIN_KEY`            | Password for the admin page. Must differ from `GATE_KEY` |
+| `DATABASE_URL`         | Postgres connection string from Neon. Keep it secret     |
 | `GATE_DESK_PHONE`      | Number shown on the "Call gate desk" button              |
 | `ESCALATE_MINUTES`     | Minutes before the backup approver is asked. Default 15  |
 | `RETAIN_DAYS`          | Days a record is kept before deletion. Default 90        |
@@ -359,6 +362,32 @@ Meta reports a lost message later, through the same webhook. The app writes
 each one to the log as `WhatsApp could not deliver to <number>: error <code>`.
 Error 131047 means the 24-hour window.
 
+## The database
+
+The visits live in a Postgres database on Neon (https://neon.tech). The app
+reads its address from `DATABASE_URL`. In the Neon console, open the project,
+click Connect, and copy the connection string. The string holds the database
+password, so put it only in `.env` and in the Render Environment page.
+
+On your own machine, use a separate Neon branch, so a test visit never lands
+in the live list. A branch is a copy of the database that you can change on
+its own. Make one in the Neon console under Branches.
+
+The app builds its tables itself when it starts. `db.py` holds a list of
+migrations, which are the schema changes in order. The table
+`schema_migrations` records the steps that this database already ran, and
+each start runs only the new ones. To change the schema:
+
+1. Add a new step at the end of `MIGRATIONS` in `db.py`.
+2. Only add things in that step: a new table, or a new column that is
+   nullable or has a default. While Render deploys a new version, the old
+   version keeps running for a moment, and it must not break on the new schema.
+3. Never edit or remove a step after you deploy it. A database that already
+   ran it never runs the new text.
+4. Run the checks, then deploy. The visits stay.
+
+To remove a column, stop using it in one version, and drop it in a later step.
+
 ## Run it on your own machine
 
 ```
@@ -395,7 +424,7 @@ It is the step people miss.
 
 ## Put it on the internet with Render
 
-1. Push this folder to GitHub. `.env` and `visits.db` stay out, see `.gitignore`.
+1. Push this folder to GitHub. `.env` stays out, see `.gitignore`.
 2. On https://render.com, choose New, then Web Service, and pick the repository.
 3. Render reads `render.yaml`. Leave the build and start commands alone.
 4. Fill in every setting from the table above in the Environment section.
@@ -419,9 +448,11 @@ and choose Never for expiry.
   the app ignores repeated messages, so nothing happens twice.
 - While the service sleeps, the escalation timer does not run. A request that
   should escalate does so once the service wakes.
-- `visits.db` is wiped on every redeploy, because the free plan has no disk.
-  Records also delete themselves after `RETAIN_DAYS`, so this only matters if
-  you redeploy in the middle of a demo.
+- The free plan has no disk, so the visits live in Neon, not on Render. They
+  stay when you deploy again. Records still delete themselves after `RETAIN_DAYS`.
+- The Neon free plan gives 100 compute hours a month, which is about 13 hours
+  a day awake. The app checks for escalations every 30 seconds, so Neon stays
+  awake while Render is awake. Both sleep after a quiet spell.
 
 ## Demo run
 
@@ -460,6 +491,13 @@ not reply. After one minute the backup approver gets the same details.
 
 ## Checks
 
+The checks start their own empty Postgres from the `pgserver` package, so
+they never touch Neon. Install it once.
+
+```
+.venv\Scripts\python.exe -m pip install pgserver
+```
+
 ```
 .venv\Scripts\python.exe test_app.py
 ```
@@ -470,7 +508,8 @@ not reply. After one minute the backup approver gets the same details.
 
 The first runs the whole flow without sending any WhatsApp message: approval,
 decline, escalation, repeated deliveries, the code-guessing defense, the entry
-and exit codes and where they may appear, the admin key, both gate routes, the photo at the gate, the export, and the delete-after-retention rule.
+and exit codes and where they may appear, the admin key, both gate routes, the photo at the gate, the export, the delete-after-retention rule, and the
+migrations.
 
 The second proves the app survives load: sixty visitors submitting at the same
 instant all get unique codes, and twenty guards pressing Record entry on the same
