@@ -22,6 +22,8 @@ export default [
         AbortController: "readonly", URL: "readonly", URLSearchParams: "readonly", console: "readonly",
         require: "readonly", module: "readonly", __dirname: "readonly",
         process: "readonly",
+        // The service worker, static/sw.js.
+        self: "readonly", caches: "readonly", Request: "readonly",
       },
     },
     rules: {

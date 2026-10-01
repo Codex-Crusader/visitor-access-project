@@ -127,8 +127,13 @@ After the exit, the pass closes and both codes stop working. If the page
 says the request was declined, do not go to the gate. Use the Call gate desk
 button for help.
 
-On the free Render plan, the app sleeps after 15 minutes with no use. The
-first page after a quiet spell can take up to a minute to open.
+Your phone keeps a copy of your pass. If the signal at the gate is weak or
+gone, open the page anyway: it shows the pass from the copy and says when it
+was last updated. It updates by itself when the signal comes back.
+
+On the free Render plan, the app sleeps after 15 minutes with no use. After
+your first visit, the page still opens at once, but the status can take up to
+a minute to update while the app wakes.
 
 ## Approver
 

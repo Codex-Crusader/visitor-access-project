@@ -492,7 +492,41 @@ async function downloadChecks() {
   }
 }
 
-void boardChecks().then(wrongKeyChecks).then(adminChecks).then(downloadChecks).then(() => {
+// ------------------------------------------- the pass on a weak signal
+async function offlinePassChecks() {
+  console.log("visitor app: the pass survives a lost connection");
+  const v = boot("index.html", "app.js", {fetch: () => Promise.reject(new Error("offline"))});
+  const pass = {token: "t1", reference: "VR-4022", status: "approved", name: "Asha Rao",
+    guests: [], entry_code: "KT-4821", created_at: "2026-10-01T05:00:00+00:00"};
+  const store = JSON.stringify(JSON.stringify({seen: "2026-10-01T05:10:00+00:00", visit: pass}));
+  const save = () => v.eval(`localStorage.setItem("tok","t1");localStorage.setItem("pass",${store})`);
+  const view = () => v.document.getElementById("view").innerHTML;
+
+  save();
+  await v.eval("start()");
+  ok("a failed connection keeps the token", v.eval('localStorage.getItem("tok")') === "t1");
+  v.eval('S.s="inout";render()');
+  ok("the saved pass shows its entry code", v.document.querySelector(".pass b").textContent === "KT-4821");
+  ok("and says it is offline, with the time it last heard",
+     view().includes("No connection right now") && view().includes("Last updated"));
+
+  v.fetch = () => Promise.resolve({ok: false, status: 404,
+    json: () => Promise.resolve({error: "No request with that token"})});
+  save();
+  await v.eval("start()");
+  ok("a pass the server does not know is forgotten",
+     v.eval('localStorage.getItem("tok")') === null && v.eval('localStorage.getItem("pass")') === null);
+
+  v.eval('keep({token:"t2",reference:"VR-1",status:"approved",name:"B",phone:"9876543210",' +
+         'address:"12 Hill Road",guests:[],entry_code:"PB-5100"})');
+  const kept = v.eval('localStorage.getItem("pass")');
+  ok("the phone keeps the pass without the phone number or address",
+     kept.includes("PB-5100") && !kept.includes("9876543210") && !kept.includes("Hill Road"));
+  v.eval('keep({token:"t2",reference:"VR-1",status:"closed",name:"B",guests:[]})');
+  ok("a closed pass is forgotten", v.eval('localStorage.getItem("pass")') === null);
+}
+
+void boardChecks().then(offlinePassChecks).then(wrongKeyChecks).then(adminChecks).then(downloadChecks).then(() => {
   console.log();
   console.log(failures ? `${failures} check(s) FAILED` : "all form checks passed");
   process.exit(failures ? 1 : 0);

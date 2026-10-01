@@ -240,7 +240,9 @@ that Postgres can search without reading every row.
 
 | Work                                | Cost            | How                                          |
 |-------------------------------------|-----------------|----------------------------------------------|
-| Look up a pass, decide, enter, exit | O(log n)        | Each reference and code is a primary key     |
+| Visitor status check, every 3 s     | O(log n)        | One query: the token index, codes joined     |
+| Look up a pass by its code          | O(log n)        | One query: the code key, visit joined        |
+| Decide, enter, exit                 | O(log n)        | One UPDATE that returns the new row          |
 | Escalation check, every 30 seconds  | O(log n + k)    | Index on status and created time             |
 | Gate board, every 30 seconds        | O(log n + k)    | Index on status and decision time            |
 | Purge, every 30 seconds             | O(log n + k)    | Reads only expired visits and their photos   |
@@ -255,6 +257,42 @@ picked at random and tried up to 20 times. When most references are in use, for
 example 8000 visits kept for 90 days, a request can fail to find a free one.
 Keep `RETAIN_DAYS` times the visits per day well under 9000. The gate codes have
 about 5.7 million values, so they do not run short.
+
+Admin search is the one request that can read every row. A trigram index
+would fix that, but the test database has no `pg_trgm`, and the tests and
+production must use the same schema. The retention period keeps n small, so
+the scan stays fast.
+
+On a slow connection, the number of round trips costs far more than any of
+these. Each one is a trip from the phone to Oregon and back, which takes
+250 ms or more from India. So each request above makes one database query,
+and the pages save trips as described in "On a weak signal".
+
+## On a weak signal
+
+The visitor's page is built for a phone at the gate with little or no signal.
+
+- The phone keeps a copy of the last pass it saw. The page draws it at once,
+  before any answer from the server, and says when it was last updated. A
+  lost connection never deletes the pass. Only an unknown or closed pass, or
+  a new request, does. The copy holds no phone number or address.
+- A service worker, `static/sw.js`, keeps the page and its script on the
+  phone. The page opens with no signal, and it opens at once while the free
+  server wakes up. API calls always go to the network.
+- At start, the page asks for its settings and its pass at the same time.
+- The status check pauses while the page is hidden. It runs at once when the
+  page shows again or the phone comes back online. After failures, it waits
+  longer each time, up to 30 seconds.
+- Each script's address carries a hash of its content, such as
+  `app.js?v=1a2b3c4d5e`. The browser keeps each version for a year. The pages
+  are checked on every load and answer 304 when unchanged.
+- Render compresses every answer with Brotli.
+
+On the server, two pooled connections stay open. A request waits at most 5
+seconds for a connection. A read whose connection breaks under it runs once
+more. An insert or update never does, because its COMMIT can land even when
+the reply is lost. At start, the app tries the database again after 1, 2, 4
+and 8 seconds, because Neon takes a moment to wake.
 
 ## Files
 
@@ -277,6 +315,7 @@ about 5.7 million values, so they do not run short.
 | `static/download.js`                   | Saves the CSV log. The gate page and the admin page share it  |
 | `render.yaml`, `Procfile`              | How the host starts the app                                   |
 | `gunicorn.conf.py`                     | Opens the database and starts the timer in the worker process |
+| `static/sw.js`                         | Keeps the visitor page on the phone, so it opens offline      |
 
 ## Settings
 

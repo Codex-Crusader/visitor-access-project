@@ -4,6 +4,7 @@ import csv
 import hashlib
 import hmac
 import io
+import re
 import threading
 import time
 import unicodedata
@@ -11,7 +12,7 @@ from collections import deque
 from datetime import datetime, timezone
 from pathlib import Path
 
-from flask import Flask, Response, jsonify, request, send_from_directory
+from flask import Flask, Response, jsonify, request
 
 import config
 import db
@@ -262,19 +263,62 @@ def reply_to(phone, text):
         app.logger.error("Could not reply: %s", failure)
 
 
+def short_hash(data: bytes):
+    return hashlib.sha256(data).hexdigest()[:10]
+
+
+# Each page asks for its scripts with a hash of their content, such as
+# app.js?v=1a2b3c4d5e. A changed script gets a new address, so the browser
+# keeps each version for a year and never asks for it again. The pages are
+# checked on every load, which costs one small round trip that usually
+# answers "not changed".
+SCRIPT_VERSIONS = {path.name: short_hash(path.read_bytes()) for path in STATIC.glob("*.js")}
+SCRIPT_TAG = re.compile(r'<script src="([\w.-]+\.js)"></script>')
+
+
+def with_versions(html):
+    return SCRIPT_TAG.sub(
+        lambda tag: f'<script src="{tag[1]}?v={SCRIPT_VERSIONS[tag[1]]}"></script>', html
+    )
+
+
+PAGES = {
+    name: with_versions((STATIC / name).read_text(encoding="utf-8"))
+    for name in ("index.html", "gate.html", "admin.html")
+}
+PAGE_TAGS = {name: short_hash(html.encode()) for name, html in PAGES.items()}
+
+
+def page(name):
+    response = Response(PAGES[name], mimetype="text/html")
+    response.headers["Cache-Control"] = "no-cache"
+    response.set_etag(PAGE_TAGS[name])
+    return response.make_conditional(request)
+
+
+@app.after_request
+def keep_versioned_scripts(response):
+    """A script asked for by its current hash is kept for a year."""
+    version = request.args.get("v")
+    if (response.status_code == 200 and version
+            and version == SCRIPT_VERSIONS.get(request.path.lstrip("/"))):
+        response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+    return response
+
+
 @app.get("/")
 def index():
-    return send_from_directory(STATIC, "index.html")
+    return page("index.html")
 
 
 @app.get("/gate")
 def gate():
-    return send_from_directory(STATIC, "gate.html")
+    return page("gate.html")
 
 
 @app.get("/admin")
 def admin():
-    return send_from_directory(STATIC, "admin.html")
+    return page("admin.html")
 
 
 @app.get("/api/config")
@@ -309,7 +353,7 @@ def create_request():
 @app.get("/api/visit/<token>")
 def read_visit(token):
     """The visitor's own view. The token is long, so the code stays private."""
-    visit = db.get_by_token(token)
+    visit, codes = db.visitor_pass(token)
     if visit is None:
         return jsonify(error="No request with that token"), 404
     # The pass shows one code at a time: the entry code until the guard lets
@@ -317,7 +361,7 @@ def read_visit(token):
     # neither.
     showing = {db.APPROVED: db.ENTRY, db.INSIDE: db.EXIT}.get(visit["status"])
     if showing:
-        visit[f"{showing}_code"] = db.codes_of(visit["reference"]).get(showing)
+        visit[f"{showing}_code"] = codes[showing]
     return jsonify(visit)
 
 
@@ -400,11 +444,12 @@ def gate_action(key, action):
                        visit=typed_pass(visit, code, kind)), 409
 
     # The update itself decides. Two guards pressing at once must not both win.
-    if not apply_action(visit["reference"]):
+    done = apply_action(visit["reference"])
+    if done is None:
         fresh = db.get(visit["reference"])
         return jsonify(error=REFUSALS[action][fresh["status"]],
                        visit=typed_pass(fresh, code, kind)), 409
-    return jsonify(typed_pass(db.get(visit["reference"]), code, kind))
+    return jsonify(typed_pass(done, code, kind))
 
 
 EXPORT_COLUMNS = (
@@ -572,9 +617,10 @@ def handle_gate(sender, action, code):
         db.wait_for_photo(whatsapp.digits(sender), reference)
         return whatsapp.photo_request(visit, code)
 
-    if not apply_action(reference):
+    done = apply_action(reference)
+    if done is None:
         return REFUSALS[action][db.get(reference)["status"]]
-    return whatsapp.pass_body(db.get(reference))
+    return whatsapp.pass_body(done)
 
 
 def handle_photo(sender, media_id):

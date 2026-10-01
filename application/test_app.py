@@ -4,9 +4,13 @@ Run it with: .venv\\Scripts\\python.exe test_app.py
 It sends no WhatsApp messages and uses a throwaway database.
 """
 
+import contextlib
 import logging
 import os
 import re
+
+import psycopg
+from psycopg_pool import PoolTimeout
 
 import testdb
 
@@ -854,6 +858,107 @@ try:
 finally:
     db.MIGRATIONS.pop()
 print(f"  schema at version {len(db.MIGRATIONS)}, a new column added, visits kept")
+
+print("scripts are cached by version, pages are checked")
+for path, script in (("/", "app.js"), ("/gate", "gate.js"), ("/admin", "admin.js")):
+    shown = client.get(path)
+    assert shown.headers["Cache-Control"] == "no-cache", shown.headers
+    address = f"{script}?v={application.SCRIPT_VERSIONS[script]}"
+    assert address in shown.get_data(as_text=True), path
+    kept = client.get("/" + address)
+    assert kept.status_code == 200
+    assert "immutable" in kept.headers["Cache-Control"], kept.headers
+    # A wrong or missing version is never kept, so no address can hold stale code.
+    for other in (f"/{script}", f"/{script}?v=old"):
+        assert "immutable" not in client.get(other).headers.get("Cache-Control", ""), other
+    again = client.get(path, headers={"If-None-Match": shown.headers["ETag"]})
+    assert again.status_code == 304 and not again.data, path
+# The service worker is checked on every load, or a phone could keep an old one.
+worker = client.get("/sw.js")
+assert worker.status_code == 200 and "immutable" not in worker.headers.get("Cache-Control", "")
+print("  3 pages: 304 when unchanged, each script kept for a year under its hash")
+
+print("each request makes as few database trips as it can")
+real_connect, trips = db.connect, []
+db.connect = lambda: trips.append(1) or real_connect()
+try:
+    counted = new_request()
+    say(APPROVER, f"YES {counted['reference']}")
+    counted_code = entry_of(counted)
+    for label, call, most in (
+        ("status check", lambda: client.get(f"/api/visit/{counted['token']}"), 1),
+        ("pass lookup", lambda: client.get(f"/api/pass/{counted_code}", headers=KEY), 1),
+        ("entry", lambda: client.post(f"/api/pass/{counted_code}/entry", headers=KEY), 2),
+    ):
+        trips.clear()
+        assert call().status_code == 200, label
+        assert len(trips) <= most, (label, len(trips))
+finally:
+    db.connect = real_connect
+print("  status check 1, pass lookup 1, entry 2")
+
+print("a dropped connection is retried for reads, never for writes")
+tries = []
+
+
+@db.read
+def flaky_read():
+    tries.append(1)
+    if len(tries) == 1:
+        raise psycopg.OperationalError("server closed the connection")
+    return "read"
+
+
+assert flaky_read() == "read" and len(tries) == 2
+
+
+@db.read
+def full_pool():
+    tries.append(1)
+    raise PoolTimeout("no connection")
+
+
+tries.clear()
+with contextlib.suppress(PoolTimeout):
+    full_pool()
+assert len(tries) == 1, "a full pool must not be waited on twice"
+
+# The server ends every connection in the pool. The next read still works.
+kept_visit = new_request()
+with psycopg.connect(config.DATABASE_URL, autocommit=True) as killer:
+    killer.execute("""SELECT pg_terminate_backend(pid) FROM pg_stat_activity
+                      WHERE pid <> pg_backend_pid() AND datname = current_database()""")
+assert db.get(kept_visit["reference"])["reference"] == kept_visit["reference"]
+
+# At start, a database that is still waking is tried again before giving up.
+real_migrate, real_waits = db.migrate, db.START_WAITS
+db.START_WAITS = (0, 0, 0, 0)
+fails = []
+
+
+def waking():
+    if len(fails) < 3:
+        fails.append(1)
+        raise psycopg.OperationalError("the database system is starting up")
+    return real_migrate()
+
+
+def never_up():
+    raise psycopg.OperationalError("the database is down")
+
+
+db.migrate = waking
+try:
+    assert db.init() == len(db.MIGRATIONS) and len(fails) == 3
+    db.migrate = never_up
+    try:
+        db.init()
+        raise AssertionError("a database that never answers must stop the start")
+    except psycopg.OperationalError:
+        pass
+finally:
+    db.migrate, db.START_WAITS = real_migrate, real_waits
+print("  retried after a drop, a full pool fails at once, the start waits for the database")
 
 print()
 print("all checks passed")

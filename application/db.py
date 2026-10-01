@@ -5,18 +5,21 @@ pool, because opening a new one to a hosted database takes far longer than
 the query itself.
 """
 
+import functools
 import json
+import logging
 import random
 import secrets
 import string
 import threading
+import time
 from contextlib import AbstractContextManager
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from psycopg import errors
+from psycopg import OperationalError, errors
 from psycopg.rows import dict_row
-from psycopg_pool import ConnectionPool
+from psycopg_pool import ConnectionPool, PoolTimeout
 
 import config
 
@@ -141,15 +144,26 @@ def connect() -> AbstractContextManager[Any]:
         if _pool is None:
             _pool = ConnectionPool(
                 config.DATABASE_URL,
-                # The four gunicorn threads, plus the background loop.
-                min_size=1,
+                # The four gunicorn threads, plus the background loop. Two stay
+                # open, so the timer and a request never wait for a new one.
+                min_size=2,
                 max_size=5,
+                # A request waits at most 5 seconds for a connection. The same
+                # four threads serve the pages, so a slow database must not
+                # hold them long. The visitor page gives up at 10 seconds.
+                timeout=5,
                 # A connection attempt that hangs fails after 10 seconds and
                 # is tried again, instead of holding a waiting request forever.
+                # Keepalives notice a connection that died without a word in
+                # about a minute, not the two hours the system waits by default.
                 kwargs={
                     "row_factory": dict_row,
                     "prepare_threshold": None,
                     "connect_timeout": 10,
+                    "keepalives": 1,
+                    "keepalives_idle": 30,
+                    "keepalives_interval": 10,
+                    "keepalives_count": 3,
                 },
                 check=ConnectionPool.check_connection,
                 open=True,
@@ -157,8 +171,31 @@ def connect() -> AbstractContextManager[Any]:
     return _pool.connection()
 
 
+log = logging.getLogger(__name__)
+
+# Seconds to wait before each new try when the database cannot be reached at
+# start. Neon takes a moment to wake, and gunicorn stops the whole server when
+# its worker fails to start, so the start waits about 15 seconds before it
+# gives up.
+START_WAITS = (1, 2, 4, 8)
+
+
 def init():
-    """Run every migration this database has not run yet. Returns the version."""
+    """Run every migration this database has not run yet. Returns the version.
+
+    A connection that fails is tried again after each of START_WAITS.
+    """
+    for wait in START_WAITS:
+        try:
+            return migrate()
+        except OperationalError as failure:
+            log.warning("Database not reachable at start, again in %ss: %s", wait, failure)
+            time.sleep(wait)
+    return migrate()
+
+
+def migrate():
+    """One attempt at init(): run the migrations that are new to this database."""
     with connect() as conn:
         conn.execute("SELECT pg_advisory_xact_lock(%s)", (MIGRATION_LOCK,))
         conn.execute(
@@ -175,6 +212,25 @@ def init():
                 (version, now()),
             )
     return len(MIGRATIONS)
+
+
+def read(query):
+    """Run a read a second time when its connection breaks under it.
+
+    Neon can close a connection at any moment, for example when it scales to
+    zero. A read changes nothing, so a second run is safe. Writes are never
+    run twice, because a COMMIT can land even when its reply is lost. A full
+    pool is not tried again either: that would only double the wait.
+    """
+    @functools.wraps(query)
+    def read_again(*args, **kwargs):
+        try:
+            return query(*args, **kwargs)
+        except PoolTimeout:
+            raise
+        except OperationalError:
+            return query(*args, **kwargs)
+    return read_again
 
 
 def to_dict(row):
@@ -212,10 +268,10 @@ def create(fields, guests):
                     "INSERT INTO gate_codes (code, reference, kind) VALUES (%s, %s, %s)",
                     [(new_gate_code(), reference, ENTRY), (new_gate_code(), reference, EXIT)],
                 )
-                conn.execute(
+                row = conn.execute(
                     "INSERT INTO visits (reference, token, name, phone, address,"
                     " reason, visiting, guests, status, created_at)"
-                    " VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+                    " VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING *",
                     (
                         reference,
                         secrets.token_urlsafe(16),
@@ -228,29 +284,46 @@ def create(fields, guests):
                         PENDING,
                         now(),
                     ),
-                )
-            return get(reference)
+                ).fetchone()
+            return to_dict(row)
         except errors.UniqueViolation:
             continue
     raise RuntimeError("Could not find a free visit code")
 
 
-def _one(column, value):
+@read
+def get(reference):
     with connect() as conn:
         row = conn.execute(
-            f"SELECT * FROM visits WHERE {column} = %s", (value,)
+            "SELECT * FROM visits WHERE reference = %s", (reference,)
         ).fetchone()
     return to_dict(row) if row is not None else None
 
 
-def get(reference):
-    return _one("reference", reference)
+@read
+def visitor_pass(token):
+    """(visit, {"entry": code, "exit": code}) for the visitor's page, or (None, {}).
+
+    One query: the page asks every three seconds, often on a weak signal.
+    """
+    with connect() as conn:
+        row = conn.execute(
+            "SELECT visits.*, coming.code AS entry_code, going.code AS exit_code"
+            " FROM visits"
+            " LEFT JOIN gate_codes AS coming"
+            "  ON coming.reference = visits.reference AND coming.kind = %s"
+            " LEFT JOIN gate_codes AS going"
+            "  ON going.reference = visits.reference AND going.kind = %s"
+            " WHERE visits.token = %s",
+            (ENTRY, EXIT, token),
+        ).fetchone()
+    if row is None:
+        return None, {}
+    codes = {ENTRY: row.pop("entry_code"), EXIT: row.pop("exit_code")}
+    return to_dict(row), codes
 
 
-def get_by_token(token):
-    return _one("token", token)
-
-
+@read
 def codes_of(reference) -> dict[str, str]:
     """{"entry": code, "exit": code} for a visit, or {} when it has none."""
     with connect() as conn:
@@ -260,16 +333,20 @@ def codes_of(reference) -> dict[str, str]:
     return {row["kind"]: row["code"] for row in rows}
 
 
+@read
 def by_code(code):
-    """(visit, kind) for an entry or exit code, or (None, None)."""
+    """(visit, kind) for an entry or exit code, or (None, None). One query."""
     with connect() as conn:
         row = conn.execute(
-            "SELECT reference, kind FROM gate_codes WHERE code = %s", (code,)
+            "SELECT visits.*, gate_codes.kind AS code_kind FROM gate_codes"
+            " JOIN visits ON visits.reference = gate_codes.reference"
+            " WHERE gate_codes.code = %s",
+            (code,),
         ).fetchone()
     if row is None:
         return None, None
-    visit = get(row["reference"])
-    return (visit, row["kind"]) if visit is not None else (None, None)
+    kind = row.pop("code_kind")
+    return to_dict(row), kind
 
 
 def delete(reference):
@@ -279,6 +356,7 @@ def delete(reference):
         conn.execute("DELETE FROM gate_codes WHERE reference = %s", (reference,))
 
 
+@read
 def all_visits():
     """Every stored visit, oldest first, with the time of its gate photo.
 
@@ -297,6 +375,7 @@ def all_visits():
 BOARD_FIELDS = "reference, name, visiting, guests, status, decided_at, entered_at"
 
 
+@read
 def at_gate(expected_hours):
     """What the gate desk board shows: (expected, inside).
 
@@ -333,6 +412,7 @@ def _like(text):
     return f"%{escaped}%"
 
 
+@read
 def admin_page(statuses=None, search="", after=None, limit=50):
     """One page of visits for the admin list, newest first.
 
@@ -372,6 +452,7 @@ def admin_page(statuses=None, search="", after=None, limit=50):
     return visits, cursor
 
 
+@read
 def status_counts() -> dict[str, int]:
     """How many stored visits have each status. One pass over the status index."""
     with connect() as conn:
@@ -381,6 +462,7 @@ def status_counts() -> dict[str, int]:
     return {row["status"]: row["count"] for row in rows}
 
 
+@read
 def open_requests():
     with connect() as conn:
         rows = conn.execute(
@@ -390,6 +472,7 @@ def open_requests():
     return [to_dict(row) for row in rows]
 
 
+@read
 def due_for_escalation():
     with connect() as conn:
         rows = conn.execute(
@@ -409,33 +492,38 @@ def mark_escalated(reference):
 
 
 def decide(reference, status):
-    """Record a decision. Returns False if the request was already decided."""
+    """Record a decision. Returns the decided visit, or None if it was already decided."""
     with connect() as conn:
-        changed = conn.execute(
+        row = conn.execute(
             "UPDATE visits SET status = %s, decided_at = %s WHERE reference = %s"
-            " AND status IN (%s, %s)",
+            " AND status IN (%s, %s) RETURNING *",
             (status, now(), reference, *OPEN_STATUSES),
-        ).rowcount
-    return changed == 1
+        ).fetchone()
+    return to_dict(row) if row is not None else None
 
 
 def _stamp(reference, status, column, required):
+    """Move a visit on, if it is in the required status. Returns it as it is now, or None.
+
+    The condition sits in the UPDATE itself, so of two guards at the same
+    moment exactly one gets the visit back.
+    """
     with connect() as conn:
-        changed = conn.execute(
+        row = conn.execute(
             f"UPDATE visits SET status = %s, {column} = %s WHERE reference = %s"
-            " AND status = %s",
+            " AND status = %s RETURNING *",
             (status, now(), reference, required),
-        ).rowcount
-    return changed == 1
+        ).fetchone()
+    return to_dict(row) if row is not None else None
 
 
 def check_in(reference):
-    """Let an approved visitor in. Returns False unless the pass is approved."""
+    """Let an approved visitor in. Returns the visit, or None unless the pass is approved."""
     return _stamp(reference, INSIDE, "entered_at", APPROVED)
 
 
 def check_out(reference):
-    """Close the pass on the way out. Returns False unless the visitor is inside."""
+    """Close the pass on the way out. Returns the visit, or None unless the visitor is inside."""
     return _stamp(reference, CLOSED, "exited_at", INSIDE)
 
 
@@ -484,6 +572,7 @@ def enter_with_photo(guard, minutes, media_id):
     return reference, changed == 1
 
 
+@read
 def photo_of(reference):
     """The stored photo record for a pass, or None."""
     with connect() as conn:

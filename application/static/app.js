@@ -7,7 +7,7 @@ const LIVE_VIEWS = ["status", "home", "inout"];
 const MAX_GUESTS = 10;        // the server keeps no more than this
 const S = {s:"home", f:{name:"",phone:"",address:"",reason:"",other:"",visiting:"",guest:""}, g:[], e:{}, adding:0,
   visit:null, cfg:{gate_desk_phone:"",escalate_minutes:15,retain_days:90}, err:"", hist:[], sheet:0,
-  wait:POLL_EVERY, down:0};
+  wait:POLL_EVERY, down:0, seen:"", timer:0, busy:0};
 
 const el = i=>document.getElementById(i);
 // Built once. Inside the callback it was a new object for every escaped letter.
@@ -54,7 +54,7 @@ const gate=()=>S.cfg.gate_desk_phone?`<a class="btn plain" href="tel:${x(S.cfg.g
 
 const offlineNote=()=>S.down
   ? `<p class="sm" style="color:var(--wait)">No connection right now. This page keeps trying,
-     and updates by itself once you are back online.</p>`
+     and updates by itself once you are back online.${S.seen?` Last updated ${hm(S.seen)}.`:""}</p>`
   : "";
 
 // How far the blue line has run down the tracker. mark() writes it on to the
@@ -182,7 +182,11 @@ function view(){
     for ${S.cfg.retain_days===1?"one day":S.cfg.retain_days+" days"}. After that it is
     deleted automatically.
     The gate desk can see these details while your visit is open. Once you
-    check out, the gate desk sees only the times you came and went.</p>`;
+    check out, the gate desk sees only the times you came and went.</p>
+    <p class="sm">This phone keeps a copy of your pass, so it opens without a
+    signal: your name, your guests, the code and the times. Not your phone
+    number or address. The copy is deleted when you check out or start
+    a new request.</p>`;
 
   case "help": return `<h2>Getting help</h2>
     <div class="facts">${fact("Gate desk",S.cfg.gate_desk_phone)}</div>
@@ -334,7 +338,37 @@ function add(){
 }
 function drop(i){S.g.splice(i,1);render()}
 function home(){S.s="home";S.hist=[];S.sheet=0;render();el("view").scrollTop=0}
-function again(){S.visit=null;localStorage.removeItem("tok");S.g=[];closeAdd();S.e={};S.err="";go("step1",0)}
+function again(){forget();S.g=[];closeAdd();S.e={};S.err="";go("step1",0)}
+
+// The phone keeps the last pass it saw, so the pass opens with a weak signal
+// or none. Only what the pass and status screens draw is kept: no phone
+// number and no address. A closed or unknown pass is forgotten.
+const PASS_FIELDS=["token","reference","status","name","guests","created_at","decided_at",
+  "entered_at","exited_at","entry_code","exit_code"];
+function keep(v){
+  S.visit=v;S.seen=new Date().toISOString();
+  if(v.status==="closed"){forget(v);return}
+  try{
+    localStorage.setItem("tok",v.token);
+    localStorage.setItem("pass",JSON.stringify({seen:S.seen,
+      visit:Object.fromEntries(PASS_FIELDS.filter(k=>k in v).map(k=>[k,v[k]]))}));
+  }catch{/* private mode: this page view only */}
+}
+function forget(v=null){
+  S.visit=v;
+  try{localStorage.removeItem("tok");localStorage.removeItem("pass")}catch{/* nothing stored */}
+}
+function saved(){
+  try{
+    const p=JSON.parse(localStorage.getItem("pass")||"null");
+    if(p&&p.visit&&p.visit.token===localStorage.getItem("tok"))return p;
+  }catch{/* unreadable: start clean */}
+  return null;
+}
+
+// A refused request, with the HTTP status the server gave.
+class Refused extends Error{constructor(message,status){super(message);this.status=status}}
+const unknown=err=>err instanceof Refused&&err.status===404;
 
 // Give up on a stalled request instead of hanging forever.
 async function load(url,options={},ms=POLL_TIMEOUT){
@@ -343,7 +377,7 @@ async function load(url,options={},ms=POLL_TIMEOUT){
   try{
     const r=await fetch(url,{...options,signal:stop.signal});
     const data=await r.json().catch(()=>({}));
-    if(!r.ok)throw new Error(data.error||`Request failed (${r.status})`);
+    if(!r.ok)throw new Refused(data.error||`Request failed (${r.status})`,r.status);
     return data;
   }finally{clearTimeout(timer)}
 }
@@ -355,7 +389,7 @@ async function send(){
       body:JSON.stringify({name:S.f.name,phone:S.f.phone,address:S.f.address,
         reason:reasonText(),visiting:S.f.visiting,guests:S.g})},SEND_TIMEOUT);
     S.err="";
-    localStorage.setItem("tok",S.visit.token);
+    keep(S.visit);
     S.hist=["home"];
     go("status",0);
   }catch(err){
@@ -366,24 +400,32 @@ async function send(){
 }
 
 // One request at a time. The next is scheduled only after this one ends,
-// so a slow connection never stacks up overlapping polls.
+// so a slow connection never stacks up overlapping polls. A hidden page does
+// not ask at all, and the page asks at once when it shows again or the
+// phone comes back online, instead of waiting out a long backoff.
 async function poll(){
-  if(S.visit&&live()){
+  clearTimeout(S.timer);
+  if(S.busy)return;
+  if(S.visit&&live()&&!document.hidden){
+    S.busy=1;
     try{
       const v=await load(`/api/visit/${S.visit.token}`);
       const changed=v.status!==S.visit.status;
-      S.visit=v;
-      if(v.status==="closed")localStorage.removeItem("tok");
+      keep(v);
       S.wait=POLL_EVERY;
       if(S.down){S.down=0;render()}
       else if(changed&&LIVE_VIEWS.includes(S.s))render();
-    }catch{
-      S.wait=Math.min(S.wait*2,POLL_SLOWEST);
-      if(!S.down){S.down=1;if(LIVE_VIEWS.includes(S.s))render()}
-    }
+    }catch(err){
+      if(unknown(err)){forget();render()}
+      else{
+        S.wait=Math.min(S.wait*2,POLL_SLOWEST);
+        if(!S.down){S.down=1;if(LIVE_VIEWS.includes(S.s))render()}
+      }
+    }finally{S.busy=0}
   }
-  setTimeout(()=>void poll(),S.wait);
+  S.timer=setTimeout(()=>void poll(),S.wait);
 }
+function pollNow(){if(!document.hidden){S.wait=POLL_EVERY;void poll()}}
 
 function render(){
   const [t,b]=T[S.s]||["",0];
@@ -397,20 +439,30 @@ function render(){
 }
 
 async function start(){
+  // The last pass this phone saw shows at once, before any network answer.
+  const p=saved();
+  if(p){S.visit=p.visit;S.seen=p.seen}
   render();
+  // Both questions go out together: one round trip of waiting, not two.
+  let tok=S.visit&&S.visit.token;
+  try{tok=tok||localStorage.getItem("tok")}catch{/* nothing stored */}
+  const [cfg,visit]=await Promise.allSettled([load("/api/config"),tok?load(`/api/visit/${tok}`):null]);
   // No settings mean the built-in defaults, which are good enough to start.
-  try{S.cfg=await load("/api/config")}catch{/* keep the defaults */}
-  const tok=localStorage.getItem("tok");
+  if(cfg.status==="fulfilled")S.cfg=cfg.value;
   if(tok){
-    try{
-      const v=await load(`/api/visit/${tok}`);
-      // A finished visit is not reopened. The pass is gone for good.
-      if(v.status==="closed")localStorage.removeItem("tok");
-      else S.visit=v;
+    // A finished or unknown visit is not reopened. A failed connection keeps
+    // the saved pass, and the poll below tries again.
+    if(visit.status==="fulfilled"){
+      if(visit.value.status==="closed")forget();
+      else keep(visit.value);
     }
-    catch{localStorage.removeItem("tok")}
+    else if(unknown(visit.reason))forget();
+    else S.down=1;
   }
   render();
+  window.addEventListener("online",pollNow);
+  document.addEventListener("visibilitychange",pollNow);
+  if("serviceWorker" in window.navigator)window.navigator.serviceWorker.register("/sw.js").catch(()=>{});
   void poll();
 }
 void start();
