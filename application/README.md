@@ -264,9 +264,10 @@ production must use the same schema. The retention period keeps n small, so
 the scan stays fast.
 
 On a slow connection, the number of round trips costs far more than any of
-these. Each one is a trip from the phone to Oregon and back, which takes
-250 ms or more from India. So each request above makes one database query,
-and the pages save trips as described in "On a weak signal".
+these. The app and its database both run in Singapore, the nearest region to
+India, so each trip is short. A lookup took 0.14 s from India there, against
+0.33 s from Oregon. Each request above still makes one database query, and
+the pages save trips as described in "On a weak signal".
 
 ## On a weak signal
 
@@ -466,10 +467,13 @@ It is the step people miss.
 
 1. Push this folder to GitHub. `.env` stays out, see `.gitignore`.
 2. On https://render.com, choose New, then Web Service, and pick the repository.
-3. Render reads `render.yaml`. Leave the build and start commands alone.
+   Pick the region nearest the campus, and put the Neon database in the same
+   region. For a campus in India, that is Singapore.
+3. Use the build and start commands from `render.yaml`. Render reads that
+   file by itself only for a service made from a Blueprint.
 4. Fill in every setting from the table above in the Environment section.
 5. Deploy. Render gives you an address like
-   `https://visitor-access.onrender.com`.
+   `https://visitor-access-sg.onrender.com`.
 6. Put that address plus `/webhook/whatsapp` into the Meta Configuration page
    and subscribe the **messages** field again. This address does not change, so
    this is the last time you do it.

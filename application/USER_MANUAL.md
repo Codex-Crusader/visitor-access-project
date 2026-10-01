@@ -46,7 +46,8 @@ message template.
 ### Step 2: The database on Neon
 
 1. On https://neon.tech, create a project. Pick the region nearest to your
-   Render region. For Render's Oregon region, pick AWS US West 2 (Oregon).
+   campus, and use the same region on Render in step 4. For a campus in
+   India, pick AWS Asia Pacific 1 (Singapore).
 2. Click Connect, and copy the connection string. This is `DATABASE_URL`.
 
 The connection string holds the database password. Paste it only into
@@ -62,8 +63,11 @@ out of the repository.
 
 1. On https://render.com, click New, then Web Service, and pick the
    repository. If the app is in a subfolder of the repository, type that
-   folder in Root Directory.
-2. Render reads `render.yaml`. Keep its build and start commands.
+   folder in Root Directory. Pick the same region as the database, and the
+   Free plan.
+2. Type the same commands as `render.yaml`. The build command is
+   `pip install -r requirements.txt`. The start command is
+   `gunicorn app:app --workers 1 --threads 4 --timeout 60`.
 3. In Environment, set each value in this table.
 
    | Name                   | Value                                         |
