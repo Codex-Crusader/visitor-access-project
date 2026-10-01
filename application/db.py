@@ -431,7 +431,7 @@ def admin_page(statuses=None, search="", after=None, limit=50):
     if search:
         # A search reads rows until it fills a page, so a rare word can read
         # the whole table. That is at most one retention period of visits.
-        # ILIKE ignores case, as LIKE did on SQLite.
+        # ILIKE ignores case, so a search for asha finds Asha.
         where.append(
             "(name ILIKE %s ESCAPE '\\' OR phone ILIKE %s ESCAPE '\\'"
             " OR visits.reference ILIKE %s ESCAPE '\\' OR visiting ILIKE %s ESCAPE '\\')"

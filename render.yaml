@@ -1,11 +1,14 @@
+# The live service, visitor-access-sg, has these settings. It was made by hand
+# in the Render dashboard, and no Blueprint is connected, so Render does not
+# read this file. Use it as the record of the settings, or to make a Blueprint.
 services:
   - type: web
-    name: visitor-access
+    name: visitor-access-sg
     runtime: python
     plan: free
-    # The app lives in application/, not at the repository root. The Render
-    # dashboard already has this, but a blueprint sync reads only this file
-    # and would drop it, which breaks the build.
+    # Next to the Neon database, and the nearest region to the campus.
+    region: singapore
+    # The app lives in application/, not at the repository root.
     rootDir: application
     buildCommand: pip install -r requirements.txt
     # One worker only. The escalation timer is a thread inside the process,
