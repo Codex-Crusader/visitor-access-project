@@ -144,7 +144,13 @@ def connect() -> AbstractContextManager[Any]:
                 # The four gunicorn threads, plus the background loop.
                 min_size=1,
                 max_size=5,
-                kwargs={"row_factory": dict_row, "prepare_threshold": None, "connect_timeout": 10},
+                # A connection attempt that hangs fails after 10 seconds and
+                # is tried again, instead of holding a waiting request forever.
+                kwargs={
+                    "row_factory": dict_row,
+                    "prepare_threshold": None,
+                    "connect_timeout": 10,
+                },
                 check=ConnectionPool.check_connection,
                 open=True,
             )

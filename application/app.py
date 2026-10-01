@@ -689,19 +689,16 @@ def background_loop():
 
 
 def start_background():
-    # Temporary: show the pool's own log, and every thread's stack 75 seconds
-    # after start, while a pool hang on Render is investigated.
-    import faulthandler, logging, sys
-    pool_log = logging.getLogger("psycopg.pool")
-    pool_log.addHandler(logging.StreamHandler(sys.stderr))
-    pool_log.setLevel(logging.INFO)
-    faulthandler.dump_traceback_later(75)
+    """Build the tables, then start the timer. Call it once, in the serving process.
+
+    Importing this module starts nothing. Under gunicorn, gunicorn.conf.py
+    calls this in the worker. A connection or thread made at import would
+    live in the master process instead, see gunicorn.conf.py.
+    """
     db.init()
     threading.Thread(target=background_loop, daemon=True).start()
 
 
-start_background()
-
-
 if __name__ == "__main__":
+    start_background()
     app.run(host="0.0.0.0", port=5000)

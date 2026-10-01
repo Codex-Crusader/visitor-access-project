@@ -276,6 +276,7 @@ about 5.7 million values, so they do not run short.
 | `static/admin.html`, `static/admin.js` | The admin page with every request                             |
 | `static/download.js`                   | Saves the CSV log. The gate page and the admin page share it  |
 | `render.yaml`, `Procfile`              | How the host starts the app                                   |
+| `gunicorn.conf.py`                     | Opens the database and starts the timer in the worker process |
 
 ## Settings
 
