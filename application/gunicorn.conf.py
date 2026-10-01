@@ -13,3 +13,12 @@ def post_worker_init(_worker):
     import app
 
     app.start_background()
+
+
+# Runs in the worker as it exits, before Python starts shutting down. Closing
+# the pool later, during shutdown, fails on Python 3.14: it cannot join the
+# pool's threads then, and the connections are dropped instead of closed.
+def worker_exit(_server, _worker):
+    import app
+
+    app.stop_background()

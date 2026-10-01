@@ -1,5 +1,6 @@
 """Campus visitor access: web form in, WhatsApp approval out."""
 
+import atexit
 import csv
 import hashlib
 import hmac
@@ -721,10 +722,13 @@ def escalate_due():
         db.mark_escalated(visit["reference"])
 
 
+# Set when the process is about to exit. The timer stops at its next wait.
+stopping = threading.Event()
+
+
 def background_loop():
     """Escalate requests nobody answered, then delete records past retention."""
-    while True:
-        time.sleep(BACKGROUND_SECONDS)
+    while not stopping.wait(BACKGROUND_SECONDS):
         try:
             escalate_due()
             removed = db.purge_old()
@@ -734,15 +738,33 @@ def background_loop():
             app.logger.error("Background work failed: %s", failure)
 
 
+# Made here, started in the serving process by start_background().
+background = threading.Thread(target=background_loop, daemon=True)
+
+
 def start_background():
     """Build the tables, then start the timer. Call it once, in the serving process.
 
     Importing this module starts nothing. Under gunicorn, gunicorn.conf.py
-    calls this in the worker. A connection or thread made at import would
-    live in the master process instead, see gunicorn.conf.py.
+    calls this in the worker. A connection opened or a thread started at
+    import would live in the master process instead, see gunicorn.conf.py.
     """
     db.init()
-    threading.Thread(target=background_loop, daemon=True).start()
+    background.start()
+    atexit.register(stop_background)
+
+
+def stop_background():
+    """Stop the timer, let its current round finish, then close the database.
+
+    gunicorn.conf.py calls this as the worker exits, and atexit does for
+    python app.py. The timer is stopped first, so it never reaches a closed
+    database halfway through a round. Safe to call more than once.
+    """
+    stopping.set()
+    if background.is_alive():
+        background.join(timeout=10)
+    db.close()
 
 
 if __name__ == "__main__":

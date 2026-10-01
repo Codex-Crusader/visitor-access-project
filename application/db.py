@@ -5,6 +5,7 @@ pool, because opening a new one to a hosted database takes far longer than
 the query itself.
 """
 
+import atexit
 import functools
 import json
 import logging
@@ -120,8 +121,10 @@ def ago(days):
     return (datetime.now(timezone.utc) - timedelta(days=days)).isoformat(timespec="seconds")
 
 
-_pool = None
+# The open pool, or none yet. A list, so its type is never None.
+_pools: list[ConnectionPool] = []
 _pool_lock = threading.Lock()
+_closed = False
 
 
 def connect() -> AbstractContextManager[Any]:
@@ -139,10 +142,11 @@ def connect() -> AbstractContextManager[Any]:
     literal string as a query, and the queries here are built from constants
     in this file, never from input. Input always goes in the parameters.
     """
-    global _pool
     with _pool_lock:
-        if _pool is None:
-            _pool = ConnectionPool(
+        if _closed:
+            raise RuntimeError("The database is closed: the app is shutting down")
+        if not _pools:
+            _pools.append(ConnectionPool(
                 config.DATABASE_URL,
                 # The four gunicorn threads, plus the background loop. Two stay
                 # open, so the timer and a request never wait for a new one.
@@ -167,9 +171,31 @@ def connect() -> AbstractContextManager[Any]:
                 },
                 check=ConnectionPool.check_connection,
                 open=True,
-            )
-    return _pool.connection()
+            ))
+    return _pools[0].connection()
 
+
+def close():
+    """Close the pool and its helper threads. Safe to call more than once.
+
+    Call it before the process exits. A pool left open is closed by Python's
+    own cleanup during interpreter shutdown, when Python 3.14 can no longer
+    join its threads: the connections are dropped instead of closed, and the
+    log shows PythonFinalizationError. After close(), connect() refuses, so
+    nothing opens a new pool on the way out.
+    """
+    global _closed
+    with _pool_lock:
+        _closed = True
+        closing = _pools[:]
+        _pools.clear()
+    for pool in closing:
+        pool.close(timeout=5)
+
+
+# Scripts and tests that open the database close it on exit too. The app
+# itself stops its timer first, see app.stop_background().
+atexit.register(close)
 
 log = logging.getLogger(__name__)
 
@@ -431,7 +457,7 @@ def admin_page(statuses=None, search="", after=None, limit=50):
     if search:
         # A search reads rows until it fills a page, so a rare word can read
         # the whole table. That is at most one retention period of visits.
-        # ILIKE ignores case, so a search for asha finds Asha.
+        # ILIKE ignores case, so a search in small letters finds a name in capitals.
         where.append(
             "(name ILIKE %s ESCAPE '\\' OR phone ILIKE %s ESCAPE '\\'"
             " OR visits.reference ILIKE %s ESCAPE '\\' OR visiting ILIKE %s ESCAPE '\\')"

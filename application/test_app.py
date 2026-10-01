@@ -960,5 +960,19 @@ finally:
     db.migrate, db.START_WAITS = real_migrate, real_waits
 print("  retried after a drop, a full pool fails at once, the start waits for the database")
 
+# Last, because it closes the database for the rest of this process.
+print("on exit, the timer stops and the database closes before Python shuts down")
+application.start_background()
+assert application.background.is_alive()
+application.stop_background()
+application.stop_background()
+assert not application.background.is_alive(), "the timer must stop"
+try:
+    db.connect()
+    raise AssertionError("a closed database must not open a new pool on the way out")
+except RuntimeError:
+    pass
+print("  timer stopped, pool closed, safe to call twice")
+
 print()
 print("all checks passed")

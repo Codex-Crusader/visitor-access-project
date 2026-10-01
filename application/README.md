@@ -315,7 +315,7 @@ and 8 seconds, because Neon takes a moment to wake.
 | `static/admin.html`, `static/admin.js` | The admin page with every request                             |
 | `static/download.js`                   | Saves the CSV log. The gate page and the admin page share it  |
 | `render.yaml`                          | The Render settings: region, commands and setting names       |
-| `gunicorn.conf.py`                     | Opens the database and starts the timer in the worker process |
+| `gunicorn.conf.py`                     | Starts the database and timer in the worker, closes them on exit |
 | `static/sw.js`                         | Keeps the visitor page on the phone, so it opens offline      |
 
 ## Settings
