@@ -144,7 +144,7 @@ def connect() -> AbstractContextManager[Any]:
                 # The four gunicorn threads, plus the background loop.
                 min_size=1,
                 max_size=5,
-                kwargs={"row_factory": dict_row, "prepare_threshold": None},
+                kwargs={"row_factory": dict_row, "prepare_threshold": None, "connect_timeout": 10},
                 check=ConnectionPool.check_connection,
                 open=True,
             )

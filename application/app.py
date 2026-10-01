@@ -689,6 +689,13 @@ def background_loop():
 
 
 def start_background():
+    # Temporary: show the pool's own log, and every thread's stack 75 seconds
+    # after start, while a pool hang on Render is investigated.
+    import faulthandler, logging, sys
+    pool_log = logging.getLogger("psycopg.pool")
+    pool_log.addHandler(logging.StreamHandler(sys.stderr))
+    pool_log.setLevel(logging.INFO)
+    faulthandler.dump_traceback_later(75)
     db.init()
     threading.Thread(target=background_loop, daemon=True).start()
 
