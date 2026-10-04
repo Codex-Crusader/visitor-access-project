@@ -50,6 +50,9 @@ app's WhatsApp number. The reply always arrives, because the phone just wrote.
 The button allows 3 tries per address and 10 tries in all, each hour, for
 each key. A stranger who presses it only sends the key to its owner.
 
+`ADMIN_PHONE` must not be the gate desk number. If it is, the admin key is
+not sent, because guards must not get it. Set `ADMIN_PHONE` on Render.
+
 ## The admin page
 
 The admin page at `/admin` lists every stored request, newest first, 50 at a
@@ -138,9 +141,9 @@ to 17:00, Monday to Saturday, India time: 10:00 counts, 17:00 does not.
   so an approver who has not written in 24 hours may not get it.
 - The admin page and the CSV show `auto` in "decided by".
 - The visitor's page shows the approval time while the request waits.
-- While Render sleeps, the timer does not run. A waiting visitor's page asks
-  every 3 seconds, which keeps the server awake. When the server wakes, it
-  approves every request that is past its time.
+- While Render sleeps, the timer does not run. If the server is asleep at the
+  approval time, the request is approved when the server next wakes, for
+  example when the visitor or the guard opens a page.
 
 Set `AUTO_APPROVE_MINUTES=0` to turn this off.
 

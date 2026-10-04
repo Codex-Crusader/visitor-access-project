@@ -619,10 +619,16 @@ FORGOT_PER_HOUR = 3
 FORGOT_ALL_PER_HOUR = 10
 
 
+ADMIN_PHONE_IS_GUARD = ("Set ADMIN_PHONE on the server to a number that is not the gate desk."
+                        " Guards must not get the admin key.")
+
+
 def key_and_phone(which):
-    """(key, phone that receives it) for the gate or the admin key."""
+    """(key, phone that receives it), or ("", phone) when that phone must not get the key."""
     if which == "gate":
         return config.GATE_KEY, config.GUARD
+    if whatsapp.same_number(config.ADMIN_PHONE, config.GUARD):
+        return "", config.ADMIN_PHONE
     return config.ADMIN_KEY, config.ADMIN_PHONE
 
 
@@ -633,6 +639,8 @@ def forgot_key(which):
         return jsonify(error="Unknown key"), 404
     if which == "admin" and config.ADMIN_LOCKED:
         return jsonify(error=config.ADMIN_LOCKED), 503
+    if which == "admin" and whatsapp.same_number(config.ADMIN_PHONE, config.GUARD):
+        return jsonify(error=ADMIN_PHONE_IS_GUARD), 503
     if (too_many(f"forgot-{which}", FORGOT_PER_HOUR, 3600)
             or too_many(f"forgot-{which}", FORGOT_ALL_PER_HOUR, 3600, who="everyone")):
         return jsonify(error="Too many tries. Wait an hour and try again."), 429
@@ -851,8 +859,11 @@ stopping = threading.Event()
 
 
 def background_loop():
-    """Auto-approve and escalate requests nobody answered, then delete old records."""
-    while not stopping.wait(BACKGROUND_SECONDS):
+    """Auto-approve and escalate requests nobody answered, then delete old records.
+
+    The first round runs at once, so requests due while the server slept are handled on wake.
+    """
+    while True:
         try:
             auto_approve_due()
             escalate_due()
@@ -861,6 +872,8 @@ def background_loop():
                 app.logger.info("Deleted %s visit records past retention", removed)
         except Exception as failure:
             app.logger.error("Background work failed: %s", failure)
+        if stopping.wait(BACKGROUND_SECONDS):
+            return
 
 
 # Made here, started in the serving process by start_background().

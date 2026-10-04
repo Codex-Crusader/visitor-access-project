@@ -29,6 +29,9 @@ for reason, pair in config.APPROVERS.items():
 
 print(f"Phone number ID {config.META_PHONE_NUMBER_ID}")
 print(f"Admin phone     {config.ADMIN_PHONE}")
+if whatsapp.same_number(config.ADMIN_PHONE, config.GUARD):
+    print("WARNING: ADMIN_PHONE is the gate desk number. Forgot admin key stays off"
+          " until ADMIN_PHONE is a different number.")
 print(f"Signature check {'on' if config.META_APP_SECRET else 'off (META_APP_SECRET empty)'}")
 
 # The app runs the migrations when it starts, so this runs them too, and a

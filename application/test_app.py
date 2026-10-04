@@ -23,6 +23,7 @@ os.environ.update(
     MAIN_APPROVER="+911234567890",
     BACKUP_APPROVER="+911234567890",
     GUARD="+911234567890",
+    ADMIN_PHONE="+911234567899",
     GATE_KEY="test-gate-key",
     ADMIN_KEY="test-admin-key",
     GATE_DESK_PHONE="+912200000000",
@@ -1066,7 +1067,19 @@ finally:
     application.forget_hits()
 assert codes == [200] * 10 + [429], codes
 # KEY on WhatsApp answers only the numbers that hold a key.
-assert "test-gate-key" in say(APPROVER, "KEY")
+gate_only = say(APPROVER, "KEY")
+assert "test-gate-key" in gate_only and "test-admin-key" not in gate_only
+assert "test-admin-key" in say(config.ADMIN_PHONE[1:], "KEY")
+# A guard never gets the admin key, even when ADMIN_PHONE is the gate desk.
+real_admin_phone = config.ADMIN_PHONE
+config.ADMIN_PHONE = config.GUARD
+try:
+    application.forget_hits()
+    assert client.post("/api/forgot-key/admin").status_code == 503
+    assert "test-admin-key" not in say(APPROVER, "KEY")
+finally:
+    config.ADMIN_PHONE = real_admin_phone
+    application.forget_hits()
 sent_before = len(sent)
 client.post("/webhook/whatsapp", json=inbound(STRANGER, "KEY"))
 assert len(sent) == sent_before, "a stranger must get no reply"
@@ -1074,8 +1087,18 @@ print("  sent to the fixed number, 3 tries per caller and 10 in all each hour, K
 
 # Last, because it closes the database for the rest of this process.
 print("on exit, the timer stops and the database closes before Python shuts down")
+overdue = new_request()
+with db.connect() as conn:
+    conn.execute("UPDATE visits SET auto_approve_at = %s WHERE reference = %s",
+                 ("2020-01-01T00:00:00+00:00", overdue["reference"]))
 application.start_background()
 assert application.background.is_alive()
+# The first round runs at once, so a request due while the server slept is approved on wake.
+for _ in range(50):
+    if db.get(overdue["reference"])["status"] == "approved":
+        break
+    application.stopping.wait(0.1)
+assert db.get(overdue["reference"])["status"] == "approved", "the first round must not wait"
 application.stop_background()
 application.stop_background()
 assert not application.background.is_alive(), "the timer must stop"
