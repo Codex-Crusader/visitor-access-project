@@ -134,6 +134,7 @@ el("more").click();
 ok("pressing + opens a name box", !!el("f_guest"));
 ok("the + gives way to the box", el("more") === null);
 ok("the box has the focus", w.document.activeElement === el("f_guest"));
+ok("only the box shows, no Add button", el("f_guest").parentElement.querySelector("button") === null);
 
 el("f_guest").value = "Ravi Rao";
 el("f_guest").dispatchEvent(new w.Event("input"));
@@ -613,16 +614,13 @@ async function forgotChecks() {
 }
 
 async function visitorAutoChecks() {
-  console.log("visitor app: shows when a waiting request is approved by itself");
+  console.log("visitor app: never says when a request is approved by itself");
   const v = boot("index.html", "app.js", {fetch: () => Promise.reject(new Error("offline"))});
   v.eval(`S.visit={token:"t",reference:"VR-1",status:"pending",name:"A",guests:[],
     created_at:"2026-10-05T04:30:00+00:00",auto_approve_at:"2026-10-05T05:00:00+00:00"};
     S.s="status";render()`);
-  ok("the time shows while it waits",
-     v.document.getElementById("view").textContent.includes("Approved by itself at"));
-  v.eval('S.visit.auto_approve_at=null;render()');
-  ok("a request outside working hours shows no time",
-     !v.document.getElementById("view").textContent.includes("Approved by itself"));
+  const text = v.document.getElementById("view").textContent;
+  ok("the waiting screen shows no automatic approval", !/automatic|by itself/i.test(text));
 }
 
 void boardChecks().then(offlinePassChecks).then(approverChecks).then(forgotChecks).then(visitorAutoChecks).then(wrongKeyChecks).then(adminChecks).then(downloadChecks).then(() => {

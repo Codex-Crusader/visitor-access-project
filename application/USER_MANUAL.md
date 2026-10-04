@@ -1,7 +1,8 @@
-# User Manual
+# User, Setup and Maintenance Manual
 
-This manual tells you how to set up the visitor access app, and what each
-person who uses it does. The README explains how the app works inside.
+This manual tells you how to set up the visitor access app, what each person
+who uses it does, and how to look after it. The README explains how the app
+works inside.
 
 In this manual, `<address>` means the web address of your copy of the app,
 for example `https://your-app.onrender.com`. Render gives you this address in
@@ -113,6 +114,32 @@ The app builds its database tables by itself the first time it starts.
 
 If the approver gets nothing, read the Render log. Then read the section
 "When something fails" in the README.
+
+### Step 7: Before real use
+
+Do these before visitors use the app. A copy made for a demonstration does
+not have them.
+
+1. Run the app on the campus's own accounts: Meta, Neon, Render and GitHub.
+   Steps 1 to 6 make a new copy there.
+2. Set `GATE_KEY` and `ADMIN_KEY` to long random keys, different from each
+   other. See "Change a key".
+3. Use a permanent `META_TOKEN`. Step 1 tells you how to make it. The
+   temporary token from API Setup stops working after about 24 hours, and
+   other tokens can expire later. When the token stops working, no request
+   reaches an approver.
+4. Move from Meta's test number to the campus's own WhatsApp number. A test
+   number sends only to the few numbers on its recipient list. In the Meta
+   app, open WhatsApp, then API Setup, and add your phone number. Put its
+   Phone number ID in `META_PHONE_NUMBER_ID`. Create the `visit_request`
+   template again for that WhatsApp account, and wait until Meta approves it.
+   Meta can ask the business to verify itself first.
+5. Set `ADMIN_PHONE` to the admin's WhatsApp number. It must not be the gate
+   desk number, or "Forgot admin key?" stays off.
+6. Set the approver numbers for each reason, on the admin page or in the
+   settings.
+7. Give `<address>` to visitors, the gate key to the guards, and the admin
+   key to the admin.
 
 ## Visitor
 
@@ -242,7 +269,7 @@ you change it, as the privacy screen promises.
 
 ### Change a key
 
-Use long random keys for real use. Short demo keys are easy to guess.
+Use long random keys. A short key is easy to guess.
 
 1. Open the service on Render, then Environment.
 2. Change `GATE_KEY`, `ADMIN_KEY`, or both. The two keys must differ.

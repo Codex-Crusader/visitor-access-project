@@ -140,7 +140,7 @@ to 17:00, Monday to Saturday, India time: 10:00 counts, 17:00 does not.
 - When it approves, both approvers get a WhatsApp message. It is plain text,
   so an approver who has not written in 24 hours may not get it.
 - The admin page and the CSV show `auto` in "decided by".
-- The visitor's page shows the approval time while the request waits.
+- The visitor never sees the approval time or who approved.
 - While Render sleeps, the timer does not run. If the server is asleep at the
   approval time, the request is approved when the server next wakes, for
   example when the visitor or the guard opens a page.
@@ -346,7 +346,7 @@ and 8 seconds, because Neon takes a moment to wake.
 
 | File                                   | What it holds                                                 |
 |----------------------------------------|---------------------------------------------------------------|
-| `USER_MANUAL.md`                       | What visitors, approvers, guards and admins do, step by step  |
+| `USER_MANUAL.md`                       | Setup, daily use and upkeep, for the people who run the app   |
 | `app.py`                               | Flask routes, the escalation timer and the delete timer       |
 | `db.py`                                | Postgres storage, and the migrations that build its tables    |
 | `testdb.py`                            | Starts a throwaway Postgres for the two test files            |

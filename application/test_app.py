@@ -1037,7 +1037,8 @@ assert len(notices) == 2, notices
 application.auto_approve_due()
 assert len(sent) == before + 2, "a second round must not approve or notify again"
 view = client.get(f"/api/visit/{due['token']}").get_json()
-assert view["status"] == "approved" and view["decided_by"] == "auto" and view["entry_code"]
+assert view["status"] == "approved" and view["entry_code"]
+assert "decided_by" not in view and "auto_approve_at" not in view, "the visitor must not see it"
 print("  10:00 to 16:59 Monday to Saturday only, a NO first wins, approvers told once")
 
 print("a forgotten key goes to its own number, never to the page")

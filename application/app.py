@@ -389,6 +389,9 @@ def read_visit(token):
     # The pass shows one code at a time: the entry code until the guard lets
     # the visitor in, then the exit code. Before approval and after the exit,
     # neither.
+    # The visitor does not see how or when a request is approved.
+    for private in ("auto_approve_at", "decided_by"):
+        visit.pop(private, None)
     showing = {db.APPROVED: db.ENTRY, db.INSIDE: db.EXIT}.get(visit["status"])
     if showing:
         visit[f"{showing}_code"] = codes[showing]

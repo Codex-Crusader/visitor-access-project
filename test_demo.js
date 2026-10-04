@@ -94,6 +94,7 @@ ok("no name box before the +", $("f_guest") === null);
 $("more").click();
 ok("pressing + opens a name box", !!$("f_guest") && $("more") === null);
 ok("the box has the focus", w.document.activeElement === $("f_guest"));
+ok("only the box shows, no Add button", $("f_guest").parentElement.querySelector("button") === null);
 $("f_guest").value = "Ravi Rao";
 $("f_guest").dispatchEvent(new w.Event("input"));
 $("f_guest").dispatchEvent(new w.KeyboardEvent("keydown", {key: "Enter"}));

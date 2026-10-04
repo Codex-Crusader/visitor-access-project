@@ -40,13 +40,13 @@ const fact=(k,v)=>`<div><span>${k}</span><b>${x(v||"—")}</b></div>`;
 // disappears cannot be written into a template and still read as valid HTML.
 const flag=k=>S.e[k]?"bad":"";
 const note=k=>S.e[k]?`<div class="bad-note" id="e_${k}">${x(S.e[k])}</div>`:"";
-// A "+" button first. Pressing it opens a box for one more name. Adding the
-// name closes the box and brings the "+" back. The server keeps ten guests at
+// A "+" button first. Pressing it opens a box for one more name. Enter or Done
+// adds the name, closes the box and brings the "+" back. The server keeps ten guests at
 // most, so the "+" goes away at ten rather than letting an eleventh vanish.
 const guestBox=()=>S.adding
   ?`<div class="add-row"><input id="f_guest" class="${flag("guest")}" value="${x(S.f.guest)}"
       oninput="set('guest',this.value)" placeholder="Their name" aria-label="Name of the person with you" enterkeyhint="done">
-      <button onclick="add()">Add</button></div>${note("guest")}`
+      </div>${note("guest")}`
   :S.g.length<MAX_GUESTS
     ?`<button type="button" class="add-person" id="more" onclick="openAdd()"><span class="plus" aria-hidden="true">+</span>Add a person</button>`
     :"";
@@ -152,7 +152,6 @@ function view(){
       <div class="facts">${fact("Reference",v.reference)}
         ${fact("With",st()==="escalated"?"Backup approver":"First approver")}
         ${st()==="escalated"?"":fact("Backup takes over",plus(v.created_at,S.cfg.escalate_minutes))}
-        ${v.auto_approve_at?fact("Approved by itself at",hm(v.auto_approve_at)+", if no one answers"):""}
         ${v.guests.length?fact("With you",v.guests.join(", ")):""}</div>
       ${gate()}`;}
 
@@ -344,7 +343,7 @@ function again(){forget();S.g=[];closeAdd();S.e={};S.err="";go("step1",0)}
 // The phone keeps the last pass it saw, so the pass opens with a weak signal
 // or none. Only what the pass and status screens draw is kept: no phone
 // number and no address. A closed or unknown pass is forgotten.
-const PASS_FIELDS=["token","reference","status","name","guests","created_at","decided_at","auto_approve_at",
+const PASS_FIELDS=["token","reference","status","name","guests","created_at","decided_at",
   "entered_at","exited_at","entry_code","exit_code"];
 function keep(v){
   S.visit=v;S.seen=new Date().toISOString();
