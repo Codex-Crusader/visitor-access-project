@@ -152,6 +152,7 @@ function view(){
       <div class="facts">${fact("Reference",v.reference)}
         ${fact("With",st()==="escalated"?"Backup approver":"First approver")}
         ${st()==="escalated"?"":fact("Backup takes over",plus(v.created_at,S.cfg.escalate_minutes))}
+        ${v.auto_approve_at?fact("Approved by itself at",hm(v.auto_approve_at)+", if no one answers"):""}
         ${v.guests.length?fact("With you",v.guests.join(", ")):""}</div>
       ${gate()}`;}
 
@@ -343,7 +344,7 @@ function again(){forget();S.g=[];closeAdd();S.e={};S.err="";go("step1",0)}
 // The phone keeps the last pass it saw, so the pass opens with a weak signal
 // or none. Only what the pass and status screens draw is kept: no phone
 // number and no address. A closed or unknown pass is forgotten.
-const PASS_FIELDS=["token","reference","status","name","guests","created_at","decided_at",
+const PASS_FIELDS=["token","reference","status","name","guests","created_at","decided_at","auto_approve_at",
   "entered_at","exited_at","entry_code","exit_code"];
 function keep(v){
   S.visit=v;S.seen=new Date().toISOString();
@@ -371,6 +372,7 @@ class Refused extends Error{constructor(message,status){super(message);this.stat
 const unknown=err=>err instanceof Refused&&err.status===404;
 
 // Give up on a stalled request instead of hanging forever.
+/** @returns {Promise<*>} the server's JSON answer */
 async function load(url,options={},ms=POLL_TIMEOUT){
   const stop=new AbortController();
   const timer=setTimeout(()=>stop.abort(),ms);

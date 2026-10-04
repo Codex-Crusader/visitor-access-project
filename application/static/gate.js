@@ -1,4 +1,4 @@
-/* global saveFile */  // from download.js, which gate.html loads first
+/* global saveFile, askForKey */  // from shared.js, which gate.html loads first
 const CALL_TIMEOUT = 75000;  // a sleeping free server can take ~50s to wake
 const BOARD_EVERY = 30000;   // how often the lists refresh by themselves
 const LONG_HOURS = 8;        // inside longer than this is marked on the board
@@ -27,6 +27,7 @@ const tidy = text => {
 
 let visit = null;
 let notice = "";
+let keySent = "";
 let busy = "";
 // The last lists the server sent, when they came, and why the latest refresh
 // failed, if it did. A failed refresh keeps the old lists on screen.
@@ -181,9 +182,11 @@ function render() {
     renderLive();
     out.innerHTML = `
       ${notice ? problem(notice) : ""}
+      ${keySent ? banner("good", "Key sent", keySent) : ""}
       <label for="k">Gate key</label>
       <input id="k" class="key" type="password" autocomplete="current-password" enterkeyhint="go">
-      <button class="btn" onclick="saveKey()">Save key</button>`;
+      <button class="btn" onclick="saveKey()">Save key</button>
+      <button class="btn plain" id="forgot" onclick="sendKey()">Forgot gate key?</button>`;
     const box = el("k");
     box.onkeydown = e => { if (e.key === "Enter") saveKey(); };
     box.focus();
@@ -244,6 +247,19 @@ async function loadBoard() {
   if (!busy) renderBoard();
 }
 
+// Asks the server to send the gate key to the gate desk WhatsApp. The page never sees the key.
+async function sendKey() {
+  el("forgot").disabled = true;
+  el("forgot").textContent = "Sending…";
+  const [ok, data] = await askForKey("gate");
+  notice = ok ? "" : data.error;
+  keySent = ok
+    ? `We sent the gate key by WhatsApp to the gate desk number that ends in ${data.sent_to}.`
+      + " It can take a minute. If it does not arrive, send KEY from that phone to the app's WhatsApp number."
+    : "";
+  render();
+}
+
 function saveKey() {
   const value = el("k").value.trim();
   if (!value) {
@@ -253,6 +269,7 @@ function saveKey() {
   }
   setKey(value);
   notice = "";
+  keySent = "";
   render();
   codeBox.focus();
   void loadBoard();

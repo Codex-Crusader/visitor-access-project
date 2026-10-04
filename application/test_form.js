@@ -526,7 +526,106 @@ async function offlinePassChecks() {
   ok("a closed pass is forgotten", v.eval('localStorage.getItem("pass")') === null);
 }
 
-void boardChecks().then(offlinePassChecks).then(wrongKeyChecks).then(adminChecks).then(downloadChecks).then(() => {
+// ------------------------------------- approvers, forgotten keys, auto-approval
+const tick = () => new Promise(done => setTimeout(done, 0));
+
+async function approverChecks() {
+  console.log("admin page: change a reason's two approvers");
+  let table = [{reason: "Delivery", main: "+911", backup: "+912"}];
+  const posts = [];
+  const answer = (status, body) => Promise.resolve({status, ok: status < 300, json: () => Promise.resolve(body)});
+  const admin = boot("admin.html", "admin.js", {
+    fetch: (url, options = {}) => {
+      if (options.method === "POST") {
+        const sent = JSON.parse(options.body);
+        posts.push(sent);
+        if (sent.backup === sent.main) {
+          return answer(400, {error: "Check the numbers.",
+                              fields: {backup: "The backup must be a different number from the approver."}});
+        }
+        table = [{reason: sent.reason, main: sent.main, backup: sent.backup}];
+        return answer(200, {approvers: table});
+      }
+      return answer(200, url.includes("/summary")
+        ? {counts: {}, escalate_minutes: 15, retain_days: 90, auto_approve_minutes: 30,
+           work_hours: [10, 17], work_days: ["Mon", "Sat"], approvers: table}
+        : {visits: [{reference: "VR-1", name: "A", phone: "1", address: "x", reason: "Delivery",
+                     visiting: "y", guests: [], status: "approved", decided_by: "auto",
+                     created_at: "2026-10-05T05:00:00+00:00", approvers: ["+911", "+912"]}],
+           next: null});
+    },
+  });
+  const byId = id => admin.document.getElementById(id);
+  admin.eval('localStorage.setItem("adminkey","k")');
+  admin.eval("render(); refresh()");
+  await tick(); await tick();
+  ok("the rules name the automatic approval",
+     byId("rules").textContent.includes("approved automatically after 30 minutes"));
+  ok("an automatic approval says so", byId("list").innerHTML.includes("Approved automatically"));
+
+  byId("approvers").querySelector("[data-edit]").click();
+  ok("Change opens both number boxes", !!byId("ap-main") && !!byId("ap-backup"));
+  byId("ap-backup").value = "";
+  byId("ap-save").click();
+  await tick();
+  ok("an empty backup is refused on the page", posts.length === 0
+     && byId("approvers").textContent.includes("backup approver's number"));
+  byId("ap-backup").value = "+911";
+  byId("ap-save").click();
+  await tick(); await tick();
+  ok("the server's reason shows under the box",
+     byId("approvers").textContent.includes("different number"));
+  ok("the typed numbers stay in the boxes", byId("ap-backup").value === "+911");
+  byId("ap-main").value = "+919000000011";
+  byId("ap-backup").value = "+919000000012";
+  byId("ap-save").click();
+  await tick(); await tick();
+  ok("both numbers go to the server", posts.at(-1).main === "+919000000011"
+     && posts.at(-1).backup === "+919000000012" && posts.at(-1).reason === "Delivery");
+  ok("the table shows the new numbers", byId("approvers").textContent.includes("+919000000012")
+     && !byId("ap-main"));
+  ok("it says the change is saved", byId("approver-note").textContent.includes("Saved"));
+}
+
+async function forgotChecks() {
+  console.log("both pages: Forgot key sends the key, and never shows it");
+  for (const [page, script, store, which] of [["gate.html", "gate.js", "gatekey", "gate"],
+                                              ["admin.html", "admin.js", "adminkey", "admin"]]) {
+    const asked = [];
+    const win = boot(page, script, {
+      fetch: (url, options = {}) => {
+        asked.push([url, options.method]);
+        return Promise.resolve({status: 200, ok: true, json: () => Promise.resolve({sent_to: "7890"})});
+      },
+    });
+    win.eval(`localStorage.removeItem("${store}"); render()`);
+    const button = win.document.getElementById("forgot");
+    ok(`${which}: the key box offers Forgot ${which} key?`, !!button
+       && button.textContent === `Forgot ${which} key?`);
+    button.click();
+    await tick(); await tick();
+    const text = win.document.body.textContent;
+    ok(`${which}: it asks the server to send the ${which} key`,
+       asked.some(([url, method]) => url === `/api/forgot-key/${which}` && method === "POST"));
+    ok(`${which}: it names the last four digits and the KEY way`,
+       text.includes("ends in 7890") && text.includes("send KEY"));
+  }
+}
+
+async function visitorAutoChecks() {
+  console.log("visitor app: shows when a waiting request is approved by itself");
+  const v = boot("index.html", "app.js", {fetch: () => Promise.reject(new Error("offline"))});
+  v.eval(`S.visit={token:"t",reference:"VR-1",status:"pending",name:"A",guests:[],
+    created_at:"2026-10-05T04:30:00+00:00",auto_approve_at:"2026-10-05T05:00:00+00:00"};
+    S.s="status";render()`);
+  ok("the time shows while it waits",
+     v.document.getElementById("view").textContent.includes("Approved by itself at"));
+  v.eval('S.visit.auto_approve_at=null;render()');
+  ok("a request outside working hours shows no time",
+     !v.document.getElementById("view").textContent.includes("Approved by itself"));
+}
+
+void boardChecks().then(offlinePassChecks).then(approverChecks).then(forgotChecks).then(visitorAutoChecks).then(wrongKeyChecks).then(adminChecks).then(downloadChecks).then(() => {
   console.log();
   console.log(failures ? `${failures} check(s) FAILED` : "all form checks passed");
   process.exit(failures ? 1 : 0);

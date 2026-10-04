@@ -8,6 +8,7 @@ import contextlib
 import logging
 import os
 import re
+from datetime import datetime, timezone
 
 import psycopg
 from psycopg_pool import PoolTimeout
@@ -561,7 +562,7 @@ with db.connect() as conn:
                  ("2020-01-01T00:00:00+00:00", b["reference"]))
 due = db.due_for_escalation()
 assert [v["reference"] for v in due] == [b["reference"]], due
-whatsapp.notify_backup(due[0])
+whatsapp.notify_backup(due[0], db.approvers_for(db.approver_table(), due[0]["reason"]))
 db.mark_escalated(b["reference"])
 after = client.get(f"/api/visit/{b['token']}").get_json()
 assert after["status"] == "escalated" and after["escalated_at"]
@@ -626,13 +627,15 @@ try:
     wrong = say(DELIVERY_MAIN[1:], f"YES {student['reference']}")
     assert "another approver" in wrong, wrong
     # Each approver's waiting list holds only their own reasons.
-    waiting_delivery = [v["reference"] for v in application.waiting_for(DELIVERY_MAIN)]
+    table = db.approver_table()
+    waiting_delivery = [v["reference"] for v in application.waiting_for(DELIVERY_MAIN, table)]
     assert waiting_delivery == [delivery["reference"]], waiting_delivery
     assert delivery["reference"] not in [
-        v["reference"] for v in application.waiting_for(APPROVER)]
+        v["reference"] for v in application.waiting_for(APPROVER, table)]
     # The backup for the reason can decide it, before or after escalation.
     assert "is now approved" in say(DELIVERY_BACKUP[1:], f"YES {delivery['reference']}")
     assert db.get(delivery["reference"])["status"] == "approved"
+    assert db.get(delivery["reference"])["decided_by"] == db.BY_BACKUP
 
     # Escalation goes to the backup of the request's own reason.
     late = client.post("/api/requests", json={**payload, "reason": "Delivery"}).get_json()
@@ -693,7 +696,7 @@ while True:
     for row in page["visits"]:
         # The token is the visitor's private status link. It never leaves.
         assert "token" not in row, row
-        assert row["approvers"] == list(config.approvers_for(row["reason"]))
+        assert row["approvers"] == list(db.approvers_for(db.approver_table(), row["reason"]))
     seen += [row["reference"] for row in page["visits"]]
     cursor = page["next"]
     if not cursor:
@@ -728,7 +731,7 @@ for path, headers in (("/api/admin/visits", ADMIN),
 print(f"  {total} visits over {pages} pages, none twice, none missed, no token, no code")
 
 print("pages are served")
-for path in ("/", "/app.js", "/gate", "/gate.js", "/admin", "/admin.js", "/download.js"):
+for path in ("/", "/app.js", "/gate", "/gate.js", "/admin", "/admin.js", "/shared.js", "/sw.js"):
     assert client.get(path).status_code == 200, path
 cfg = client.get("/api/config").get_json()
 assert cfg["escalate_minutes"] == 30 and cfg["retain_days"] == 1
@@ -959,6 +962,115 @@ try:
 finally:
     db.migrate, db.START_WAITS = real_migrate, real_waits
 print("  retried after a drop, a full pool fails at once, the start waits for the database")
+
+print("the admin page changes a reason's two approvers")
+NEW_MAIN, NEW_BACKUP = "+919000000011", "+919000000012"
+
+
+def set_pair(main_number, backup_number, reason="Event", key=None):
+    return client.post("/api/admin/approvers", headers=key or ADMIN,
+                       json={"reason": reason, "main": main_number, "backup": backup_number})
+
+
+assert set_pair(NEW_MAIN, NEW_BACKUP, key=KEY).status_code == 403
+assert set_pair(NEW_MAIN, NEW_BACKUP, reason="Party").status_code == 400
+for bad_main, bad_backup, field in (("", NEW_BACKUP, "main"), (NEW_MAIN, "", "backup"),
+                                    ("98765", NEW_BACKUP, "main"),
+                                    (NEW_MAIN, "+91 90000 00011", "backup")):
+    refused = set_pair(bad_main, bad_backup)
+    assert refused.status_code == 400 and field in refused.get_json()["fields"], field
+saved = set_pair("+91 90000-00011", NEW_BACKUP)
+assert saved.status_code == 200, saved.get_json()
+event_row = {"reason": "Event", "main": NEW_MAIN, "backup": NEW_BACKUP}
+assert event_row in saved.get_json()["approvers"]
+assert event_row in client.get("/api/admin/summary", headers=ADMIN).get_json()["approvers"]
+event = client.post("/api/requests", json={**payload, "reason": "Event"}).get_json()
+assert templates[-1][0] == NEW_MAIN, templates[-1]
+# The old number loses the reason at once, and the new one can decide it.
+assert "another approver" in say(APPROVER, f"YES {event['reference']}")
+# An approver who is not the guard can look a request up.
+assert event["reference"] in say(NEW_MAIN[1:], event["reference"])
+assert "is now approved" in say(NEW_MAIN[1:], f"YES {event['reference']}")
+assert db.get(event["reference"])["decided_by"] == db.BY_MAIN
+with db.connect() as conn:
+    conn.execute("DELETE FROM approvers")
+print("  both numbers required and checked, new number used at once, old one refused")
+
+print("a request made in working hours is approved by itself")
+
+
+def ist(day, hour, minute=0):
+    return datetime(2026, 10, day, hour, minute, tzinfo=config.WORK_TIMEZONE)
+
+
+# Monday 5, Saturday 10 and Sunday 11 October 2026.
+assert application.auto_approve_time(ist(5, 9, 59)) is None
+assert application.auto_approve_time(ist(5, 10)) == "2026-10-05T05:00:00+00:00"
+assert application.auto_approve_time(ist(5, 16, 59)) == "2026-10-05T11:59:00+00:00"
+assert application.auto_approve_time(ist(5, 17)) is None
+assert application.auto_approve_time(ist(10, 12)) is not None
+assert application.auto_approve_time(ist(11, 12)) is None
+# 04:30 UTC is 10:00 in India, so it counts.
+assert application.auto_approve_time(datetime(2026, 10, 5, 4, 30, tzinfo=timezone.utc)) \
+    == "2026-10-05T05:00:00+00:00"
+
+due, with_backup, declined, not_yet = (new_request() for _ in range(4))
+with db.connect() as conn:
+    for case, moment in ((due, "2020-01-01T00:00:00+00:00"),
+                         (with_backup, "2020-01-01T00:00:00+00:00"),
+                         (declined, "2020-01-01T00:00:00+00:00"),
+                         (not_yet, "2999-01-01T00:00:00+00:00")):
+        conn.execute("UPDATE visits SET auto_approve_at = %s WHERE reference = %s",
+                     (moment, case["reference"]))
+db.mark_escalated(with_backup["reference"])
+say(APPROVER, f"NO {declined['reference']}")
+before = len(sent)
+application.auto_approve_due()
+for case in (due, with_backup):
+    got = db.get(case["reference"])
+    assert got["status"] == "approved" and got["decided_by"] == db.BY_AUTO, got
+assert db.get(declined["reference"])["status"] == "declined"
+assert db.get(not_yet["reference"])["status"] == "pending"
+notices = [body for _, body in sent[before:] if "approved automatically" in body]
+assert len(notices) == 2, notices
+application.auto_approve_due()
+assert len(sent) == before + 2, "a second round must not approve or notify again"
+view = client.get(f"/api/visit/{due['token']}").get_json()
+assert view["status"] == "approved" and view["decided_by"] == "auto" and view["entry_code"]
+print("  10:00 to 16:59 Monday to Saturday only, a NO first wins, approvers told once")
+
+print("a forgotten key goes to its own number, never to the page")
+application.forget_hits()
+sent.clear()
+gate_reply = client.post("/api/forgot-key/gate")
+assert gate_reply.get_json() == {"sent_to": whatsapp.digits(config.GUARD)[-4:]}
+assert sent[-1][0] == config.GUARD and "test-gate-key" in sent[-1][1]
+assert "test-gate-key" not in gate_reply.get_data(as_text=True)
+admin_reply = client.post("/api/forgot-key/admin")
+assert admin_reply.status_code == 200
+assert sent[-1][0] == config.ADMIN_PHONE and "test-admin-key" in sent[-1][1]
+assert "test-admin-key" not in admin_reply.get_data(as_text=True)
+assert client.post("/api/forgot-key/wifi").status_code == 404
+client.post("/api/forgot-key/gate")
+client.post("/api/forgot-key/gate")
+assert client.post("/api/forgot-key/gate").status_code == 429
+# Ten tries an hour in all, even from many addresses.
+application.forget_hits()
+config.BEHIND_PROXY = True
+try:
+    codes = [client.post("/api/forgot-key/admin",
+                         headers={"X-Forwarded-For": f"10.0.0.{n}"}).status_code
+             for n in range(11)]
+finally:
+    config.BEHIND_PROXY = False
+    application.forget_hits()
+assert codes == [200] * 10 + [429], codes
+# KEY on WhatsApp answers only the numbers that hold a key.
+assert "test-gate-key" in say(APPROVER, "KEY")
+sent_before = len(sent)
+client.post("/webhook/whatsapp", json=inbound(STRANGER, "KEY"))
+assert len(sent) == sent_before, "a stranger must get no reply"
+print("  sent to the fixed number, 3 tries per caller and 10 in all each hour, KEY works")
 
 # Last, because it closes the database for the rest of this process.
 print("on exit, the timer stops and the database closes before Python shuts down")

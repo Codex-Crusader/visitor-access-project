@@ -17,6 +17,8 @@ GATE_CODE = re.compile(r"^([A-HJ-NP-Z]{2})-?(\d{4})$")
 # One phone number can be approver and guard, so each job has its own word.
 DECIDE_WORDS = {"YES": db.APPROVED, "NO": db.DECLINED}
 GATE_WORDS = {"IN": db.ENTRY, "OUT": db.EXIT}
+# The gate desk or admin number gets its key back.
+KEY_WORD = "KEY"
 
 HELP = (
     "Send a reference like VR-4022, or a pass code like KT-4821, to look it up.\n"
@@ -220,7 +222,7 @@ def read_reply(body):
     """Work out what the sender wants.
 
     Returns (kind, value, key) where kind is one of: decide, gate, lookup,
-    help. The key is a reference for decide, the code as typed for gate, and
+    key, help. The key is a reference for decide, the code as typed for gate, and
     a reference or a pass code for lookup.
     """
     parts = body.strip().split()
@@ -229,6 +231,8 @@ def read_reply(body):
 
     word = parts[0].upper()
 
+    if word == KEY_WORD and len(parts) == 1:
+        return "key", None, None
     if word in DECIDE_WORDS:
         return "decide", DECIDE_WORDS[word], normalize_reference(parts[1] if len(parts) > 1 else "")
     # A code may come with a space in it, as KT 4821, so the rest is joined.
@@ -313,11 +317,20 @@ def notify(phone, visit, escalated=False):
     return problem
 
 
-def notify_approver(visit):
-    main, _ = config.approvers_for(visit["reason"])
-    return notify(main, visit)
+def notify_approver(visit, approvers):
+    """approvers is the visit's (main, backup)."""
+    return notify(approvers[0], visit)
 
 
-def notify_backup(visit):
-    _, backup = config.approvers_for(visit["reason"])
-    return notify(backup, visit, escalated=True)
+def notify_backup(visit, approvers):
+    return notify(approvers[1], visit, escalated=True)
+
+
+def auto_approved_body(visit, minutes):
+    return (f"{visit['reference']} was approved automatically. No one answered within"
+            f" {minutes} minutes of the request, made in working hours.\n\n{brief(visit)}")
+
+
+def key_body(name, key):
+    return (f"The {name} key for the visitor access app is:\n{key}\n\n"
+            "Do not share it outside the people who need it.")

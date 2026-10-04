@@ -66,6 +66,7 @@ input:focus{background:var(--paper);border-color:var(--brand2);outline:none;box-
 
 .note{border-radius:var(--r);padding:14px 16px;margin:0 0 16px;border:1px solid;font-size:.93rem}
 .note.bad{background:var(--stopBg);border-color:var(--stopLn);color:var(--stop)}
+.note.good{background:var(--goBg);border-color:var(--goLn);color:var(--go)}
 
 .tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(118px,1fr));gap:10px;margin-bottom:18px}
 .tile{padding:13px 14px;border:1px solid var(--line);border-radius:var(--r);text-align:left;
@@ -111,6 +112,11 @@ th,td{text-align:left;padding:10px 12px;border-bottom:1px solid var(--line)}
 th{color:var(--soft);font-weight:600;font-size:.8rem}
 .wrap{overflow-x:auto;border:1px solid var(--line);border-radius:var(--r)}
 .hint{color:var(--soft);font-size:.85rem;margin:10px 0 0}
+td .small{padding:6px 12px;border:1px solid var(--line);border-radius:999px;font-size:.82rem;font-weight:600}
+.pair{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+@media(max-width:620px){.pair{grid-template-columns:1fr}}
+.pair .btn{margin-top:0}
+.err{color:var(--stop);font-size:.82rem;margin:5px 0 0}
 </style>
 </head>
 <body>
@@ -125,7 +131,7 @@ th{color:var(--soft);font-weight:600;font-size:.8rem}
   </header>
   <main class="main" id="main"></main>
 </div>
-<script src="download.js"></script>
+<script src="shared.js"></script>
 <script src="admin.js"></script>
 </body>
 </html>

@@ -98,6 +98,22 @@ CREATE INDEX visits_status_decided ON visits (status, decided_at);
 -- The purge deletes old message ids every 30 seconds.
 CREATE INDEX seen_messages_seen ON seen_messages (seen);
 """,
+    # 2: approvers set on the admin page, and auto-approval.
+    """
+-- Set on the admin page. A reason with no row uses the settings.
+CREATE TABLE approvers (
+  reason     TEXT PRIMARY KEY,
+  main       TEXT NOT NULL,
+  backup     TEXT NOT NULL,
+  changed_at TEXT NOT NULL
+);
+
+-- Empty for a request made outside working hours.
+ALTER TABLE visits ADD COLUMN auto_approve_at TEXT;
+-- main, backup or auto. Never a phone: the visitor's page shows this row.
+ALTER TABLE visits ADD COLUMN decided_by TEXT;
+CREATE INDEX visits_status_auto ON visits (status, auto_approve_at);
+""",
 ]
 
 # Any fixed number. Two instances that start at once, as when Render deploys,
@@ -284,7 +300,7 @@ def new_gate_code():
             return f"{letters}-{secrets.randbelow(10000):04d}"
 
 
-def create(fields, guests):
+def create(fields, guests, auto_approve_at=None):
     """Insert a visit and its two codes. Retries when a code is already taken."""
     for _ in range(CODE_ATTEMPTS):
         reference = f"VR-{random.randint(1000, 9999)}"
@@ -296,8 +312,8 @@ def create(fields, guests):
                 )
                 row = conn.execute(
                     "INSERT INTO visits (reference, token, name, phone, address,"
-                    " reason, visiting, guests, status, created_at)"
-                    " VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING *",
+                    " reason, visiting, guests, status, created_at, auto_approve_at)"
+                    " VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING *",
                     (
                         reference,
                         secrets.token_urlsafe(16),
@@ -309,6 +325,7 @@ def create(fields, guests):
                         json.dumps(guests),
                         PENDING,
                         now(),
+                        auto_approve_at,
                     ),
                 ).fetchone()
             return to_dict(row)
@@ -428,7 +445,8 @@ def at_gate(expected_hours):
 # visitor's private status link and must not leave the server.
 ADMIN_FIELDS = (
     "visits.reference, name, phone, address, reason, visiting, guests, status,"
-    " created_at, escalated_at, decided_at, entered_at, exited_at"
+    " created_at, escalated_at, decided_at, decided_by, auto_approve_at,"
+    " entered_at, exited_at"
 )
 
 
@@ -517,15 +535,59 @@ def mark_escalated(reference):
         )
 
 
-def decide(reference, status):
-    """Record a decision. Returns the decided visit, or None if it was already decided."""
+# Values of decided_by.
+BY_MAIN = "main"
+BY_BACKUP = "backup"
+BY_AUTO = "auto"
+
+
+def decide(reference, status, by):
+    """Record a decision. Returns the visit, or None if it was already decided."""
     with connect() as conn:
         row = conn.execute(
-            "UPDATE visits SET status = %s, decided_at = %s WHERE reference = %s"
-            " AND status IN (%s, %s) RETURNING *",
-            (status, now(), reference, *OPEN_STATUSES),
+            "UPDATE visits SET status = %s, decided_at = %s, decided_by = %s"
+            " WHERE reference = %s AND status IN (%s, %s) RETURNING *",
+            (status, now(), by, reference, *OPEN_STATUSES),
         ).fetchone()
     return to_dict(row) if row is not None else None
+
+
+@read
+def due_for_auto_approval():
+    """Open requests whose automatic approval time has passed."""
+    with connect() as conn:
+        rows = conn.execute(
+            "SELECT * FROM visits WHERE status IN (%s, %s) AND auto_approve_at <= %s",
+            (*OPEN_STATUSES, now()),
+        ).fetchall()
+    return [to_dict(row) for row in rows]
+
+
+@read
+def approver_table():
+    """Each reason's (main, backup): the admin page's choice, else the settings."""
+    with connect() as conn:
+        rows = conn.execute("SELECT reason, main, backup FROM approvers").fetchall()
+    table = dict(config.APPROVERS)
+    table.update({row["reason"]: (row["main"], row["backup"])
+                  for row in rows if row["reason"] in table})
+    return table
+
+
+def approvers_for(table, reason):
+    """(main, backup) for a visit's reason. A typed-in reason counts as the reason Other."""
+    return table.get(reason, table["Other"])
+
+
+def save_approvers(reason, main, backup):
+    """Set a reason's two approvers, in place of the settings."""
+    with connect() as conn:
+        conn.execute(
+            "INSERT INTO approvers (reason, main, backup, changed_at) VALUES (%s, %s, %s, %s)"
+            " ON CONFLICT (reason) DO UPDATE SET main = EXCLUDED.main,"
+            " backup = EXCLUDED.backup, changed_at = EXCLUDED.changed_at",
+            (reason, main, backup, now()),
+        )
 
 
 def _stamp(reference, status, column, required):

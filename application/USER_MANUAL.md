@@ -79,6 +79,7 @@ out of the repository.
    | `MAIN_APPROVER`        | The approver's number, like `+911234567890`   |
    | `BACKUP_APPROVER`      | The backup approver's number                  |
    | `GUARD`                | The gate desk's WhatsApp number               |
+   | `ADMIN_PHONE`          | The admin's WhatsApp number                   |
    | `GATE_DESK_PHONE`      | The number on the Call gate desk button       |
    | `GATE_KEY`             | The password for the gate page                |
    | `ADMIN_KEY`            | The password for the admin page               |
@@ -154,6 +155,10 @@ If you do not answer in time, the backup approver gets the same request. The
 time is `ESCALATE_MINUTES`, 15 minutes unless you change it. The first reply
 decides. A reply after that changes nothing.
 
+If the request was made between 10:00 and 17:00, Monday to Saturday, and no
+one answers in 30 minutes, the app approves it automatically. Both approvers
+get a message that says so. To stop a visitor, reply `NO` before that time.
+
 ## Guard
 
 You can work from the gate page or from WhatsApp. Both record the same thing.
@@ -161,7 +166,10 @@ You can work from the gate page or from WhatsApp. Both record the same thing.
 ### On the gate page
 
 1. Open `<address>/gate`.
-2. Type the gate key. The page asks for it once on each phone.
+2. Type the gate key. The page asks for it once on each phone. If you do not
+   know it, tap "Forgot gate key?". The app sends the key to the gate desk
+   WhatsApp. If it does not arrive, send `KEY` from the gate desk phone to the
+   app's WhatsApp number.
 3. Type the code on the visitor's pass in the box, and tap Check pass. Small
    letters and spaces are fine, for example `kt 4821`.
 4. If the pass is approved, tap Record entry.
@@ -195,17 +203,34 @@ reference.
 | Declined               | Do not let the visitor in                   |
 | ... is the exit code   | Ask for the entry code                      |
 | This pass is closed    | The visit is over. The code is dead         |
-| Wrong gate key         | Type the gate key again                     |
+| Wrong gate key         | Tap "Forgot gate key?", then type the key   |
 
 ## Admin
 
 1. Open `<address>/admin`.
-2. Type the admin key. It is different from the gate key.
+2. Type the admin key. It is different from the gate key. If you do not know
+   it, tap "Forgot admin key?". The app sends the key to `ADMIN_PHONE` on
+   WhatsApp. If it does not arrive, send `KEY` from that phone to the app's
+   WhatsApp number.
 3. Tap a tile to show only the requests with that status.
 4. Use the search box to find a name, phone number, reference or the person
    visited.
 5. Tap a request to see all its details and times.
 6. Use Download CSV to save the whole log.
+
+### Change the approvers
+
+1. At the end of the admin page, find "Who approves each reason".
+2. Tap Change on the reason.
+3. Type the approver's number and the backup's number. Write each one with
+   `+` and the country code, like `+919876543210`. Both are required, and
+   they must differ.
+4. Tap Save both numbers.
+
+The change works at once. New requests go to the new numbers, and the old
+numbers can no longer decide that reason's requests. While the app uses
+Meta's test number, also add each new number to the recipient list in Meta's
+API Setup page.
 
 ## Look after the app
 

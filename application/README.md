@@ -36,6 +36,20 @@ The badge in the top corner says Live while the lists are fresh and Offline
 after a refresh fails. If the saved gate key is wrong, the page forgets it and
 asks for the key again. The page follows the phone's light or dark setting.
 
+## Forgotten keys
+
+The gate page and the admin page each have a "Forgot ... key?" button under
+the key box. It sends the key by WhatsApp to one fixed number: the gate key to
+`GUARD`, the admin key to `ADMIN_PHONE`. The page shows only the last four
+digits of that number, never the key.
+
+WhatsApp delivers this plain text only if that number wrote to the app in the
+last 24 hours. So there is a second way: send `KEY` from that phone to the
+app's WhatsApp number. The reply always arrives, because the phone just wrote.
+
+The button allows 3 tries per address and 10 tries in all, each hour, for
+each key. A stranger who presses it only sends the key to its owner.
+
 ## The admin page
 
 The admin page at `/admin` lists every stored request, newest first, 50 at a
@@ -47,10 +61,14 @@ of the app runs as usual.
 1. The tiles count the requests by status. Tap a tile to show only that
    status. Waiting is pending and escalated together.
 2. The search box finds a name, phone number, reference or person visited.
-3. Tap a request to see the address, the guests, its two approvers and every
+3. Tap a request to see the address, the guests, its two approvers, who
+   decided (the approver, the backup, or the automatic approval), and every
    time: requested, sent to the backup, decided, entered, gate photo and exited.
 4. The Show more button loads the next 50.
-5. The table at the end lists the two approvers for each reason.
+5. The table at the end lists the two approvers for each reason. Change opens
+   both numbers for that reason. Both are required, with `+` and the country
+   code, and they must differ. The change works at once, see "Approvers for
+   each reason".
 
 The page reads `GET /api/admin/visits` and `GET /api/admin/summary` with the
 `X-Admin-Key` header. Neither returns the visitor's private token. Download
@@ -68,8 +86,14 @@ sends YES or NO with the reference of another reason gets "goes to another
 approver". An approver who sends anything else sees only the requests of their
 own reasons.
 
-Every reason uses `MAIN_APPROVER` and `BACKUP_APPROVER` until `APPROVERS`
-changes it. `APPROVERS` is JSON. It names only the reasons that differ:
+The admin page sets each reason's two numbers. A saved pair is kept in the
+database, so it stays when Render deploys again. From that moment, new requests go to
+the new numbers, and the old numbers can no longer decide that reason's
+requests, including requests already sent to them.
+
+A reason with no saved pair uses the settings. Every reason uses
+`MAIN_APPROVER` and `BACKUP_APPROVER` until `APPROVERS` changes it.
+`APPROVERS` is JSON. It names only the reasons that differ:
 
 ```
 APPROVERS={"Delivery": ["+919000000001", "+919000000002"], "Event": ["+919000000003", "+919000000004"]}
@@ -97,8 +121,28 @@ to the wrong person. Put each new number on the Meta recipient list too.
    with the exit code records the exit.
 
 If no reply arrives within `ESCALATE_MINUTES`, the server sends the same details
-to the backup approver. Escalation never decides anything. Only a YES or a NO
-changes the status.
+to the backup approver. Escalation never decides anything.
+
+## Automatic approval in working hours
+
+A request made in working hours is approved automatically when no approver
+answers within `AUTO_APPROVE_MINUTES`, 30 by default. Working hours are 10:00
+to 17:00, Monday to Saturday, India time: 10:00 counts, 17:00 does not.
+`WORK_HOURS`, `WORK_DAYS` and `WORK_TIMEZONE` change them.
+
+- The server stores the approval time when the request is made. A request
+  made outside working hours has none, and waits for a YES or a NO.
+- A YES or a NO before that time wins. The automatic approval then does
+  nothing.
+- When it approves, both approvers get a WhatsApp message. It is plain text,
+  so an approver who has not written in 24 hours may not get it.
+- The admin page and the CSV show `auto` in "decided by".
+- The visitor's page shows the approval time while the request waits.
+- While Render sleeps, the timer does not run. A waiting visitor's page asks
+  every 3 seconds, which keeps the server awake. When the server wakes, it
+  approves every request that is past its time.
+
+Set `AUTO_APPROVE_MINUTES=0` to turn this off.
 
 ## Entry and exit codes
 
@@ -132,7 +176,7 @@ Each arrow happens once and cannot be undone.
 ```
 pending ──(no reply in time)──> escalated
    │                                │
-   └──────(YES / NO reply)──────────┘
+   └──(YES / NO, or auto-approval)──┘
                  │
         approved │ declined
                  │
@@ -166,11 +210,11 @@ same time, so each job has its own word.
 | `IN KT-4821`  | With the entry code: asks for a photo of the named visitor  |
 | a photo       | Records the entry for the last `IN`                         |
 | `OUT RM-0937` | With the exit code: records the exit                        |
+| `KEY`         | From `GUARD` or `ADMIN_PHONE`: sends back that number's key |
 | anything else | Sends back the request that is waiting, with full details   |
 
 `YES` and `NO` work without a reference when exactly one request is waiting. The
-server ignores every number that is not in `MAIN_APPROVER`, `BACKUP_APPROVER`
-or `GUARD`.
+server ignores every number that is not an approver, `GUARD` or `ADMIN_PHONE`.
 
 ### The photo at the gate
 
@@ -313,9 +357,9 @@ and 8 seconds, because Neon takes a moment to wake.
 | `static/index.html`, `static/app.js`   | The visitor app                                               |
 | `static/gate.html`, `static/gate.js`   | The gate desk page                                            |
 | `static/admin.html`, `static/admin.js` | The admin page with every request                             |
-| `static/download.js`                   | Saves the CSV log. The gate page and the admin page share it  |
+| `static/shared.js`                     | The CSV download and the forgot-key call, for gate and admin  |
 | `render.yaml`                          | The Render settings: region, commands and setting names       |
-| `gunicorn.conf.py`                     | Starts the database and timer in the worker, closes them on exit |
+| `gunicorn.conf.py`                     | Starts and stops the database and timer in the worker         |
 | `static/sw.js`                         | Keeps the visitor page on the phone, so it opens offline      |
 
 ## Settings
@@ -330,11 +374,16 @@ and 8 seconds, because Neon takes a moment to wake.
 | `BACKUP_APPROVER`      | Backup approver. Defaults to the main approver           |
 | `APPROVERS`            | Optional JSON: other approvers for some reasons          |
 | `GUARD`                | Gate desk number. Defaults to the main approver          |
+| `ADMIN_PHONE`          | Gets the admin key on request. Defaults to main approver |
 | `GATE_KEY`             | Password for the gate page. Keep it off the internet     |
 | `ADMIN_KEY`            | Password for the admin page. Must differ from `GATE_KEY` |
 | `DATABASE_URL`         | Postgres connection string from Neon. Keep it secret     |
 | `GATE_DESK_PHONE`      | Number shown on the "Call gate desk" button              |
 | `ESCALATE_MINUTES`     | Minutes before the backup approver is asked. Default 15  |
+| `AUTO_APPROVE_MINUTES` | Minutes before auto-approval in work hours. 0 = off      |
+| `WORK_HOURS`           | Working hours, whole hours. Default `10-17`              |
+| `WORK_DAYS`            | Working days. Default `Mon,Tue,Wed,Thu,Fri,Sat`          |
+| `WORK_TIMEZONE`        | Clock for working hours. Default `Asia/Kolkata`          |
 | `RETAIN_DAYS`          | Days a record is kept before deletion. Default 90        |
 | `REQUESTS_PER_HOUR`    | New requests allowed per address per hour. Default 60    |
 | `BEHIND_PROXY`         | Set to `true` on Render. Leave unset on your own machine |
@@ -530,8 +579,8 @@ not reply. After one minute the backup approver gets the same details.
 - The reply never changes the page: the webhook address does not match your
   current address, or the **messages** field is not subscribed.
 - The webhook returns 403: `META_APP_SECRET` does not match the app.
-- The gate page says "Wrong gate key": clear the key in the browser and type it
-  again.
+- The gate page says "Wrong gate key": press "Forgot gate key?", or send `KEY`
+  from the gate desk phone, then type the key again.
 
 ## Checks
 

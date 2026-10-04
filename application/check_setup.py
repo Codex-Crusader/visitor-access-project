@@ -18,7 +18,7 @@ except RuntimeError as missing:
 # sentence rather than as a stack trace from inside this module.
 import whatsapp  # noqa: E402
 
-for name in ("MAIN_APPROVER", "BACKUP_APPROVER", "GATE_DESK_PHONE"):
+for name in ("MAIN_APPROVER", "BACKUP_APPROVER", "GATE_DESK_PHONE", "ADMIN_PHONE"):
     value = getattr(config, name)
     if not value.startswith("+"):
         fail(f"{name} is {value}. It must start with a plus and the country code.")
@@ -28,9 +28,7 @@ for reason, pair in config.APPROVERS.items():
             fail(f"APPROVERS gives {value} for {reason}. It must start with a plus.")
 
 print(f"Phone number ID {config.META_PHONE_NUMBER_ID}")
-print(f"Approver        {config.MAIN_APPROVER}")
-for reason, (main, backup) in config.APPROVERS.items():
-    print(f"  {reason:<14} {main}, backup {backup}")
+print(f"Admin phone     {config.ADMIN_PHONE}")
 print(f"Signature check {'on' if config.META_APP_SECRET else 'off (META_APP_SECRET empty)'}")
 
 # The app runs the migrations when it starts, so this runs them too, and a
@@ -42,6 +40,9 @@ try:
 except Exception as error:
     fail(f"Cannot use the database in DATABASE_URL. {error}")
 print(f"Database        reachable, schema version {version}")
+# The numbers in use, with any change made on the admin page.
+for reason, (main, backup) in db.approver_table().items():
+    print(f"  {reason:<14} {main}, backup {backup}")
 print()
 
 # The real request goes out as the template, so the test does too. A plain

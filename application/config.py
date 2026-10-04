@@ -2,6 +2,7 @@
 
 import json
 import os
+from zoneinfo import ZoneInfo
 
 from dotenv import load_dotenv
 
@@ -27,6 +28,8 @@ META_APP_SECRET = os.getenv("META_APP_SECRET", "").strip()
 MAIN_APPROVER = _required("MAIN_APPROVER")
 BACKUP_APPROVER = os.getenv("BACKUP_APPROVER", "").strip() or MAIN_APPROVER
 GUARD = os.getenv("GUARD", "").strip() or MAIN_APPROVER
+# Gets the admin key on "Forgot admin key?". The gate key goes to GUARD.
+ADMIN_PHONE = os.getenv("ADMIN_PHONE", "").strip() or MAIN_APPROVER
 
 # The reasons the visitor form offers, the same list as REASONS in
 # static/app.js. "Other" also covers every reason the visitor typed in.
@@ -58,12 +61,8 @@ def _approvers():
     return table
 
 
+# Defaults. The admin page can replace them, see db.approver_table.
 APPROVERS = _approvers()
-
-
-def approvers_for(reason):
-    """(main, backup) for a visit's reason. A typed-in reason counts as the reason Other."""
-    return APPROVERS.get(reason, APPROVERS["Other"])
 
 # The guard types this on the gate page. Entry and exit need it.
 GATE_KEY = _required("GATE_KEY")
@@ -101,6 +100,38 @@ TEMPLATE_LANGUAGE = os.getenv("TEMPLATE_LANGUAGE", "en").strip()
 # is told the request went out. Off, the visitor is told it failed.
 TEMPLATE_FALLBACK = os.getenv("TEMPLATE_FALLBACK", "").strip().lower() in ("1", "true", "yes")
 ESCALATE_MINUTES = _int("ESCALATE_MINUTES", 15)
+
+# Auto-approve a working-hours request after this many minutes. 0 = off.
+AUTO_APPROVE_MINUTES = _int("AUTO_APPROVE_MINUTES", 30)
+WEEKDAYS = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
+
+
+def _hours():
+    """WORK_HOURS such as 10-17, as (10, 17)."""
+    raw = os.getenv("WORK_HOURS", "10-17").strip()
+    try:
+        start, end = (int(part) for part in raw.split("-"))
+    except ValueError:
+        raise RuntimeError(f"WORK_HOURS must look like 10-17, not {raw!r}") from None
+    if not 0 <= start < end <= 24:
+        raise RuntimeError(f"WORK_HOURS {raw!r} must start before it ends, within 0-24")
+    return start, end
+
+
+def _days():
+    """WORK_DAYS such as Mon,Tue, as day numbers with Monday 0."""
+    raw = os.getenv("WORK_DAYS", "Mon,Tue,Wed,Thu,Fri,Sat")
+    names = [name.strip().title() for name in raw.split(",") if name.strip()]
+    wrong = [name for name in names if name not in WEEKDAYS]
+    if wrong or not names:
+        raise RuntimeError(f"WORK_DAYS must list days from {WEEKDAYS}, not {raw!r}")
+    return frozenset(WEEKDAYS.index(name) for name in names)
+
+
+# 10:00 is inside working hours, 17:00 is outside.
+WORK_START, WORK_END = _hours()
+WORK_DAYS = _days()
+WORK_TIMEZONE = ZoneInfo(os.getenv("WORK_TIMEZONE", "Asia/Kolkata").strip())
 
 # Days a visit record is kept. The privacy screen states this number.
 RETAIN_DAYS = _int("RETAIN_DAYS", 90)

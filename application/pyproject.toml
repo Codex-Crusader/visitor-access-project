@@ -11,6 +11,8 @@ dependencies = [
     "gunicorn",
     "psycopg[binary]",
     "psycopg-pool",
+    # Time zones for working hours. Not every server has them.
+    "tzdata",
 ]
 
 [dependency-groups]

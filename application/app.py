@@ -10,7 +10,7 @@ import threading
 import time
 import unicodedata
 from collections import deque
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from flask import Flask, Response, jsonify, request
@@ -169,13 +169,13 @@ def hit_buckets():
         return len(_hits)
 
 
-def too_many(bucket, limit, seconds):
-    """True when this caller is over the limit. Counts every allowed call.
+def too_many(bucket, limit, seconds, who=None):
+    """True when the caller (or who, when given) is over the limit. Counts every allowed call.
 
     The check and the count happen under one lock. Two threads can therefore
     never both see room for one more call and both take it.
     """
-    key = (bucket, caller())
+    key = (bucket, caller() if who is None else who)
     moment = time.time()
     cutoff = moment - seconds
     with _hits_lock:
@@ -225,29 +225,57 @@ def signature_ok():
     return hmac.compare_digest(expected, header[len("sha256="):])
 
 
-def is_approver(phone):
-    """True when this number approves at least one reason."""
-    return any(
-        whatsapp.same_number(phone, who)
-        for pair in config.APPROVERS.values()
-        for who in pair
-    )
+def is_approver(phone, table):
+    """True when this number approves at least one reason. table is db.approver_table()."""
+    return any(whatsapp.same_number(phone, who) for pair in table.values() for who in pair)
 
 
-def approves(phone, visit):
-    """True when this number is the main or the backup approver for the visit's reason."""
-    return any(
-        whatsapp.same_number(phone, who) for who in config.approvers_for(visit["reason"])
-    )
+def role(phone, visit, table):
+    """BY_MAIN or BY_BACKUP for this visit's approvers, or None."""
+    main, backup = db.approvers_for(table, visit["reason"])
+    if whatsapp.same_number(phone, main):
+        return db.BY_MAIN
+    if whatsapp.same_number(phone, backup):
+        return db.BY_BACKUP
+    return None
 
 
-def waiting_for(phone):
+def waiting_for(phone, table):
     """The open requests this approver can decide, oldest first."""
-    return [visit for visit in db.open_requests() if approves(phone, visit)]
+    return [visit for visit in db.open_requests() if role(phone, visit, table)]
 
 
 def is_guard(phone):
     return whatsapp.same_number(phone, config.GUARD)
+
+
+def is_admin_phone(phone):
+    return whatsapp.same_number(phone, config.ADMIN_PHONE)
+
+
+PHONE = re.compile(r"^\+[1-9]\d{7,14}$")
+
+
+def clean_phone(text):
+    """+ and digits, as +911234567890, or None when it is not a phone number."""
+    number = re.sub(r"[\s().-]", "", str(text or ""))
+    return number if PHONE.match(number) else None
+
+
+def auto_approve_time(moment):
+    """When a request made at moment is approved by itself, as UTC text, or None.
+
+    Only a request made in working hours, on the campus clock, gets a time.
+    """
+    if not config.AUTO_APPROVE_MINUTES:
+        return None
+    local = moment.astimezone(config.WORK_TIMEZONE)
+    if local.weekday() not in config.WORK_DAYS:
+        return None
+    if not config.WORK_START <= local.hour < config.WORK_END:
+        return None
+    due = moment + timedelta(minutes=config.AUTO_APPROVE_MINUTES)
+    return due.astimezone(timezone.utc).isoformat(timespec="seconds")
 
 
 def log_template_problem(problem):
@@ -341,9 +369,10 @@ def create_request():
     if error:
         return jsonify(error=error), 400
 
-    visit = db.create(fields, guests)
+    visit = db.create(fields, guests, auto_approve_time(datetime.now(timezone.utc)))
     try:
-        log_template_problem(whatsapp.notify_approver(visit))
+        approvers = db.approvers_for(db.approver_table(), visit["reason"])
+        log_template_problem(whatsapp.notify_approver(visit, approvers))
     except Exception as sending_failed:
         db.delete(visit["reference"])
         app.logger.error("WhatsApp send failed: %s", sending_failed)
@@ -455,8 +484,8 @@ def gate_action(key, action):
 
 EXPORT_COLUMNS = (
     "reference", "name", "phone", "address", "reason", "visiting", "guests",
-    "status", "created_at", "escalated_at", "decided_at", "entered_at", "exited_at",
-    "photo_at",
+    "status", "created_at", "escalated_at", "decided_at", "decided_by",
+    "entered_at", "exited_at", "photo_at",
 )
 
 
@@ -530,8 +559,9 @@ def admin_visits():
         after = tuple(parts)
 
     visits, cursor = db.admin_page(ADMIN_FILTERS[status], search, after, ADMIN_PAGE)
+    table = db.approver_table()
     for visit in visits:
-        visit["approvers"] = list(config.approvers_for(visit["reason"]))
+        visit["approvers"] = list(db.approvers_for(table, visit["reason"]))
     return jsonify(visits=visits, next="|".join(cursor) if cursor else None)
 
 
@@ -543,13 +573,76 @@ def admin_summary():
         return refused
     return jsonify(
         counts=db.status_counts(),
-        approvers=[
-            {"reason": reason, "main": main, "backup": backup}
-            for reason, (main, backup) in config.APPROVERS.items()
-        ],
+        approvers=approver_rows(db.approver_table()),
         escalate_minutes=config.ESCALATE_MINUTES,
+        auto_approve_minutes=config.AUTO_APPROVE_MINUTES,
+        work_hours=[config.WORK_START, config.WORK_END],
+        work_days=[config.WEEKDAYS[day] for day in sorted(config.WORK_DAYS)],
         retain_days=config.RETAIN_DAYS,
     )
+
+
+def approver_rows(table):
+    return [{"reason": reason, "main": main, "backup": backup}
+            for reason, (main, backup) in table.items()]
+
+
+PHONE_HINT = "Type the {who}'s number with + and the country code, like +919876543210."
+
+
+@app.post("/api/admin/approvers")
+def set_approvers():
+    """Change one reason's main and backup approver. Both numbers are required."""
+    refused = admin_refusal()
+    if refused:
+        return refused
+    payload = request.get_json(silent=True) or {}
+    reason = payload.get("reason")
+    if reason not in config.REASONS:
+        return jsonify(error="Unknown reason"), 400
+    main, backup = clean_phone(payload.get("main")), clean_phone(payload.get("backup"))
+    problems = {}
+    if not main:
+        problems["main"] = PHONE_HINT.format(who="approver")
+    if not backup:
+        problems["backup"] = PHONE_HINT.format(who="backup")
+    if main and backup and whatsapp.same_number(main, backup):
+        problems["backup"] = "The backup must be a different number from the approver."
+    if problems:
+        return jsonify(error="Check the numbers.", fields=problems), 400
+    db.save_approvers(reason, main, backup)
+    return jsonify(approvers=approver_rows(db.approver_table()))
+
+
+FORGOT_KEYS = ("gate", "admin")
+FORGOT_PER_HOUR = 3
+FORGOT_ALL_PER_HOUR = 10
+
+
+def key_and_phone(which):
+    """(key, phone that receives it) for the gate or the admin key."""
+    if which == "gate":
+        return config.GATE_KEY, config.GUARD
+    return config.ADMIN_KEY, config.ADMIN_PHONE
+
+
+@app.post("/api/forgot-key/<which>")
+def forgot_key(which):
+    """Send a key by WhatsApp to its own fixed number. The answer never holds the key."""
+    if which not in FORGOT_KEYS:
+        return jsonify(error="Unknown key"), 404
+    if which == "admin" and config.ADMIN_LOCKED:
+        return jsonify(error=config.ADMIN_LOCKED), 503
+    if (too_many(f"forgot-{which}", FORGOT_PER_HOUR, 3600)
+            or too_many(f"forgot-{which}", FORGOT_ALL_PER_HOUR, 3600, who="everyone")):
+        return jsonify(error="Too many tries. Wait an hour and try again."), 429
+    key, phone = key_and_phone(which)
+    try:
+        whatsapp.send(phone, whatsapp.key_body(which, key))
+    except Exception as failure:
+        app.logger.error("Could not send the %s key: %s", which, failure)
+        return jsonify(error="Could not send the key. Try again in a minute."), 502
+    return jsonify(sent_to=whatsapp.digits(phone)[-4:])
 
 
 @app.get("/api/admin/export.csv")
@@ -573,11 +666,11 @@ def verify_webhook():
     return "", 403
 
 
-def handle_decide(sender, status, reference):
-    if not is_approver(sender):
+def handle_decide(sender, status, reference, table):
+    if not is_approver(sender, table):
         return "Only the approver can decide a request."
     if reference is None:
-        waiting = waiting_for(sender)
+        waiting = waiting_for(sender, table)
         if len(waiting) != 1:
             return whatsapp.waiting_body(waiting)
         reference = waiting[0]["reference"]
@@ -586,9 +679,10 @@ def handle_decide(sender, status, reference):
     if visit is None:
         return f"No request has reference {reference}."
     # Each reason has its own two approvers. Nobody decides another's request.
-    if not approves(sender, visit):
+    by = role(sender, visit, table)
+    if not by:
         return f"{reference} goes to another approver. You cannot decide it."
-    if not db.decide(reference, status):
+    if not db.decide(reference, status, by):
         return f"{reference} was already {visit['status']}."
     return f"{reference} is now {status}.\n\n{whatsapp.brief(visit)}"
 
@@ -646,9 +740,9 @@ def handle_photo(sender, media_id):
     return whatsapp.pass_body(visit)
 
 
-def handle_lookup(sender, key):
+def handle_lookup(sender, key, table):
     """A reference or a pass code. The reply repeats only the code that was sent."""
-    if not is_guard(sender) and not is_approver(sender):
+    if not is_guard(sender) and not is_approver(sender, table):
         return None
     visit, kind = db.by_code(key)
     if visit is not None:
@@ -674,7 +768,8 @@ def whatsapp_reply():
     message_id, sender, text, photo = whatsapp.read_incoming(payload)
     if sender is None:
         return "", 200
-    if not (is_approver(sender) or is_guard(sender)):
+    table = db.approver_table()
+    if not (is_approver(sender, table) or is_guard(sender) or is_admin_phone(sender)):
         return "", 200
     if not db.is_new_message(message_id):
         return "", 200
@@ -682,7 +777,7 @@ def whatsapp_reply():
     # The message id is spent from here on, so Meta's retry would be ignored.
     # A failure must therefore end in a reply that asks for the message again.
     try:
-        answer = answer_message(sender, text, photo)
+        answer = answer_message(sender, text, photo, table)
     except Exception as failure:
         app.logger.error("Could not handle a WhatsApp message: %s", failure)
         answer = "Something went wrong on the server. Send that again."
@@ -692,18 +787,32 @@ def whatsapp_reply():
     return "", 200
 
 
-def answer_message(sender, text, photo):
+def answer_message(sender, text, photo, table):
     if photo:
         return handle_photo(sender, photo)
 
     kind, value, key = whatsapp.read_reply(text)
+    if kind == "key":
+        return handle_key(sender)
     if kind == "decide":
-        return handle_decide(sender, value, key)
+        return handle_decide(sender, value, key, table)
     if kind == "gate":
         return handle_gate(sender, value, key)
     if kind == "lookup":
-        return handle_lookup(sender, key)
-    return whatsapp.waiting_body(waiting_for(sender)) if is_approver(sender) else whatsapp.HELP
+        return handle_lookup(sender, key, table)
+    if is_approver(sender, table):
+        return whatsapp.waiting_body(waiting_for(sender, table))
+    return whatsapp.HELP
+
+
+def handle_key(sender):
+    """KEY from the gate desk or the admin number gets that number's key."""
+    answers = []
+    for which in FORGOT_KEYS:
+        key, phone = key_and_phone(which)
+        if key and whatsapp.same_number(sender, phone):
+            answers.append(whatsapp.key_body(which, key))
+    return "\n\n".join(answers) or whatsapp.HELP
 
 
 def escalate_due():
@@ -712,9 +821,11 @@ def escalate_due():
     One failed send must not stop the others, or the purge after them. The
     failed request stays pending, so the next round tries it again.
     """
+    table = db.approver_table()
     for visit in db.due_for_escalation():
         try:
-            log_template_problem(whatsapp.notify_backup(visit))
+            approvers = db.approvers_for(table, visit["reason"])
+            log_template_problem(whatsapp.notify_backup(visit, approvers))
         except Exception as failure:
             app.logger.error("Could not ask the backup approver about %s: %s",
                              visit["reference"], failure)
@@ -722,14 +833,28 @@ def escalate_due():
         db.mark_escalated(visit["reference"])
 
 
+def auto_approve_due():
+    """Approve each working-hours request no one answered in time, and tell its approvers."""
+    table = db.approver_table()
+    for visit in db.due_for_auto_approval():
+        done = db.decide(visit["reference"], db.APPROVED, db.BY_AUTO)
+        if done is None:
+            continue
+        body = whatsapp.auto_approved_body(done, config.AUTO_APPROVE_MINUTES)
+        # Plain text: lost to an approver quiet for 24 hours. The approval stands.
+        for phone in dict.fromkeys(db.approvers_for(table, done["reason"])):
+            reply_to(phone, body)
+
+
 # Set when the process is about to exit. The timer stops at its next wait.
 stopping = threading.Event()
 
 
 def background_loop():
-    """Escalate requests nobody answered, then delete records past retention."""
+    """Auto-approve and escalate requests nobody answered, then delete old records."""
     while not stopping.wait(BACKGROUND_SECONDS):
         try:
+            auto_approve_due()
             escalate_due()
             removed = db.purge_old()
             if removed:

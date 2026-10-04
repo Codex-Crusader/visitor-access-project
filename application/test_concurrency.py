@@ -62,7 +62,7 @@ print("  every code unique, every token unique, two gate codes each")
 
 # --- Approve them all at once ---
 def approve(code):
-    db.decide(code, db.APPROVED)
+    db.decide(code, db.APPROVED, db.BY_MAIN)
 
 threads = [threading.Thread(target=approve, args=(c,)) for c in codes]
 for t in threads:
