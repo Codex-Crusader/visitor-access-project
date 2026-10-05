@@ -25,7 +25,14 @@ if config.ADMIN_LOCKED:
     app.logger.warning(config.ADMIN_LOCKED)
 
 FIELDS = ("name", "phone", "address", "reason", "visiting")
+# The shortest gap between background rounds, so a failed send is tried again soon.
 BACKGROUND_SECONDS = 30
+# The longest gap. With nothing due, the timer asks the database once an hour, so
+# Neon can scale to zero in between. The purge runs at least this often.
+IDLE_SECONDS = 3600
+# Meta is asked whether the token works at most this often. A failure is asked again sooner.
+META_CHECK_SECONDS = 3600
+META_RETRY_SECONDS = 300
 # After IN <code>, the guard has this long to send the visitor's photo.
 PHOTO_MINUTES = 10
 
@@ -325,6 +332,32 @@ def page(name):
     return response.make_conditional(request)
 
 
+# The pages run their buttons from inline onclick attributes and set a few inline
+# styles, so scripts and styles need 'unsafe-inline'. The policy still allows
+# nothing from another site, no plugins, and no framing by another site.
+CONTENT_POLICY = (
+    "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline';"
+    " img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none';"
+    " form-action 'self'; frame-ancestors 'self'"
+)
+SECURITY_HEADERS = {
+    "Content-Security-Policy": CONTENT_POLICY,
+    "X-Frame-Options": "SAMEORIGIN",
+    "X-Content-Type-Options": "nosniff",
+    # The visitor's private link is in the address, so no page passes it on.
+    "Referrer-Policy": "no-referrer",
+    "Strict-Transport-Security": "max-age=31536000",
+    "Permissions-Policy": "camera=(), microphone=(), geolocation=(), payment=()",
+}
+
+
+@app.after_request
+def add_security_headers(response):
+    for name, value in SECURITY_HEADERS.items():
+        response.headers.setdefault(name, value)
+    return response
+
+
 @app.after_request
 def keep_versioned_scripts(response):
     """A script asked for by its current hash is kept for a year."""
@@ -348,6 +381,32 @@ def gate():
 @app.get("/admin")
 def admin():
     return page("admin.html")
+
+
+_meta_check = {"at": 0.0, "ok": False}
+_meta_lock = threading.Lock()
+
+
+def whatsapp_ok():
+    """True when Meta accepts the token. Asked at most once an hour, because the
+    health address is public and must not send a call to Meta on every hit."""
+    with _meta_lock:
+        age = time.time() - _meta_check["at"]
+        if age < (META_CHECK_SECONDS if _meta_check["ok"] else META_RETRY_SECONDS):
+            return _meta_check["ok"]
+        ok = whatsapp.token_works()
+        _meta_check.update(at=time.time(), ok=ok)
+        return ok
+
+
+@app.get("/api/health")
+def health():
+    """For the uptime check: 200 when the database answers and Meta accepts the
+    token, else 503. It says which part failed, never why."""
+    if too_many("health", 30, 60):
+        return jsonify(error="Too many checks. Try again in a minute."), 429
+    checks = {"database": db.ping(), "whatsapp": whatsapp_ok()}
+    return jsonify(checks), 200 if all(checks.values()) else 503
 
 
 @app.get("/api/config")
@@ -378,6 +437,8 @@ def create_request():
         db.delete(visit["reference"])
         app.logger.error("WhatsApp send failed: %s", sending_failed)
         return jsonify(error="Could not reach the approver. Try again."), 502
+    # The new request brings new deadlines, so the timer works out its next round again.
+    wake.set()
     return jsonify(visit), 201
 
 
@@ -876,15 +937,30 @@ def auto_approve_due():
 
 # Set when the process is about to exit. The timer stops at its next wait.
 stopping = threading.Event()
+# Ends the timer's wait early: set by a new request, and on exit.
+wake = threading.Event()
+
+
+def seconds_to_next_round():
+    """How long the timer sleeps: until the next deadline, within the floor and the cap."""
+    due = db.next_due()
+    if due is None:
+        return IDLE_SECONDS
+    # One second late, so the deadline has passed when the round reads the database.
+    wait = (due - datetime.now(timezone.utc)).total_seconds() + 1
+    return min(max(wait, BACKGROUND_SECONDS), IDLE_SECONDS)
 
 
 def background_loop():
     """Auto-approve and escalate requests nobody answered, expire old passes,
     then delete old records.
 
-    The first round runs at once, so requests due while the server slept are handled on wake.
+    The first round runs at once, so requests due while the server slept are
+    handled on wake. After that it sleeps until the next deadline, an hour at
+    most, instead of asking the database every 30 seconds.
     """
     while True:
+        wait = BACKGROUND_SECONDS
         try:
             auto_approve_due()
             escalate_due()
@@ -894,9 +970,12 @@ def background_loop():
             removed = db.purge_old()
             if removed:
                 app.logger.info("Deleted %s visit records past retention", removed)
+            wait = seconds_to_next_round()
         except Exception as failure:
             app.logger.error("Background work failed: %s", failure)
-        if stopping.wait(BACKGROUND_SECONDS):
+        wake.wait(wait)
+        wake.clear()
+        if stopping.is_set():
             return
 
 
@@ -924,6 +1003,7 @@ def stop_background():
     database halfway through a round. Safe to call more than once.
     """
     stopping.set()
+    wake.set()
     if background.is_alive():
         background.join(timeout=10)
     db.close()

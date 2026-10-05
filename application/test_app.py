@@ -8,7 +8,8 @@ import contextlib
 import logging
 import os
 import re
-from datetime import datetime, timezone
+import time
+from datetime import datetime, timedelta, timezone
 
 import psycopg
 from psycopg_pool import PoolTimeout
@@ -168,7 +169,9 @@ try:
     # lost for a quiet approver while the visitor was told it went out.
     assert application.config.TEMPLATE_FALLBACK is False
     sent_before = len(sent)
+    application.wake.clear()
     refused_request = client.post("/api/requests", json=payload)
+    assert not application.wake.is_set(), "a failed request brings no deadline"
     assert refused_request.status_code == 502, refused_request.status_code
     assert len(sent) == sent_before, "no plain text may go out without the fallback"
 
@@ -756,6 +759,82 @@ print(f"  {total} visits over {pages} pages, none twice, none missed, no token, 
 print("pages are served")
 for path in ("/", "/app.js", "/gate", "/gate.js", "/admin", "/admin.js", "/shared.js", "/sw.js"):
     assert client.get(path).status_code == 200, path
+
+print("every answer carries the security headers")
+page_answer = client.get("/admin")
+not_changed = client.get("/admin", headers={"If-None-Match": page_answer.headers["ETag"]})
+assert not_changed.status_code == 304
+script_path = re.search(r'src="(admin\.js\?v=\w+)"', page_answer.get_data(as_text=True))[1]
+for answer in (page_answer, not_changed, client.get("/" + script_path),
+               client.get("/api/config"), client.get("/api/visit/nope"),
+               client.get("/api/admin/visits")):
+    for name, value in application.SECURITY_HEADERS.items():
+        assert answer.headers.get(name) == value, (answer.status_code, name)
+policy = application.CONTENT_POLICY
+assert "frame-ancestors 'self'" in policy and "object-src 'none'" in policy
+assert "img-src 'self' data:" in policy, "the logo is a data: image"
+print("  page, 304, script, API, 404 and 403 all carry them")
+
+print("the health check names what failed and never why")
+meta_calls = []
+real_token_works = whatsapp.token_works
+whatsapp.token_works = lambda: meta_calls.append(1) or True
+application._meta_check.update(at=0.0, ok=False)
+healthy = client.get("/api/health")
+assert healthy.status_code == 200 and healthy.get_json() == {"database": True, "whatsapp": True}
+assert client.get("/api/health").status_code == 200
+assert len(meta_calls) == 1, "Meta is asked at most once an hour"
+whatsapp.token_works = lambda: meta_calls.append(1) or False
+application._meta_check.update(at=0.0, ok=False)
+expired_token = client.get("/api/health")
+assert expired_token.status_code == 503
+assert expired_token.get_json() == {"database": True, "whatsapp": False}, "no reason, no token"
+client.get("/api/health")
+assert len(meta_calls) == 2, "a failure is asked again after 5 minutes, not at once"
+application._meta_check.update(at=0.0, ok=False)
+real_ping = db.ping
+db.ping = lambda: False
+whatsapp.token_works = lambda: True
+assert client.get("/api/health").get_json() == {"database": False, "whatsapp": True}
+db.ping = real_ping
+whatsapp.token_works = real_token_works
+assert db.ping() is True
+# The real check, with Meta's answers stubbed: an expired token and a lost connection.
+real_get = whatsapp.requests.get
+whatsapp.requests.get = lambda *a, **k: type("R", (), {"ok": False, "status_code": 401})()
+assert whatsapp.token_works() is False
+
+
+def no_network(*_args, **_kwargs):
+    raise whatsapp.requests.ConnectionError("down")
+
+
+whatsapp.requests.get = no_network
+assert whatsapp.token_works() is False
+whatsapp.requests.get = lambda *a, **k: type("R", (), {"ok": True, "status_code": 200})()
+assert whatsapp.token_works() is True
+whatsapp.requests.get = real_get
+application.forget_hits()
+print("  200 when both work, 503 with the failed part, Meta asked once an hour")
+
+print("the timer sleeps until the next deadline")
+real_next_due = db.next_due
+moment = datetime.now(timezone.utc)
+for due, low, high in ((None, 3600, 3600),
+                       (moment + timedelta(minutes=10), 590, 602),
+                       (moment - timedelta(minutes=5), 30, 30),
+                       (moment + timedelta(hours=5), 3600, 3600)):
+    db.next_due = lambda due=due: due
+    wait = application.seconds_to_next_round()
+    assert low <= wait <= high, (due, wait)
+db.next_due = real_next_due
+application.wake.clear()
+soon = new_request()
+assert application.wake.is_set(), "a new request wakes the timer"
+due = db.next_due()
+made = datetime.fromisoformat(soon["created_at"])
+assert due is not None and due <= made + timedelta(minutes=config.ESCALATE_MINUTES), due
+print("  idle an hour, a deadline on time, overdue in 30 seconds, a new request wakes it")
 cfg = client.get("/api/config").get_json()
 assert cfg["escalate_minutes"] == 30 and cfg["retain_days"] == 1
 assert "gate_key" not in str(cfg).lower(), "the gate key must never be published"
@@ -1202,7 +1281,9 @@ for _ in range(50):
         break
     application.stopping.wait(0.1)
 assert db.get(overdue["reference"])["status"] == "approved", "the first round must not wait"
+started = time.monotonic()
 application.stop_background()
+assert time.monotonic() - started < 3, "exit must not wait out the timer's sleep"
 application.stop_background()
 assert not application.background.is_alive(), "the timer must stop"
 try:

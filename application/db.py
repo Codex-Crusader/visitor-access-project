@@ -528,6 +528,41 @@ def status_counts() -> dict[str, int]:
     return {row["status"]: row["count"] for row in rows}
 
 
+def ping():
+    """True when the database answers. For the health check."""
+    try:
+        with connect() as conn:
+            conn.execute("SELECT 1")
+        return True
+    except Exception:  # any failure means the check failed
+        return False
+
+
+@read
+def next_due():
+    """The earliest time the background round has work, or None when nothing waits.
+
+    Work is an escalation, an automatic approval, or a pass that expires. One
+    query, three lookups on the status indexes.
+    """
+    with connect() as conn:
+        row = conn.execute(
+            "SELECT (SELECT MIN(created_at) FROM visits WHERE status = %s) AS pending,"
+            " (SELECT MIN(auto_approve_at) FROM visits WHERE status IN (%s, %s)) AS auto,"
+            " (SELECT MIN(created_at) FROM visits WHERE status IN (%s, %s, %s)) AS expiring",
+            (PENDING, *OPEN_STATUSES, *EXPIRING),
+        ).fetchone()
+    times = []
+    if row["pending"]:
+        times.append(datetime.fromisoformat(row["pending"])
+                     + timedelta(minutes=config.ESCALATE_MINUTES))
+    if row["auto"]:
+        times.append(datetime.fromisoformat(row["auto"]))
+    if row["expiring"]:
+        times.append(datetime.fromisoformat(row["expiring"]) + timedelta(hours=config.PASS_HOURS))
+    return min(times) if times else None
+
+
 @read
 def open_requests():
     with connect() as conn:

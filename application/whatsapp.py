@@ -54,6 +54,20 @@ def _post(to_phone, message):
     return response.json()
 
 
+def token_works():
+    """True when Meta accepts the token for this phone number. Sends nothing."""
+    try:
+        response = requests.get(
+            f"https://graph.facebook.com/v21.0/{config.META_PHONE_NUMBER_ID}",
+            params={"fields": "id"},
+            headers={"Authorization": f"Bearer {config.META_TOKEN}"},
+            timeout=TIMEOUT_SECONDS,
+        )
+    except requests.RequestException:
+        return False
+    return response.ok
+
+
 def send(to_phone, body):
     """Plain text. WhatsApp delivers it only within 24 hours of the person's
     last message to this number. Replies to a command always are."""
