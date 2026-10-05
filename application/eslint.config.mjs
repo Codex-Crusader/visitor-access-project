@@ -20,6 +20,8 @@ export default [
         window: "readonly", document: "readonly", localStorage: "readonly",
         fetch: "readonly", setTimeout: "readonly", clearTimeout: "readonly", setInterval: "readonly",
         AbortController: "readonly", URL: "readonly", URLSearchParams: "readonly", console: "readonly",
+        // The gate page's photo, static/gate.js.
+        createImageBitmap: "readonly",
         require: "readonly", module: "readonly", __dirname: "readonly",
         process: "readonly",
         // The service worker, static/sw.js.

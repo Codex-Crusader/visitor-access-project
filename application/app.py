@@ -1,6 +1,8 @@
 """Campus visitor access: web form in, WhatsApp approval out."""
 
 import atexit
+import base64
+import binascii
 import csv
 import hashlib
 import hmac
@@ -21,6 +23,8 @@ import whatsapp
 
 STATIC = Path(__file__).parent / "static"
 app = Flask(__name__, static_folder=str(STATIC), static_url_path="")
+# The largest call is an entry with its photo, as base64. Anything bigger gets 413.
+app.config["MAX_CONTENT_LENGTH"] = 1_000_000
 if config.ADMIN_LOCKED:
     app.logger.warning(config.ADMIN_LOCKED)
 
@@ -35,11 +39,14 @@ META_CHECK_SECONDS = 3600
 META_RETRY_SECONDS = 300
 # After IN <code>, the guard has this long to send the visitor's photo.
 PHOTO_MINUTES = 10
+# The gate page shrinks its photo to about 30-40 KB. The server takes up to this.
+PHOTO_BYTES = 150_000
+PHOTO_PREFIX = "data:image/jpeg;base64,"
+NO_PHOTO = ("Take a photo of the visitor first. The entry needs one."
+            " If this page shows no photo button, reload the page.")
 
-GATE_ACTIONS = {
-    "entry": (db.check_in, db.APPROVED),
-    "exit": (db.check_out, db.INSIDE),
-}
+# The status each gate action needs.
+NEEDS = {db.ENTRY: db.APPROVED, db.EXIT: db.INSIDE}
 
 REFUSALS = {
     "entry": {
@@ -342,6 +349,20 @@ def reply_to(phone, text):
         app.logger.error("Could not reply: %s", failure)
 
 
+def read_photo(payload):
+    """The JPEG bytes of the photo in the call's JSON, or None when it is missing or not a JPEG."""
+    text = payload.get("photo") if isinstance(payload, dict) else None
+    if not isinstance(text, str) or not text.startswith(PHOTO_PREFIX):
+        return None
+    try:
+        image = base64.b64decode(text[len(PHOTO_PREFIX):], validate=True)
+    except (binascii.Error, ValueError):
+        return None
+    if not image.startswith(b"\xff\xd8\xff") or len(image) > PHOTO_BYTES:
+        return None
+    return image
+
+
 def short_hash(data: bytes):
     return hashlib.sha256(data).hexdigest()[:10]
 
@@ -392,6 +413,11 @@ SECURITY_HEADERS = {
     "Strict-Transport-Security": "max-age=31536000",
     "Permissions-Policy": "camera=(), microphone=(), geolocation=(), payment=()",
 }
+
+
+@app.errorhandler(413)
+def too_big(_error):
+    return jsonify(error="That is too big. Take the photo again."), 413
 
 
 @app.after_request
@@ -579,7 +605,7 @@ def gate_action(key, action):
     guard = gate_guard()
     if not guard:
         return jsonify(error="Wrong gate key"), 403
-    if action not in GATE_ACTIONS:
+    if action not in NEEDS:
         return jsonify(error="Unknown action"), 404
 
     code = whatsapp.normalize_gate_code(key)
@@ -590,13 +616,19 @@ def gate_action(key, action):
         return jsonify(error=WRONG_KIND[action].format(code=code),
                        visit=typed_pass(visit, code, kind)), 409
 
-    apply_action, required = GATE_ACTIONS[action]
-    if visit["status"] != required:
+    if visit["status"] != NEEDS[action]:
         return jsonify(error=REFUSALS[action][visit["status"]],
                        visit=typed_pass(visit, code, kind)), 409
 
     # The update itself decides. Two guards pressing at once must not both win.
-    done = apply_action(visit["reference"], guard)
+    if action == db.ENTRY:
+        # Checked last, so a pass that cannot enter never asks for a photo.
+        photo = read_photo(request.get_json(silent=True))
+        if photo is None:
+            return jsonify(error=NO_PHOTO, visit=typed_pass(visit, code, kind)), 400
+        done = db.check_in(visit["reference"], guard, photo)
+    else:
+        done = db.check_out(visit["reference"], guard)
     if done is None:
         fresh = db.get(visit["reference"])
         return jsonify(error=REFUSALS[action][fresh["status"]],
@@ -688,6 +720,22 @@ def admin_visits():
     for visit in visits:
         visit["approvers"] = list(db.approvers_for(table, visit["reason"]))
     return jsonify(visits=visits, next="|".join(cursor) if cursor else None)
+
+
+@app.get("/api/admin/photo/<reference>")
+def admin_photo(reference):
+    """The gate page's photo of a visitor, as a data URL. A WhatsApp photo is not stored."""
+    refused = admin_refusal()
+    if refused:
+        return refused
+    photo = db.photo_of(reference)
+    if photo is None or photo["image"] is None:
+        return jsonify(error="No photo is stored for this visit."), 404
+    response = jsonify(photo=PHOTO_PREFIX + base64.b64encode(photo["image"]).decode(),
+                       taken_at=photo["taken_at"])
+    # A face is personal, so no browser or proxy keeps a copy.
+    response.headers["Cache-Control"] = "no-store"
+    return response
 
 
 @app.get("/api/admin/summary")
@@ -926,8 +974,7 @@ def handle_gate(guard, sender, action, code):
     if kind != action:
         return WRONG_KIND[action].format(code=code)
 
-    apply_action, required = GATE_ACTIONS[action]
-    if visit["status"] != required:
+    if visit["status"] != NEEDS[action]:
         return REFUSALS[action][visit["status"]]
 
     reference = visit["reference"]
@@ -937,7 +984,7 @@ def handle_gate(guard, sender, action, code):
         db.wait_for_photo(whatsapp.digits(sender), reference)
         return whatsapp.photo_request(visit, code)
 
-    done = apply_action(reference, guard)
+    done = db.check_out(reference, guard)
     if done is None:
         return REFUSALS[action][db.get(reference)["status"]]
     return whatsapp.pass_body(done)

@@ -135,6 +135,14 @@ CREATE TABLE guards (
 ALTER TABLE visits ADD COLUMN entered_by TEXT;
 ALTER TABLE visits ADD COLUMN exited_by TEXT;
 """,
+    # 5: the gate page's photo, kept in the database.
+    """
+-- A photo taken on the gate page. A WhatsApp photo keeps only media_id.
+ALTER TABLE photos ADD COLUMN image BYTEA;
+-- A gate page photo has no WhatsApp id. This only relaxes a rule, so the old
+-- version, which always writes media_id, keeps working during the deploy.
+ALTER TABLE photos ALTER COLUMN media_id DROP NOT NULL;
+""",
 ]
 
 # Any fixed number. Two instances that start at once, as when Render deploys,
@@ -519,7 +527,8 @@ def admin_page(statuses=None, search="", after=None, limit=50):
         )
         args += [_like(search)] * 4
     sql = (
-        f"SELECT {ADMIN_FIELDS}, photos.taken_at AS photo_at FROM visits"
+        f"SELECT {ADMIN_FIELDS}, photos.taken_at AS photo_at,"
+        " photos.image IS NOT NULL AS photo_stored FROM visits"
         " LEFT JOIN photos ON photos.reference = visits.reference"
         + (" WHERE " + " AND ".join(where) if where else "")
         + " ORDER BY created_at DESC, visits.reference DESC LIMIT %s"
@@ -727,16 +736,25 @@ def save_approvers(reason, main, backup):
         )
 
 
-def check_in(reference, by):
-    """Let an approved visitor in. Returns the visit, or None unless the pass is approved
-    and not expired. The time check is in the UPDATE, so a pass cannot expire halfway.
-    by names the guard. The condition sits in the UPDATE, so of two guards one wins."""
+def check_in(reference, by, image):
+    """Let an approved, unexpired visitor in and save the photo. Returns the visit, or None.
+
+    The checks sit in the UPDATE, so of two guards one wins and only that photo is saved.
+    """
+    stamp = now()
     with connect() as conn:
         row = conn.execute(
             "UPDATE visits SET status = %s, entered_at = %s, entered_by = %s WHERE reference = %s"
             " AND status = %s AND created_at >= %s RETURNING *",
-            (INSIDE, now(), by, reference, APPROVED, pass_cutoff()),
+            (INSIDE, stamp, by, reference, APPROVED, pass_cutoff()),
         ).fetchone()
+        if row is not None:
+            conn.execute(
+                "INSERT INTO photos (reference, image, taken_at) VALUES (%s, %s, %s)"
+                " ON CONFLICT (reference) DO UPDATE SET image = EXCLUDED.image,"
+                " media_id = NULL, taken_at = EXCLUDED.taken_at",
+                (reference, image, stamp),
+            )
     return to_dict(row) if row is not None else None
 
 
@@ -799,12 +817,16 @@ def enter_with_photo(guard, minutes, media_id, by):
 
 @read
 def photo_of(reference):
-    """The stored photo record for a pass, or None."""
+    """The stored photo record for a pass, or None. image is None for a WhatsApp photo."""
     with connect() as conn:
         row = conn.execute(
-            "SELECT media_id, taken_at FROM photos WHERE reference = %s", (reference,)
+            "SELECT media_id, image, taken_at FROM photos WHERE reference = %s", (reference,)
         ).fetchone()
-    return dict(row) if row else None
+    if not row:
+        return None
+    photo = dict(row)
+    photo["image"] = bytes(photo["image"]) if photo["image"] is not None else None
+    return photo
 
 
 def is_new_message(message_id):

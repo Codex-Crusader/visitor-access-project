@@ -12,7 +12,7 @@ the people who decide about the campus. To set up the app, read
 | A visitor                | Their own private link      | Their own request, its status and its current code   |
 | An approver              | WhatsApp, from their number | The requests of their own reasons, and any pass they look up |
 | A guard                  | Their own key, or the shared gate key | Open passes, the gate lists, the gate's CSV log, and a WhatsApp message for each approval |
-| The admin                | The admin key               | Every request, who decided it, which guard let the visitor in and out, the approver numbers and the guards |
+| The admin                | The admin key               | Every request, who decided it, which guard let the visitor in and out, the gate page photos, the approver numbers and the guards |
 | Anybody on the internet  | The public pages            | The forms, the gate desk number, and the health result |
 
 The gate key opens the full CSV log, with every visitor's name, phone number
@@ -108,7 +108,7 @@ Every answer from the server has these headers:
 | `X-Content-Type-Options`    | Stops the browser from guessing the file type         |
 | `Referrer-Policy`           | Sends no address to other sites                       |
 | `Strict-Transport-Security` | Makes the browser use HTTPS for one year              |
-| `Permissions-Policy`        | Turns off the camera, microphone, location and payment |
+| `Permissions-Policy`        | Turns off the camera, microphone, location and payment. The gate photo uses the phone's own camera app, which this does not block |
 
 The content policy allows inline scripts (`'unsafe-inline'`). The buttons on
 the pages call their code from inline `onclick` attributes, and a stricter
@@ -139,9 +139,18 @@ proxy.
 ## Privacy
 
 1. The form asks for a name, a phone number, an address, the reason, and the
-   person visited. The guard also takes one photo on WhatsApp.
-2. The photo stays in the WhatsApp chat of the guard who took it. The app
-   keeps only WhatsApp's id for the photo and the time.
+   person visited. The guard also takes one photo of the visitor at the
+   gate, on the gate page or on WhatsApp.
+2. A photo sent on WhatsApp stays in the chat of the guard who took it. The
+   app keeps only WhatsApp's id for the photo and the time. A photo taken on
+   the gate page is kept in the database, as a small JPEG of about 30 to 40
+   KB, and it is deleted with its visit after `RETAIN_DAYS`. The gate page
+   draws the photo again before it sends it, so a photo from the page has no
+   location or other data from the phone. The server checks only that the
+   photo is a JPEG under 150 KB. Only the admin page shows it, one photo at
+   a time.
+   The pass, the gate lists, the visitor's page and the CSV log never hold
+   it.
 3. The approval message to each guard stays in that guard's WhatsApp chat.
    The app cannot delete it after `RETAIN_DAYS`. The visitor's privacy screen
    says so.
@@ -184,8 +193,11 @@ Tell the people who decide about the campus about these limits.
    with the shared `GATE_KEY` records as "Gate desk (shared key)". A removed
    guard who knows `GATE_KEY` can still use it until you change it.
 2. The gate key also opens the full CSV log with personal details.
-3. The Record entry button on the gate page lets a visitor in without a
-   photo. Only the WhatsApp route asks for one.
+3. The app makes sure that each entry has a photo and the name of the
+   guard. It cannot prove that the photo shows the visitor, or that the
+   guard took it just now. The page asks the phone for its camera, but some
+   browsers also allow a photo from the gallery. The admin can look at the
+   photo afterward.
 4. The app does not check that a visitor's phone number is real.
 5. Someone with many internet addresses can send many requests. Each request
    sends a WhatsApp template message, which Meta charges for on a real

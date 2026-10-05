@@ -87,10 +87,14 @@ WhatsApp delivers it only if the guard wrote to the app's number in the last
      number.
 3. Type the code on the visitor's pass, and tap Check pass. Small letters and
    spaces are correct, for example `kt 4821`.
-4. If the pass is approved, tap Record entry.
-5. When the visitor leaves, type the exit code, tap Check pass, then tap
+4. If the pass is approved, tap "Take a photo of the visitor". The phone
+   camera opens. Take the photo of the visitor's face.
+5. Make sure that the photo on the screen shows the visitor, then tap Record
+   entry. Record entry does not work without a photo. To take the photo
+   again, tap "Take the photo again".
+6. When the visitor leaves, type the exit code, tap Check pass, then tap
    Record exit.
-6. Tap Next visitor to clear the screen.
+7. Tap Next visitor to clear the screen.
 
 The page shows two lists:
 
@@ -123,8 +127,9 @@ The rules for the photo:
 4. Only a guard can send the photo: the `GUARD` number, or a guard on the
    admin page's Guards tab.
 
-Only WhatsApp asks for a photo. The Record entry button on the gate page lets
-a visitor in without one. If every entry must have a photo, use WhatsApp.
+Both routes need a photo before the visitor goes in. A photo from the gate
+page is kept in the app's database, and the admin can see it. A photo sent on
+WhatsApp stays in the guard's chat.
 
 ### When the gate says no
 
@@ -135,6 +140,7 @@ a visitor in without one. If every entry must have a photo, use WhatsApp.
 | Pass expired           | Do not let them in. Ask for a new request   |
 | ... is the exit code   | Ask for the entry code                      |
 | This pass is closed    | The visit is over. The code is dead         |
+| Take a photo of the visitor first | Tap "Take a photo of the visitor". If the page has no photo button, reload the page |
 | Wrong gate key         | With your own key: send `KEY` from your phone. With the shared key: tap "Forgot gate key?" |
 
 ## Admin
@@ -155,6 +161,7 @@ a visitor in without one. If every entry must have a photo, use WhatsApp.
    before 5 October 2026 shows no number, and the oldest show no role,
    because the app did not keep them then.
 7. Tap a request to see all its details and times, and when its pass ends.
+   If the gate page took the photo, tap View photo to see it.
    Entered and Exited name the guard who recorded them. "Gate desk (shared
    key)" means that someone used the shared `GATE_KEY`.
 8. Show more loads the next 50 requests.
@@ -393,7 +400,8 @@ created_at, escalated_at, decided_at, decided_by, entered_at, exited_at, photo_a
 ```
 
 Times are UTC. A visit that never entered has empty `entered_at` and
-`exited_at`. An entry recorded on the gate page has an empty `photo_at`.
+`exited_at`. `photo_at` is the time of the entry photo, from the gate page
+or from WhatsApp. The CSV never holds the photo itself.
 
 ## The free plans
 
@@ -403,7 +411,10 @@ Times are UTC. A visit that never entered has empty `entered_at` and
 2. While Render sleeps, the timer does not run. Reminders to the backup
    approver, automatic approvals and expiries wait until the app wakes. The
    app wakes when somebody opens a page or sends a WhatsApp message.
-3. Neon gives 100 compute hours a month and 0.5 GB. The timer asks the
+3. Neon gives 100 compute hours a month and 0.5 GB. Each gate page photo
+   uses about 30 to 40 KB, and the app keeps it for `RETAIN_DAYS`. At the
+   limit of about 9,000 stored visits, the photos use about 0.3 GB. Look at
+   the storage on the Neon console each month. The timer asks the
    database only when a reminder, an approval or an expiry is due, and once
    an hour when nothing is due. Neon can sleep in between. An open visitor
    page asks every 3 seconds and an open gate page every 30 seconds, so Neon

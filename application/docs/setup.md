@@ -296,7 +296,8 @@ change on its own. Make one in the Neon console under Branches.
 5. Send `IN` and the entry code on WhatsApp, for example `IN KT-4821`. The
    reply asks for a photo.
 6. Take a photo in the same chat and send it. You can also use `/gate` in a
-   browser for steps 5 and 6.
+   browser for steps 5 and 6. There, the page asks for the photo before it
+   records the entry.
 7. The visitor page changes to "Inside campus", and the pass shows the exit
    code.
 8. Send `OUT` and the exit code. The visitor page says "Visit complete".

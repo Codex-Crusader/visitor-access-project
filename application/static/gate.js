@@ -2,6 +2,8 @@
 const CALL_TIMEOUT = 75000;  // a sleeping free server can take ~50s to wake
 const BOARD_EVERY = 30000;   // how often the lists refresh by themselves
 const LONG_HOURS = 8;        // inside longer than this is marked on the board
+const PHOTO_SIDE = 640;      // the photo's long side in pixels, about 30-40 KB as JPEG
+const PHOTO_QUALITY = 0.6;
 
 const el = i => document.getElementById(i);
 // These are in gate.html from the start, so they are looked up once.
@@ -27,6 +29,9 @@ const tidy = text => {
 };
 
 let visit = null;
+// The photo of the visitor on screen, as a JPEG data URL. It belongs to this
+// pass only, so every new pass, Next visitor and each entry clears it.
+let photo = "";
 let notice = "";
 let keySent = "";
 let busy = "";
@@ -53,6 +58,7 @@ class WrongKey extends Error {}
 function forgetKey(why = "") {
   try { localStorage.removeItem("gatekey"); } catch { /* it was never stored */ }
   visit = null;
+  photo = "";
   notice = why;
   board = null;
   boardAt = null;
@@ -81,11 +87,20 @@ const banner = (tone, title, line) =>
 
 const fact = (k, v) => `<div><span>${k}</span><b>${x(v || "—")}</b></div>`;
 
+// The entry needs a photo of the visitor, taken here, before Record entry works.
+function entryStep() {
+  return `<label class="btn plain" for="cam">${photo ? "Take the photo again" : "Take a photo of the visitor"}</label>
+    <input id="cam" type="file" accept="image/*" capture="environment" hidden>
+    ${photo ? `<img class="shot" src="${x(photo)}" alt="The photo of the visitor">` : ""}
+    <button class="btn go" id="enter" onclick="act('entry')"${photo ? "" : " disabled"}>Record entry</button>
+    ${photo ? "" : `<p class="sub">The entry needs a photo of the visitor.</p>`}`;
+}
+
 // The button needs the code from the visitor's pass: the entry code records
 // the entry, and the exit code the exit. A tap on the board opens the pass by
 // reference, which shows who it is and records nothing.
 const NEED = {
-  approved: ["entry", `<button class="btn go" onclick="act('entry')">Record entry</button>`,
+  approved: ["entry", null,
              "To record the entry, type the entry code on the visitor's pass."],
   inside:   ["exit", `<button class="btn" onclick="act('exit')">Record exit</button>`,
              "To record the exit, type the exit code on the visitor's pass. It shows there once they are inside."],
@@ -94,7 +109,8 @@ const NEED = {
 function nextStep(v) {
   const [kind, button, hint] = NEED[v.status] || [];
   if (!kind) return "";
-  return v.code_kind === kind ? button : `<p class="sub">${hint}</p>`;
+  if (v.code_kind !== kind) return `<p class="sub">${hint}</p>`;
+  return kind === "entry" ? entryStep() : button;
 }
 const problem = t => banner("bad", "Cannot do that", t);
 const working = t => `<div class="state wait"><span class="spin"></span><div><h2>${x(t)}</h2><p>This can take up to a minute if the server was asleep.</p></div></div>`;
@@ -106,7 +122,8 @@ async function call(url, options) {
   const timer = setTimeout(() => stop.abort(), CALL_TIMEOUT);
   let r, data;
   try {
-    r = await fetch(url, {...options, headers: {"X-Gate-Key": key()}, signal: stop.signal});
+    const headers = {...(options || {}).headers, "X-Gate-Key": key()};
+    r = await fetch(url, {...options, headers, signal: stop.signal});
     data = await r.json().catch(() => ({}));
   } catch (err) {
     throw err.name === "AbortError"
@@ -235,6 +252,42 @@ function render() {
     </div>
     ${nextStep(visit)}
     <button class="btn plain" onclick="clear_()">Next visitor</button>`;
+  const cam = el("cam");
+  if (cam) cam.onchange = () => void takePhoto(cam.files[0]);
+}
+
+// Redraws the phone photo as a small JPEG with no metadata. Tests replace it: jsdom has no canvas.
+async function shrink(file) {
+  let picture;
+  try {
+    picture = await createImageBitmap(file);
+  } catch {
+    throw new Error("That file is not a photo. Take it again.");
+  }
+  const scale = Math.min(1, PHOTO_SIDE / Math.max(picture.width, picture.height));
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.round(picture.width * scale);
+  canvas.height = Math.round(picture.height * scale);
+  canvas.getContext("2d").drawImage(picture, 0, 0, canvas.width, canvas.height);
+  picture.close();
+  return canvas.toDataURL("image/jpeg", PHOTO_QUALITY);
+}
+
+async function takePhoto(file) {
+  if (!file || !visit) return;
+  const forCode = visit.code;
+  notice = "";
+  let shot = "", problem = "";
+  try {
+    shot = await shrink(file);
+  } catch (err) {
+    problem = err.message;
+  }
+  // The guard may have moved to another pass while the photo was shrinking.
+  if (!visit || visit.code !== forCode) return;
+  photo = shot;
+  notice = problem;
+  render();
 }
 
 // Refreshes the two lists. It never touches the pass on screen, so a guard in
@@ -293,6 +346,7 @@ async function look() {
 // Opens a pass by the code the guard typed, or by reference after a tap.
 async function show(key) {
   visit = null;
+  photo = "";
   notice = "";
   busy = "Checking the pass";
   render();
@@ -320,8 +374,14 @@ async function act(action) {
   notice = "";
   busy = action === "entry" ? "Recording the entry" : "Recording the exit";
   render();
+  const options = {method: "POST"};
+  if (action === "entry") {
+    Object.assign(options, {headers: {"Content-Type": "application/json"},
+                            body: JSON.stringify({photo})});
+  }
   try {
-    visit = await call(`/api/pass/${encodeURIComponent(code)}/${action}`, {method: "POST"});
+    visit = await call(`/api/pass/${encodeURIComponent(code)}/${action}`, options);
+    photo = "";
   } catch (err) {
     busy = "";
     if (err instanceof WrongKey) return forgetKey(err.message);
@@ -356,6 +416,7 @@ async function downloadLog() {
 
 function clear_() {
   visit = null;
+  photo = "";
   notice = "";
   codeBox.value = "";
   render();

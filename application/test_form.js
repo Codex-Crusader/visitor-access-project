@@ -324,9 +324,11 @@ async function boardChecks() {
   const TYPED = {...PASS, code: "KT-4821", code_kind: "entry"};
   const ENTERED = {...TYPED, status: "inside", entered_at: ago(0)};
   const calls = [];
+  const posts = [];
   const desk = boot("gate.html", "gate.js", {
-    fetch: url => {
+    fetch: (url, options = {}) => {
       calls.push(url);
+      if (options.method === "POST") posts.push(options);
       const body = url.includes("/api/gate/board") ? BOARD
         : url.endsWith("/entry") ? ENTERED : url.includes("KT-4821") ? TYPED : PASS;
       return Promise.resolve({status: 200, ok: true, json: () => Promise.resolve(body)});
@@ -366,8 +368,23 @@ async function boardChecks() {
   await desk.eval("look()");
   ok("the typed code is sent in one form", calls.includes("/api/pass/KT-4821"));
   ok("the entry code offers Record entry", byId("out").innerHTML.includes("Record entry"));
+  ok("Record entry waits for a photo", byId("enter").disabled && !byId("out").querySelector(".shot"));
+  ok("the photo opens the back camera", byId("cam").getAttribute("capture") === "environment"
+     && byId("cam").accept === "image/*");
+  desk.eval('shrink = () => Promise.resolve("data:image/jpeg;base64,/9j/AA==")');
+  await desk.eval('takePhoto(new File(["x"], "visitor.jpg", {type: "image/jpeg"}))');
+  ok("the photo shows before the entry", byId("out").querySelector(".shot").getAttribute("src")
+     === "data:image/jpeg;base64,/9j/AA==");
+  ok("with a photo Record entry works", !byId("enter").disabled);
   await desk.eval("act('entry')");
   ok("the entry is recorded with the entry code", calls.includes("/api/pass/KT-4821/entry"));
+  const sent = posts.at(-1);
+  ok("the entry carries the photo as JSON", sent.headers["Content-Type"] === "application/json"
+     && JSON.parse(sent.body).photo === "data:image/jpeg;base64,/9j/AA==" && sent.headers["X-Gate-Key"] === "k");
+  ok("the photo is gone after the entry", desk.eval("photo") === "");
+  desk.eval('shrink = () => { visit = {...visit, code: "KT-0000"}; return Promise.reject(new Error("late")); }');
+  await desk.eval('takePhoto(new File(["x"], "visitor.jpg", {type: "image/jpeg"}))');
+  ok("a late photo failure stays off another pass", desk.eval("notice") !== "late");
   ok("no request ever used the reference to act", !calls.some(u => /VR-\d{4}\/(entry|exit)/.test(u)));
   ok("inside, it asks for the exit code", byId("out").innerHTML.includes("type the exit code"));
   // act() refreshes the lists in the background. Let that finish first.
@@ -671,12 +688,14 @@ async function guardChecks() {
         list = [{name: sent.name, phone: sent.phone, added_at: "2026-10-05T05:00:00+00:00"}];
         return answer(200, {gate_desk: "+911", guards: list, key: "k1", name: sent.name});
       }
+      if (url.includes("/api/admin/photo/")) return answer(200, {photo: "data:image/jpeg;base64,/9j/AA=="});
       return answer(200, url.includes("/summary")
         ? {counts: {}, escalate_minutes: 15, retain_days: 90, approvers: [], gate_desk: "+911", guards: list}
         : {visits: [{reference: "VR-1", name: "A", phone: "1", address: "x", reason: "Delivery",
                      visiting: "y", guests: [], status: "closed", created_at: "2026-10-05T05:00:00+00:00",
                      entered_at: "2026-10-05T06:00:00+00:00", entered_by: "Ravi +919800000001",
                      exited_at: "2026-10-05T07:00:00+00:00", exited_by: "Gate desk (shared key)",
+                     photo_at: "2026-10-05T06:00:00+00:00", photo_stored: true,
                      approvers: ["+911", "+912"]}], next: null});
     },
   });
@@ -687,6 +706,16 @@ async function guardChecks() {
   const more = byId("list").querySelector(".more").textContent;
   ok("a visit names the guard who let them in and out",
      more.includes("by Ravi +919800000001") && more.includes("by Gate desk (shared key)"));
+  ok("a stored photo is not loaded until asked", !byId("list").querySelector(".shot img"));
+  byId("list").querySelector("[data-photo]").click();
+  await tick(); await tick();
+  ok("View photo shows the gate photo", byId("list").querySelector(".shot img").getAttribute("src")
+     === "data:image/jpeg;base64,/9j/AA==" && byId("list").querySelector("[data-photo]").hidden);
+  admin.eval("renderList()");
+  ok("a viewed photo stays after the list is drawn again", !!byId("list").querySelector(".shot img")
+     && !byId("list").querySelector("[data-photo]"));
+  ok("a WhatsApp photo says where it is",
+     admin.eval('photoLine({photo_at: "t"})').includes("WhatsApp chat"));
   byId("tabs").querySelector('[data-section="guards"]').click();
   ok("the guards tab opens", !byId("guards").hidden && byId("visits").hidden);
   ok("the gate desk row shows", byId("guard-table").textContent.includes("+911"));

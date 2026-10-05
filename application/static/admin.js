@@ -60,6 +60,7 @@ function setKey(value) {
 function forgetKey(why = "") {
   try { localStorage.removeItem("adminkey"); } catch { /* it was never stored */ }
   rows = []; next = null; counts = {}; approvers = []; guards = []; shownKey = null; notice = why;
+  for (const reference in photos) delete photos[reference];
   render();
 }
 
@@ -140,9 +141,36 @@ function item(v) {
       <dt>Decided</dt><dd>${when(v.decided_at)}</dd>
       <dt>Decision</dt><dd>${x(byLine || "Not decided yet")}</dd>
       <dt>Entered</dt><dd>${when(v.entered_at)}${v.entered_by ? ` by ${x(v.entered_by)}` : ""}</dd>
-      <dt>Gate photo</dt><dd>${when(v.photo_at)}</dd>
+      <dt>Gate photo</dt><dd>${when(v.photo_at)}${photoLine(v)}</dd>
       <dt>Exited</dt><dd>${when(v.exited_at)}${v.exited_by ? ` by ${x(v.exited_by)}` : ""}</dd>
     </dl></div></details>`;
+}
+
+// The gate page's photo loads only when the admin asks, then stays for this page view.
+const photos = {};
+function photoLine(v) {
+  if (photos[v.reference]) {
+    return `<span class="shot"><img src="${x(photos[v.reference])}" alt="The visitor at the gate"></span>`;
+  }
+  if (v.photo_stored) {
+    return ` <button class="small" data-photo="${x(v.reference)}">View photo</button><span class="shot"></span>`;
+  }
+  return v.photo_at ? " (in the guard's WhatsApp chat)" : "";
+}
+
+async function showPhoto(button) {
+  const box = button.nextElementSibling;
+  button.disabled = true;
+  try {
+    const answer = await call(`/api/admin/photo/${encodeURIComponent(button.dataset.photo)}`);
+    photos[button.dataset.photo] = answer.photo;
+    box.innerHTML = `<img src="${x(answer.photo)}" alt="The visitor at the gate">`;
+    button.hidden = true;
+  } catch (err) {
+    if (err instanceof WrongKey) return forgetKey(err.message);
+    box.textContent = ` ${err.message}`;
+    button.disabled = false;
+  }
 }
 
 function renderList() {
@@ -370,6 +398,10 @@ function render() {
       searchTimer = setTimeout(() => { query = e.target.value.trim(); void load(); }, SEARCH_WAIT);
     };
     el("more").onclick = () => void load(true);
+    el("list").onclick = e => {
+      const hit = e.target.closest("[data-photo]");
+      if (hit) void showPhoto(hit);
+    };
     el("g-add").onclick = () => void addGuard();
     el("guard-table").onclick = e => {
       const hit = e.target.closest("button");

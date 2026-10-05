@@ -4,6 +4,7 @@ Run it with: .venv\\Scripts\\python.exe test_app.py
 It sends no WhatsApp messages and uses a throwaway database.
 """
 
+import base64
 import contextlib
 import logging
 import os
@@ -55,6 +56,10 @@ db.init()
 client = application.app.test_client()
 KEY = {"X-Gate-Key": "test-gate-key"}
 ADMIN = {"X-Admin-Key": "test-admin-key"}
+# The gate page sends a JPEG of the visitor with each entry. The server checks
+# only that it is a JPEG, so a few bytes after the JPEG start do.
+JPEG = b"\xff\xd8\xff\xe0" + b"visitor-photo" * 8
+PHOTO = {"photo": application.PHOTO_PREFIX + base64.b64encode(JPEG).decode()}
 # A gate code: two letters without I or O, a dash, four digits.
 GATE_CODE = re.compile(r"^[A-HJ-NP-Z]{2}-\d{4}$")
 
@@ -413,9 +418,10 @@ assert status_of(first) == "approved"
 
 # The web gate let the visitor in while the guard was taking the photo.
 say(APPROVER, f"IN {entry_of(first)}")
-client.post(f"/api/pass/{entry_of(first)}/entry", headers=KEY)
+client.post(f"/api/pass/{entry_of(first)}/entry", headers=KEY, json=PHOTO)
 assert "Already inside" in snap(APPROVER)
-assert db.photo_of(first["reference"]) is None
+gate_shot = db.photo_of(first["reference"])
+assert gate_shot["image"] == JPEG and gate_shot["media_id"] is None, "a late photo changes nothing"
 
 # A photo from a stranger gets no answer and changes nothing.
 third = approved()
@@ -464,14 +470,14 @@ typed = client.get(f"/api/pass/{entry2.lower().replace('-', '')}", headers=KEY).
 assert typed["code_kind"] == "entry" and typed["code"] == entry2, typed
 assert exit2 not in str(typed)
 # Only the entry code records the entry, and only the exit code the exit.
-assert client.post(f"/api/pass/{ref2}/entry", headers=KEY).status_code == 404
-wrong_kind = client.post(f"/api/pass/{exit2}/entry", headers=KEY)
+assert client.post(f"/api/pass/{ref2}/entry", headers=KEY, json=PHOTO).status_code == 404
+wrong_kind = client.post(f"/api/pass/{exit2}/entry", headers=KEY, json=PHOTO)
 assert wrong_kind.status_code == 409 and "exit code" in wrong_kind.get_json()["error"]
 assert client.post(f"/api/pass/{exit2}/exit", headers=KEY).status_code == 409
-entered = client.post(f"/api/pass/{entry2}/entry", headers=KEY)
+entered = client.post(f"/api/pass/{entry2}/entry", headers=KEY, json=PHOTO)
 assert entered.status_code == 200 and entered.get_json()["status"] == "inside"
 assert exit2 not in entered.get_data(as_text=True)
-assert client.post(f"/api/pass/{entry2}/entry", headers=KEY).status_code == 409
+assert client.post(f"/api/pass/{entry2}/entry", headers=KEY, json=PHOTO).status_code == 409
 assert client.post(f"/api/pass/{ref2}/exit", headers=KEY).status_code == 404
 wrong_kind = client.post(f"/api/pass/{entry2}/exit", headers=KEY)
 assert wrong_kind.status_code == 409 and "entry code" in wrong_kind.get_json()["error"]
@@ -497,7 +503,7 @@ for field in PERSONAL:
 assert "Asha Rao" not in gone.get_data(as_text=True)
 assert "token" not in shut
 # The refusal that comes back with it must not smuggle the details through.
-refused_body = client.post(f"/api/pass/{entry2}/entry", headers=KEY).get_json()
+refused_body = client.post(f"/api/pass/{entry2}/entry", headers=KEY, json=PHOTO).get_json()
 for field in PERSONAL:
     assert field not in refused_body["visit"], field
 # The same rule over WhatsApp.
@@ -564,7 +570,7 @@ print(f"  {len(board['inside'])} inside, {len(board['expected'])} expected")
 print("a declined pass never opens the gate")
 bad = new_request()
 say(APPROVER, f"NO {bad['reference']}")
-refused = client.post(f"/api/pass/{entry_of(bad)}/entry", headers=KEY)
+refused = client.post(f"/api/pass/{entry_of(bad)}/entry", headers=KEY, json=PHOTO)
 assert refused.status_code == 409 and "Declined" in refused.get_json()["error"]
 
 print("several waiting requests")
@@ -868,8 +874,8 @@ assert done[0]["status"] == "closed"
 assert done[0]["entered_at"] and done[0]["exited_at"], done[0]
 # Guests come out readable, not as JSON.
 assert done[0]["guests"] == "Ravi Rao", done[0]["guests"]
-# The log says when the gate photo was taken. The web gate takes none.
-assert done[0]["photo_at"] == "", done[0]
+# The log says when the gate photo was taken, on the web gate as on WhatsApp.
+assert done[0]["photo_at"] == done[0]["entered_at"], done[0]
 photographed = next(r for r in rows if r["reference"] == code)
 assert photographed["photo_at"] == photographed["entered_at"], photographed
 # A visit that never entered has empty times rather than the word None.
@@ -998,7 +1004,8 @@ try:
     for label, call, most in (
         ("status check", lambda: client.get(f"/api/visit/{counted['token']}"), 1),
         ("pass lookup", lambda: client.get(f"/api/pass/{counted_code}", headers=KEY), 1),
-        ("entry", lambda: client.post(f"/api/pass/{counted_code}/entry", headers=KEY), 2),
+        ("entry", lambda: client.post(f"/api/pass/{counted_code}/entry",
+                                      headers=KEY, json=PHOTO), 2),
     ):
         trips.clear()
         assert call().status_code == 200, label
@@ -1175,7 +1182,7 @@ made_hours_ago(young, 47)
 assert "is now approved" in say(APPROVER, f"YES {young['reference']}")
 view = client.get(f"/api/visit/{young['token']}").get_json()
 assert view["status"] == "approved" and view["entry_code"] and view["expires_at"], view
-assert client.post(f"/api/pass/{entry_of(young)}/entry", headers=KEY).status_code == 200
+assert client.post(f"/api/pass/{entry_of(young)}/entry", headers=KEY, json=PHOTO).status_code == 200
 
 # 49 hours old and approved: nothing lets this visitor in.
 late_pass = new_request()
@@ -1183,12 +1190,12 @@ say(APPROVER, f"YES {late_pass['reference']}")
 made_hours_ago(late_pass, 49)
 view = client.get(f"/api/visit/{late_pass['token']}").get_json()
 assert view["status"] == "expired" and "entry_code" not in view, view
-gate_try = client.post(f"/api/pass/{entry_of(late_pass)}/entry", headers=KEY)
+gate_try = client.post(f"/api/pass/{entry_of(late_pass)}/entry", headers=KEY, json=PHOTO)
 refusal = gate_try.get_json()
 assert gate_try.status_code == 409 and "expired" in refusal["error"], refusal
 assert client.get(f"/api/pass/{entry_of(late_pass)}", headers=KEY).get_json()["status"] == "expired"
 assert "expired" in say(APPROVER, f"IN {entry_of(late_pass)}").lower()
-assert db.check_in(late_pass["reference"], "test") is None, "the UPDATE itself checks the time"
+assert db.check_in(late_pass["reference"], "test", JPEG) is None, "the UPDATE checks the time"
 assert "Expired" in say(APPROVER, late_pass["reference"])
 
 # The race: IN is accepted, then the pass expires before the photo arrives.
@@ -1215,7 +1222,7 @@ assert db.decide(unanswered["reference"], db.APPROVED, db.BY_AUTO) is None
 # A visitor already inside can always leave, however old the request.
 staying = new_request()
 say(APPROVER, f"YES {staying['reference']}")
-client.post(f"/api/pass/{entry_of(staying)}/entry", headers=KEY)
+client.post(f"/api/pass/{entry_of(staying)}/entry", headers=KEY, json=PHOTO)
 made_hours_ago(staying, 72)
 assert client.get(f"/api/visit/{staying['token']}").get_json()["status"] == "inside"
 assert client.post(f"/api/pass/{exit_of(staying)}/exit", headers=KEY).status_code == 200
@@ -1280,6 +1287,57 @@ client.post("/webhook/whatsapp", json=inbound(STRANGER, "KEY"))
 assert len(sent) == sent_before, "a stranger must get no reply"
 print("  sent to the fixed number, 3 tries per caller and 10 in all each hour, KEY works")
 
+print("the gate page lets nobody in without a photo")
+application.forget_hits()
+shot = approved()
+shot_entry = f"/api/pass/{entry_of(shot)}/entry"
+no_photo = client.post(shot_entry, headers=KEY)
+assert no_photo.status_code == 400 and no_photo.get_json()["error"] == application.NO_PHOTO
+assert status_of(shot) == "approved" and db.photo_of(shot["reference"]) is None
+png = "data:image/png;base64," + base64.b64encode(b"\x89PNG\r\n\x1a\n").decode()
+not_jpeg = "data:image/jpeg;base64," + base64.b64encode(b"\x89PNG\r\n\x1a\n").decode()
+too_big = "data:image/jpeg;base64," + base64.b64encode(
+    b"\xff\xd8\xff" + b"x" * application.PHOTO_BYTES).decode()
+for bad in (png, not_jpeg, too_big, "data:image/jpeg;base64,not base64!", 42, ""):
+    refused = client.post(shot_entry, headers=KEY, json={"photo": bad})
+    assert refused.status_code == 400, (str(bad)[:40], refused.status_code)
+huge = client.post(shot_entry, headers=KEY, json={"photo": "x" * 1_100_000})
+assert huge.status_code == 413 and "too big" in huge.get_json()["error"], huge.status_code
+assert status_of(shot) == "approved", "a refused photo lets nobody in"
+# A pass that cannot enter is refused for that reason, not for the photo.
+assert client.post(f"/api/pass/{exit_of(shot)}/entry", headers=KEY).status_code == 409
+let_in = client.post(shot_entry, headers=KEY, json=PHOTO)
+assert let_in.status_code == 200, let_in.get_json()
+stored = db.photo_of(shot["reference"])
+assert stored["image"] == JPEG and stored["media_id"] is None
+assert stored["taken_at"] == db.get(shot["reference"])["entered_at"]
+
+# The photo is for the admin only. No gate, visitor or log answer holds it.
+encoded = PHOTO["photo"].split(",")[1]
+for path, headers in ((f"/api/pass/{exit_of(shot)}", KEY), (f"/api/pass/{shot['reference']}", KEY),
+                      ("/api/gate/board", KEY), (f"/api/visit/{shot['token']}", {}),
+                      ("/api/export.csv", KEY), ("/api/admin/export.csv", ADMIN),
+                      (f"/api/admin/visits?q={shot['reference']}", ADMIN)):
+    assert encoded not in client.get(path, headers=headers).get_data(as_text=True), path
+listed = client.get(f"/api/admin/visits?q={shot['reference']}", headers=ADMIN).get_json()
+assert listed["visits"][0]["photo_stored"] is True
+photo_path = f"/api/admin/photo/{shot['reference']}"
+assert client.get(photo_path, headers=KEY).status_code == 403, "the gate key opens no photo"
+assert client.get(photo_path).status_code == 403
+viewed = client.get(photo_path, headers=ADMIN)
+assert viewed.status_code == 200 and viewed.get_json()["photo"] == PHOTO["photo"]
+assert viewed.headers["Cache-Control"] == "no-store"
+assert client.get("/api/admin/photo/VR-0000", headers=ADMIN).status_code == 404
+# A WhatsApp photo stays in the chat, so there is nothing to show.
+by_chat = approved()
+say(APPROVER, f"IN {entry_of(by_chat)}")
+snap(APPROVER)
+assert status_of(by_chat) == "inside"
+assert client.get(f"/api/admin/photo/{by_chat['reference']}", headers=ADMIN).status_code == 404
+db.delete(shot["reference"])
+assert db.photo_of(shot["reference"]) is None, "the photo goes with its visit"
+print("  no photo, a wrong file or a big file is refused, the admin alone sees the photo")
+
 print("guards added on the admin page have their own key, and the log names them")
 application.forget_hits()
 RAVI_PHONE = "+919800000001"
@@ -1315,7 +1373,7 @@ RAVI_KEY = {"X-Gate-Key": ravi_key}
 assert client.get("/api/gate/board", headers=RAVI_KEY).get_json()["you"] == RAVI_LABEL
 assert client.get("/api/gate/board", headers=KEY).get_json()["you"] == application.DESK_KEY
 by_page = approved()
-let_in = client.post(f"/api/pass/{entry_of(by_page)}/entry", headers=RAVI_KEY)
+let_in = client.post(f"/api/pass/{entry_of(by_page)}/entry", headers=RAVI_KEY, json=PHOTO)
 assert let_in.status_code == 200, let_in.get_json()
 assert RAVI_PHONE not in let_in.get_data(as_text=True), "a guard never sees a guard's number"
 assert db.get(by_page["reference"])["entered_by"] == RAVI_LABEL

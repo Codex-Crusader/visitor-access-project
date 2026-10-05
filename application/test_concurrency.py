@@ -1,5 +1,6 @@
 """Hammer the app from many threads at once and check nothing corrupts."""
 
+import base64
 import os
 import threading
 from collections import Counter
@@ -32,6 +33,13 @@ whatsapp.send_template = lambda to, values: fake_send(to, "\n".join(values))
 db.init()
 client = application.app.test_client()
 KEY = {"X-Gate-Key": "k"}
+
+
+def photo(tag):
+    """A gate page photo: JPEG start bytes, then the tag."""
+    return {"photo": application.PHOTO_PREFIX
+            + base64.b64encode(b"\xff\xd8\xff\xe0" + tag.encode()).decode()}
+
 
 N = 60
 payload = {"name": "A", "phone": "9876543210", "address": "X",
@@ -80,7 +88,7 @@ def race(action):
     results.clear()
     code = db.codes_of(target)[action]
     def press():
-        r = client.post(f"/api/pass/{code}/{action}", headers=KEY)
+        r = client.post(f"/api/pass/{code}/{action}", headers=KEY, json=photo("race"))
         with lock:
             results.append(r.status_code)
     racers = [threading.Thread(target=press) for _ in range(20)]
@@ -105,7 +113,7 @@ assert db.get(target)["status"] == "closed"
 busy = codes[1:41]
 def cycle(reference):
     pass_codes = db.codes_of(reference)
-    client.post(f"/api/pass/{pass_codes['entry']}/entry", headers=KEY)
+    client.post(f"/api/pass/{pass_codes['entry']}/entry", headers=KEY, json=photo(reference))
     client.post(f"/api/pass/{pass_codes['exit']}/exit", headers=KEY)
 threads = [threading.Thread(target=cycle, args=(c,)) for c in busy]
 for t in threads:
@@ -166,7 +174,8 @@ target = fresh_approved(1)[0]
 entry = db.codes_of(target)["entry"]
 winners = []
 def own_press(name):
-    r = client.post(f"/api/pass/{entry}/entry", headers={"X-Gate-Key": guard_keys[name]})
+    r = client.post(f"/api/pass/{entry}/entry", headers={"X-Gate-Key": guard_keys[name]},
+                    json=photo(name))
     with lock:
         winners.append((r.status_code, name))
 threads = [threading.Thread(target=own_press, args=(name,)) for name in guard_keys]
@@ -179,13 +188,14 @@ print(f"  20 own keys raced one entry -> {len(won)} accepted")
 assert len(won) == 1, won
 phone = guard_phones[int(won[0].split()[1])]
 assert db.get(target)["entered_by"] == f"{won[0]} {phone}", "the winner is the guard on record"
+assert db.photo_of(target)["image"].endswith(won[0].encode()), "only the winner's photo is kept"
 
 # --- Each guard lets a different visitor in and out at once ---
 refs = fresh_approved(20)
 def own_cycle(n):
     pass_codes = db.codes_of(refs[n])
     headers = {"X-Gate-Key": guard_keys[f"Guard {n}"]}
-    client.post(f"/api/pass/{pass_codes['entry']}/entry", headers=headers)
+    client.post(f"/api/pass/{pass_codes['entry']}/entry", headers=headers, json=photo(f"g{n}"))
     client.post(f"/api/pass/{pass_codes['exit']}/exit", headers=headers)
 threads = [threading.Thread(target=own_cycle, args=(n,)) for n in range(20)]
 for t in threads:
