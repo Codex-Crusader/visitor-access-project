@@ -3,6 +3,7 @@
 import base64
 import os
 import threading
+import time
 from collections import Counter
 
 import testdb
@@ -31,7 +32,9 @@ whatsapp.send = fake_send
 whatsapp.send_template = lambda to, values: fake_send(to, "\n".join(values))
 
 db.init()
-client = application.app.test_client()
+# The cache works from the first call, so every race below runs through it.
+db.CACHE_AFTER_SECONDS = 0
+client =application.app.test_client()
 KEY = {"X-Gate-Key": "k"}
 
 
@@ -197,17 +200,43 @@ def own_cycle(n):
     headers = {"X-Gate-Key": guard_keys[f"Guard {n}"]}
     client.post(f"/api/pass/{pass_codes['entry']}/entry", headers=headers, json=photo(f"g{n}"))
     client.post(f"/api/pass/{pass_codes['exit']}/exit", headers=headers)
+tokens = [db.get(ref)["token"] for ref in refs]
+racing = threading.Event()
+def watch(start):
+    """Visitors' pages and the gate board, polling while the guards work.
+
+    Five pages with a short pause, as real pages do. Twenty tight loops would
+    need more connections than the server's four threads ever use.
+    """
+    while racing.is_set():
+        for token in tokens[start::5]:
+            client.get(f"/api/visit/{token}")
+        client.get("/api/gate/board", headers=KEY)
+        time.sleep(0.02)
+racing.set()
+watchers = [threading.Thread(target=watch, args=(start,)) for start in range(5)]
 threads = [threading.Thread(target=own_cycle, args=(n,)) for n in range(20)]
-for t in threads:
+for t in watchers + threads:
     t.start()
 for t in threads:
+    t.join()
+racing.clear()
+for t in watchers:
     t.join()
 for n, ref in enumerate(refs):
     visit = db.get(ref)
     label = f"Guard {n} {guard_phones[n]}"
     assert visit["status"] == "closed", visit["status"]
     assert visit["entered_by"] == label and visit["exited_by"] == label, visit
+# The polls filled the cache during the race. None of it may be stale now.
+stale = [token for token in tokens
+         if client.get(f"/api/visit/{token}").get_json()["status"] != "closed"]
+assert not stale, f"{len(stale)} cached passes are stale"
+board = client.get("/api/gate/board", headers=KEY).get_json()
+on_board = {v["reference"] for v in board["expected"] + board["inside"]}
+assert not on_board & set(refs), "a closed visit is still on the cached board"
 print("  20 guards, 20 visitors in and out at once -> each visit names its own guard")
+print("  5 pages polling the 20 passes during the race -> no cached pass or board row is stale")
 
 # --- Ten approvals at once, each told to every guard ---
 sent.clear()

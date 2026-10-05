@@ -1,13 +1,17 @@
 const REASONS = ["See a student", "See an office", "Delivery", "Event", "Other"];
-const POLL_EVERY = 3000;      // normal gap between status checks
-const POLL_SLOWEST = 30000;   // slowest gap after repeated failures
+// The gap between status checks, by status. The visitor waits for the
+// decision, so the page asks often then. Once approved, only the entry
+// changes the page, and inside only the exit, so it asks less and uses
+// less of the visitor's data.
+const POLL_GAP = {pending:5000, escalated:5000, approved:10000, inside:30000};
+const POLL_SLOWEST = 60000;   // slowest gap after repeated failures
 const POLL_TIMEOUT = 10000;   // give up on one status check
 const SEND_TIMEOUT = 75000;   // a sleeping free server can take ~50s to wake
 const LIVE_VIEWS = ["status", "home", "inout"];
 const MAX_GUESTS = 10;        // the server keeps no more than this
 const S = {s:"home", f:{name:"",phone:"",address:"",reason:"",other:"",visiting:"",guest:""}, g:[], e:{}, adding:0,
   visit:null, cfg:{gate_desk_phone:"",escalate_minutes:15,retain_days:90,pass_hours:48}, err:"", hist:[], sheet:0,
-  wait:POLL_EVERY, down:0, seen:"", timer:0, busy:0};
+  wait:POLL_GAP.pending, down:0, seen:"", timer:0, busy:0};
 
 const el = i=>document.getElementById(i);
 // Built once. Inside the callback it was a new object for every escaped letter.
@@ -23,6 +27,7 @@ const st=()=>{
 };
 const waiting=()=>st()==="pending"||st()==="escalated";
 const live=()=>waiting()||st()==="approved"||st()==="inside";
+const gap=()=>POLL_GAP[st()]||POLL_GAP.pending;
 const hasPass=()=>st()==="approved"||st()==="inside";
 const hm=t=>t?new Date(t).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"}):"—";
 const dayHm=t=>t?new Date(t).toLocaleString([],{weekday:"short",day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"}):"—";
@@ -433,7 +438,7 @@ async function poll(){
       const v=await load(`/api/visit/${S.visit.token}`);
       const changed=v.status!==S.visit.status;
       keep(v);
-      S.wait=POLL_EVERY;
+      S.wait=gap();
       if(S.down){S.down=0;render()}
       else if(changed&&LIVE_VIEWS.includes(S.s))render();
     }catch(err){
@@ -446,7 +451,7 @@ async function poll(){
   }
   S.timer=setTimeout(()=>void poll(),S.wait);
 }
-function pollNow(){if(!document.hidden){S.wait=POLL_EVERY;void poll()}}
+function pollNow(){if(!document.hidden){S.wait=gap();void poll()}}
 
 function render(){
   const [t,b]=T[S.s]||["",0];

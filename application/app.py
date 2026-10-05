@@ -534,9 +534,10 @@ def create_request():
 @app.get("/api/visit/<token>")
 def read_visit(token):
     """The visitor's own view. The token is long, so the code stays private."""
-    visit, codes = db.visitor_pass(token)
-    if visit is None:
+    found = db.visitor_pass(token)
+    if found is None:
         return jsonify(error="No request with that token"), 404
+    visit, codes = found
     # The pass shows one code at a time: the entry code until the guard lets
     # the visitor in, then the exit code. Before approval and after the exit,
     # neither.
@@ -544,7 +545,11 @@ def read_visit(token):
     showing = {db.APPROVED: db.ENTRY, db.INSIDE: db.EXIT}.get(visit["status"])
     if showing:
         visit[f"{showing}_code"] = codes[showing]
-    return jsonify(visit)
+    # The phone asks again with this tag, and an unchanged pass costs an empty 304.
+    response = jsonify(visit)
+    response.headers["Cache-Control"] = "private, no-cache"
+    response.set_etag(short_hash(response.get_data()))
+    return response.make_conditional(request)
 
 
 # A finished visit keeps its times and loses everything personal. The privacy
@@ -1169,6 +1174,9 @@ def background_loop():
     """
     while True:
         wait = BACKGROUND_SECONDS
+        # The cache follows every write in this process. This also catches any
+        # other change, such as a restore of the database, within the hour.
+        db.forget_cache()
         try:
             auto_approve_due()
             escalate_due()

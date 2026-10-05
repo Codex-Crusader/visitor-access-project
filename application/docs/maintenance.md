@@ -43,10 +43,10 @@ was last updated. It updates by itself when the signal comes back.
 ## Approver
 
 You get a WhatsApp message with the visitor's details and a reference such as
-`VR-4022`.
+`VR-40221`.
 
-1. To approve, reply `YES VR-4022`.
-2. To decline, reply `NO VR-4022`.
+1. To approve, reply `YES VR-40221`.
+2. To decline, reply `NO VR-40221`.
 
 If only one request waits for you, `YES` or `NO` alone is enough. If the
 reference has a typing mistake, the app answers "No request has reference"
@@ -216,20 +216,22 @@ the gate desk. A removed guard who knows the shared key can still use it.
 One phone number can be an approver and a guard at the same time, so each
 job has its own word.
 
-| You send      | What happens                                                                                                    |
-|---------------|-----------------------------------------------------------------------------------------------------------------|
-| `VR-4022`     | Shows the pass by its reference                                                                                 |
-| `KT-4821`     | Shows the pass and the next step for that code                                                                  |
-| `YES VR-4022` | Approves the request                                                                                            |
-| `NO VR-4022`  | Declines the request                                                                                            |
-| `IN KT-4821`  | With the entry code: asks for a photo of the visitor                                                            |
-| a photo       | Records the entry for the last `IN`                                                                             |
-| `OUT RM-0937` | With the exit code: records the exit                                                                            |
-| `KEY`         | From `GUARD` or `ADMIN_PHONE`: sends back that number's key. From another guard: makes a new key for that guard |
-| anything else | Sends back the requests that wait for you                                                                       |
+| You send       | What happens                                                                                                    |
+|----------------|-----------------------------------------------------------------------------------------------------------------|
+| `VR-40221`     | Shows the pass by its reference                                                                                 |
+| `KT-4821`      | Shows the pass and the next step for that code                                                                  |
+| `YES VR-40221` | Approves the request                                                                                            |
+| `NO VR-40221`  | Declines the request                                                                                            |
+| `IN KT-4821`   | With the entry code: asks for a photo of the visitor                                                            |
+| a photo        | Records the entry for the last `IN`                                                                             |
+| `OUT RM-0937`  | With the exit code: records the exit                                                                            |
+| `KEY`          | From `GUARD` or `ADMIN_PHONE`: sends back that number's key. From another guard: makes a new key for that guard |
+| anything else  | Sends back the requests that wait for you                                                                       |
 
-A reference can also be typed as `VR4022`, `VR 4022` or `4022`. The app
-ignores every number that is not an approver, a guard or `ADMIN_PHONE`.
+A reference can also be typed as `VR40221`, `VR 40221` or `40221`. A
+reference made before 6 October 2026 has four digits, such as `VR-4022`, and
+it still works. The app ignores every number that is not an approver, a guard
+or `ADMIN_PHONE`.
 
 ## Forgotten keys
 
@@ -411,15 +413,20 @@ or from WhatsApp. The CSV never holds the photo itself.
 2. While Render sleeps, the timer does not run. Reminders to the backup
    approver, automatic approvals and expiries wait until the app wakes. The
    app wakes when somebody opens a page or sends a WhatsApp message.
-3. Neon gives 100 compute hours a month and 0.5 GB. Each gate page photo
-   uses about 30 to 40 KB, and the app keeps it for `RETAIN_DAYS`. At the
-   limit of about 9,000 stored visits, the photos use about 0.3 GB. Look at
-   the storage on the Neon console each month. The timer asks the
+3. Neon gives 100 compute hours a month and 0.5 GB. The timer asks the
    database only when a reminder, an approval or an expiry is due, and once
-   an hour when nothing is due. Neon can sleep in between. An open visitor
-   page asks every 3 seconds and an open gate page every 30 seconds, so Neon
-   stays awake while people use the app.
-4. If the compute hours run out, the app stops until the next month, and the
+   an hour when nothing is due. The server keeps the gate board, each
+   visitor's status and the guard list in memory until something changes,
+   so open gate pages and visitor pages do not ask the database. Neon can
+   sleep while nothing happens. Look at the compute graph on the Neon
+   console to see when it sleeps.
+4. Storage, not the references, sets how many visits the app can keep. Each
+   gate page photo uses about 30 to 40 KB, and the app keeps it for
+   `RETAIN_DAYS`. The 0.5 GB holds roughly 12,000 visits with photos. Look
+   at the storage on the Neon console each month. Keep `RETAIN_DAYS`
+   multiplied by the visits in one day well under that number. If the
+   storage is full, the database can refuse new data, and new requests fail.
+5. If the compute hours run out, the app stops until the next month, and the
    uptime check reports `"database":false`.
 
 ## How the app behaves
@@ -467,26 +474,34 @@ the reply is lost.
 ### How the work grows
 
 In this table, n is the number of stored visits. k is the number of rows
-that an operation returns or changes.
+that an operation returns or changes. "From memory" means that a repeated
+read costs no database query until the app changes the data. The first
+read after a change, and every read in the first 2 minutes after the server
+starts, goes to the database.
 
 | Work                               | Cost          | How                                        |
 |------------------------------------|---------------|--------------------------------------------|
-| Visitor status check, every 3 s    | O(log n)      | One query on the token index               |
+| Visitor status check, 5 to 30 s    | O(1)          | From memory, after the first query         |
 | Look up a pass by its code         | O(log n)      | One query on the code key                  |
 | Decide, enter, exit                | O(log n)      | One UPDATE that returns the new row        |
 | Background round, when work is due | O(log n + k)  | Indexes on status and time                 |
-| Gate board, every 30 s             | O(log n + k)  | Index on status and request time           |
+| Gate board, every 30 s             | O(k)          | From memory, after the first query         |
 | One admin page, first or fiftieth  | O(log n + 50) | Starts after the last row of the last page |
 | Admin counts by status             | O(n)          | One pass over an index                     |
 | Admin search                       | O(n) at worst | Reads rows until the page is full          |
 | CSV export                         | O(n)          | It returns every row                       |
 
-A reference has four digits, so there are 9,000 references. Keep
-`RETAIN_DAYS` multiplied by the visits in one day well under 9,000, or a new
-request can fail to find a free reference. Admin search reads every row when
+A reference has five digits, so there are 90,000 references. A new request
+picks one at random and tries again if it is taken. The free storage fills
+long before the references run out, see "The free plans". Admin search reads every row when
 the word is rare. A trigram index (`pg_trgm`) can fix that, but the test
 database does not have it, and the tests must use the same schema as
 production. The retention period keeps n small, so the search stays fast.
+
+If you change rows outside the app, for example a restore in the Neon
+console, restart the service on Render. The server keeps some reads in
+memory, and only its own writes clear them. The timer also clears them
+once an hour.
 
 ## When something fails
 

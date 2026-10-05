@@ -24,14 +24,16 @@ names who let each visitor in and out.
 
 1. The browser posts the form to `POST /api/requests`.
 2. The server stores the request and gives it four things: a reference such
-   as `VR-4022` for the approvers, an entry code and an exit code such as
+   as `VR-40221` for the approvers, an entry code and an exit code such as
    `KT-4821` for the gate, and a long private token for the browser.
 3. The server sends one WhatsApp template message to the main approver for
    the request's reason.
-4. The approver replies `YES VR-4022` or `NO VR-4022`.
+4. The approver replies `YES VR-40221` or `NO VR-40221`.
 5. Meta posts that reply to `POST /webhook/whatsapp`, and the server records
    the decision and the number that made it.
-6. The visitor's page asks `GET /api/visit/<token>` every three seconds.
+6. The visitor's page asks `GET /api/visit/<token>` every 5 seconds while it
+   waits for the decision, then less often. An unchanged answer is a 304
+   with an empty body, so the page uses little data on a weak signal.
 7. At the gate, the guard sends `IN` and the entry code, then a photo of the
    visitor. The photo records the entry. Later, `OUT` and the exit code
    record the exit.

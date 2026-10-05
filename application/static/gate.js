@@ -17,9 +17,10 @@ const dayHm = t => t ? new Date(t).toLocaleString([], {weekday:"short", hour:"2-
 
 // The visitor's pass shows an entry code, and after entry an exit code, such
 // as KT-4821. The guard may type it as kt4821 or KT 4821. A reference is
-// VR-0000, and WhatsApp accepts its four digits alone, so this page does too.
+// VR-40221, or VR-4022 from before references had five digits. WhatsApp
+// accepts the digits alone, so this page does too.
 const PASS_CODE = /^([A-HJ-NP-Z]{2})-?(\d{4})$/;
-const REFERENCE = /^(?:VR-?)?(\d{4})$/;
+const REFERENCE = /^(?:VR-?)?(\d{4,5})$/;
 const tidy = text => {
   const squeezed = text.replace(/\s+/g, "").toUpperCase();
   const ref = REFERENCE.exec(squeezed);

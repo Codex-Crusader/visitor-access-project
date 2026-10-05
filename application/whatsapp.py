@@ -10,8 +10,9 @@ import db
 API_URL = f"https://graph.facebook.com/v21.0/{config.META_PHONE_NUMBER_ID}/messages"
 TIMEOUT_SECONDS = 15
 
-# A reference, as VR-4022. An approver may type VR4022, VR 4022 or 4022.
-CODE = re.compile(r"^(?:VR-?)?(\d{4})$", re.IGNORECASE)
+# A reference, as VR-40221, or VR-4022 from before references had five digits.
+# An approver may type VR40221, VR 40221 or 40221.
+CODE = re.compile(r"^(?:VR-?)?(\d{4,5})$", re.IGNORECASE)
 # An entry or exit code, as KT-4821. A guard may type kt4821 or KT 4821.
 GATE_CODE = re.compile(r"^([A-HJ-NP-Z]{2})-?(\d{4})$")
 
@@ -22,7 +23,7 @@ GATE_WORDS = {"IN": db.ENTRY, "OUT": db.EXIT}
 KEY_WORD = "KEY"
 
 HELP = (
-    "Send a reference like VR-4022, or a pass code like KT-4821, to look it up.\n"
+    "Send a reference like VR-40221, or a pass code like KT-4821, to look it up.\n"
     "YES <reference> approves. NO <reference> declines.\n"
     "IN <entry code>, then a photo of the visitor, records entry.\n"
     "OUT <exit code> records exit.\n"

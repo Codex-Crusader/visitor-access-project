@@ -48,12 +48,12 @@ A visit has four identifiers. Each one does one job.
 
 | Identifier | Example              | Who has it      | What it can do                         |
 |------------|----------------------|-----------------|----------------------------------------|
-| Reference  | `VR-4022`            | Approvers, gate | Names the request. Opens nothing alone |
+| Reference  | `VR-40221`           | Approvers, gate | Names the request. Opens nothing alone |
 | Entry code | `KT-4821`            | The visitor     | Records the entry, with the gate key   |
 | Exit code  | `RM-0937`            | The visitor     | Records the exit, with the gate key    |
 | Token      | 22 random characters | The visitor     | Reads the visitor's own request        |
 
-1. The reference has only 9,000 values, so it is not a secret. At the gate,
+1. The reference has only 90,000 values, so it is not a secret. At the gate,
    it shows who the visitor is and records nothing.
 2. The entry and exit codes come from the Python `secrets` module, so one
    code tells nothing about the next. There are about 5.7 million codes. A
@@ -204,8 +204,9 @@ Tell the people who decide about the campus about these limits.
    number.
 6. The visitor's browser holds the only link to their request. A visitor who
    clears the browser or changes phones must send a new request.
-7. The reference has four digits. Keep the visits that the app stores under
-   9,000, see [maintenance.md](maintenance.md).
+7. The free database holds roughly 12,000 visits with photos. Keep the
+   visits that the app stores under that number, see
+   [maintenance.md](maintenance.md).
 8. On the free Render plan, the app sleeps after 15 quiet minutes. The first
    request after that waits up to about a minute, and reminders and automatic
    approvals wait until the app wakes.

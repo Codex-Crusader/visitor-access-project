@@ -53,7 +53,9 @@ def fake_template(to, values):
 whatsapp.send_template = fake_template
 
 db.init()
-client = application.app.test_client()
+# The cache works from the first call, so every check below runs through it.
+db.CACHE_AFTER_SECONDS = 0
+client =application.app.test_client()
 KEY = {"X-Gate-Key": "test-gate-key"}
 ADMIN = {"X-Admin-Key": "test-admin-key"}
 # The gate page sends a JPEG of the visitor with each entry. The server checks
@@ -137,6 +139,7 @@ code, token = visit["reference"], visit["token"]
 assert visit["status"] == "pending"
 assert len(token) > 16, "token must be long enough to resist guessing"
 assert code in sent[-1][1]
+assert re.fullmatch(r"VR-\d{5}", code), "a new reference has five digits"
 print("  created", code)
 
 print("the approval request goes out as a template")
@@ -187,6 +190,7 @@ try:
     with db.connect() as conn:
         conn.execute("UPDATE visits SET created_at = %s WHERE status = 'pending'",
                      (hour_ago,))
+    db.forget_cache()
     caught.clear()
     application.escalate_due()
     assert any("backup approver" in line for line in caught), caught
@@ -194,6 +198,7 @@ try:
     with db.connect() as conn:
         conn.execute("UPDATE visits SET created_at = %s WHERE created_at = %s",
                      (db.now(), hour_ago))
+    db.forget_cache()
 
     # While Meta reviews the template, TEMPLATE_FALLBACK sends plain text
     # instead, and the log says so, because plain text alone can be lost.
@@ -271,6 +276,19 @@ assert fine.get_json()["name"] == "Ashá Rao-Mehta"
 assert FORGED not in "".join(body for _, body in sent)
 print("  line breaks, control codes and invisible marks all refused")
 
+print("a reference from before five digits still works")
+older = new_request()
+with db.connect() as conn:
+    for table in ("visits", "gate_codes"):
+        conn.execute(f"UPDATE {table} SET reference = 'VR-4022' WHERE reference = %s",
+                     (older["reference"],))
+db.forget_cache()
+assert "is now approved" in say(APPROVER, "YES 4022")
+assert db.get("VR-4022")["status"] == "approved"
+assert "VR-4022" in say(APPROVER, "vr 4022")
+db.delete("VR-4022")
+print("  YES 4022 and a lookup of vr 4022 both reach VR-4022")
+
 print("privacy: the short code must not expose the visitor")
 # The code is only 4 digits. It must not be enough to read personal details.
 assert client.get(f"/api/pass/{code}").status_code == 403
@@ -313,7 +331,13 @@ print("whatsapp replies")
 sent.clear()
 client.post("/webhook/whatsapp", json=inbound(STRANGER, "YES"))
 assert sent == [], "a stranger must get no reply at all"
-assert client.get(f"/api/visit/{token}").get_json()["status"] == "pending"
+polled = client.get(f"/api/visit/{token}")
+assert polled.get_json()["status"] == "pending"
+# The phone polls with the tag it got. An unchanged pass answers 304, empty.
+assert polled.headers["Cache-Control"] == "private, no-cache" and polled.headers["ETag"]
+unchanged = client.get(f"/api/visit/{token}", headers={"If-None-Match": polled.headers["ETag"]})
+assert unchanged.status_code == 304 and not unchanged.data
+assert "ETag" not in client.get("/api/visit/not-a-token").headers, "a 404 carries no tag"
 
 # Unrecognised text returns the waiting request in full, details and all.
 guidance = say(APPROVER, "hello")
@@ -326,7 +350,9 @@ before = len(sent)
 client.post("/webhook/whatsapp", json=repeat)
 assert len(sent) == before, "a repeated message id must be ignored"
 assert client.get(f"/api/visit/{token}").get_json()["status"] == "approved"
-print("  duplicate delivery ignored")
+changed = client.get(f"/api/visit/{token}", headers={"If-None-Match": polled.headers["ETag"]})
+assert changed.status_code == 200, "a changed pass sends the new answer"
+print("  duplicate delivery ignored, an unchanged poll costs a 304")
 
 assert "already approved" in say(APPROVER, f"NO {code}")
 # Once approved, the visitor's pass shows the entry code, and only that one.
@@ -412,6 +438,7 @@ assert status_of(first) == "approved" and status_of(second_in) == "inside"
 say(APPROVER, f"IN {entry_of(first)}")
 with db.connect() as conn:
     conn.execute("UPDATE photo_waits SET asked = %s", ("2020-01-01T00:00:00+00:00",))
+db.forget_cache()
 late = snap(APPROVER)
 assert "No entry is waiting" in late and str(application.PHOTO_MINUTES) in late, late
 assert status_of(first) == "approved"
@@ -557,11 +584,13 @@ say(APPROVER, f"YES {stale['reference']}")
 with db.connect() as conn:
     conn.execute("UPDATE visits SET decided_at = %s, created_at = %s WHERE reference = %s",
                  (db.ago(1.9), db.ago(1.9), stale["reference"]))
+db.forget_cache()
 board = client.get("/api/gate/board", headers=KEY).get_json()
 assert stale["reference"] in [v["reference"] for v in board["expected"]], "valid for 48 hours"
 with db.connect() as conn:
     conn.execute("UPDATE visits SET created_at = %s WHERE reference = %s",
                  (db.ago(2.1), stale["reference"]))
+db.forget_cache()
 board = client.get("/api/gate/board", headers=KEY).get_json()
 assert stale["reference"] not in [v["reference"] for v in board["expected"]]
 assert client.get(f"/api/pass/{stale['reference']}", headers=KEY).get_json()["status"] == "expired"
@@ -594,6 +623,7 @@ print("escalation never decides, it only asks again")
 with db.connect() as conn:
     conn.execute("UPDATE visits SET created_at = %s WHERE reference = %s",
                  (db.ago(1 / 24), b["reference"]))
+db.forget_cache()
 due = db.due_for_escalation()
 assert [v["reference"] for v in due] == [b["reference"]], due
 whatsapp.notify_backup(due[0], db.approvers_for(db.approver_table(), due[0]["reason"]))
@@ -612,6 +642,7 @@ old = new_request()
 with db.connect() as conn:
     conn.execute("UPDATE visits SET created_at = %s WHERE reference = %s",
                  ("2020-01-01T00:00:00+00:00", old["reference"]))
+db.forget_cache()
 old_entry = entry_of(old)
 assert db.purge_old() >= 1
 assert db.get(old["reference"]) is None
@@ -629,6 +660,7 @@ with db.connect() as conn:
                      (photographed["reference"], "media.x", db.now()))
     conn.execute("UPDATE visits SET created_at = %s WHERE reference = %s",
                  ("2020-01-01T00:00:00+00:00", gone["reference"]))
+db.forget_cache()
 db.purge_old()
 assert db.photo_of(gone["reference"]) is None
 assert db.photo_of(kept["reference"]) is not None
@@ -677,6 +709,7 @@ try:
     with db.connect() as conn:
         conn.execute("UPDATE visits SET created_at = %s WHERE reference = %s",
                      (db.ago(1 / 24), late["reference"]))
+    db.forget_cache()
     application.escalate_due()
     assert templates[-1][0] == DELIVERY_BACKUP, templates[-1]
     assert templates[-1][1][0] == late["reference"]
@@ -1012,9 +1045,43 @@ try:
         trips.clear()
         assert call().status_code == 200, label
         assert len(trips) <= most, (label, len(trips))
+
+    # Open pages repeat their reads. With no write between, they cost no trip,
+    # so Neon can sleep while a gate page or a visitor's page stays open.
+    ravi_key = db.add_guard("Cache Guard", "+919800000777")
+    status = lambda: client.get(f"/api/visit/{counted['token']}")  # noqa: E731
+    gate_board = lambda: client.get("/api/gate/board", headers={"X-Gate-Key": ravi_key})  # noqa: E731
+    for label, call in (("status check", status), ("board with a guard's key", gate_board)):
+        call()
+        trips.clear()
+        assert call().status_code == 200 and len(trips) == 0, (label, len(trips))
+    # A write makes them stale, so the next read goes to the database once.
+    exit_code = exit_of(counted)
+    client.post(f"/api/pass/{exit_code}/exit", headers=KEY)
+    trips.clear()
+    assert status().get_json()["status"] == "closed", "a write is seen at once"
+    assert len(trips) == 1, len(trips)
+    trips.clear()
+    # Every write clears the whole cache, so the guard list is read again too.
+    assert gate_board().status_code == 200 and len(trips) == 2, len(trips)
+    db.remove_guard("+919800000777")
+    # An unknown token is never kept, so a scanner cannot fill the memory.
+    for _ in range(2):
+        trips.clear()
+        assert client.get("/api/visit/not-a-token").status_code == 404
+        assert len(trips) == 1, len(trips)
+    # In the first minutes after start, the old version may still write, so nothing is kept.
+    db.CACHE_AFTER_SECONDS = 10**9
+    try:
+        status()
+        trips.clear()
+        status()
+        assert len(trips) == 1, "nothing is kept while the server is new"
+    finally:
+        db.CACHE_AFTER_SECONDS = 0
 finally:
     db.connect = real_connect
-print("  status check 1, pass lookup 1, entry 2")
+print("  status check 1, pass lookup 1, entry 2; a repeated poll 0 until the next write")
 
 print("a dropped connection is retried for reads, never for writes")
 tries = []
@@ -1111,6 +1178,7 @@ assert db.get(event["reference"])["decided_by"] == db.BY_MAIN
 assert db.get(event["reference"])["decided_phone"] == NEW_MAIN
 with db.connect() as conn:
     conn.execute("DELETE FROM approvers")
+db.forget_cache()
 print("  both numbers required and checked, new number used at once, old one refused")
 
 print("a request made in working hours is approved by itself")
@@ -1139,6 +1207,7 @@ with db.connect() as conn:
                          (not_yet, "2999-01-01T00:00:00+00:00")):
         conn.execute("UPDATE visits SET auto_approve_at = %s WHERE reference = %s",
                      (moment, case["reference"]))
+db.forget_cache()
 db.mark_escalated(with_backup["reference"])
 say(APPROVER, f"NO {declined['reference']}")
 before = len(sent)
@@ -1176,6 +1245,7 @@ def made_hours_ago(ticket, hours):
     with db.connect() as db_conn:
         db_conn.execute("UPDATE visits SET created_at = %s WHERE reference = %s",
                         (db.ago(hours / 24), ticket["reference"]))
+    db.forget_cache()
 
 
 # 47 hours old: approval and entry still work, and the pass names its end.
@@ -1415,6 +1485,7 @@ auto = new_request()
 with db.connect() as conn:
     conn.execute("UPDATE visits SET auto_approve_at = %s WHERE reference = %s",
                  ("2020-01-01T00:00:00+00:00", auto["reference"]))
+db.forget_cache()
 application.auto_approve_due()
 assert [to for to, body in sent if auto["reference"] in body and "Approved visitor" in body] \
     == [RAVI_PHONE], sent
@@ -1450,6 +1521,7 @@ overdue = new_request()
 with db.connect() as conn:
     conn.execute("UPDATE visits SET auto_approve_at = %s WHERE reference = %s",
                  ("2020-01-01T00:00:00+00:00", overdue["reference"]))
+db.forget_cache()
 application.start_background()
 assert application.background.is_alive()
 # The first round runs at once, so a request due while the server slept is approved on wake.

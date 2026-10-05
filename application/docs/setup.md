@@ -67,7 +67,9 @@ of the repository.
 The app builds its database tables by itself the first time it starts.
 
 Keep `--workers 1`. The timer that sends reminders runs inside the worker,
-so a second worker sends every reminder twice.
+so a second worker sends every reminder twice. The worker also keeps the
+gate board and the visitors' status in memory, and only its own writes
+clear them, so a second worker shows old lists.
 
 ## Step 5: Connect WhatsApp to the app
 
@@ -291,7 +293,7 @@ change on its own. Make one in the Neon console under Branches.
 
 1. Open `<address>` and send a request.
 2. Read the WhatsApp message on your phone.
-3. Reply `YES VR-4022`, with the reference from the message.
+3. Reply `YES VR-40221`, with the reference from the message.
 4. The page turns green and shows the entry pass with its entry code.
 5. Send `IN` and the entry code on WhatsApp, for example `IN KT-4821`. The
    reply asks for a photo.

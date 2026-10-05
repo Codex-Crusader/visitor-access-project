@@ -193,6 +193,9 @@ ok("VR-4022 is kept", tidy(" vr-4022 ") === "VR-4022");
 ok("bare 4 digits gain the VR-", tidy("4022") === "VR-4022");
 ok("vr4022 is understood", tidy("vr4022") === "VR-4022");
 ok("anything else is only upper cased", tidy("abc") === "ABC");
+ok("a five-digit reference is kept", tidy(" vr-40221 ") === "VR-40221");
+ok("bare 5 digits gain the VR-", tidy("40221") === "VR-40221");
+ok("six digits are not a reference", tidy("402210") === "402210");
 
 // ------------------------------------------- characters that are not text
 console.log("visitor form: a field is one line of plain text");
@@ -385,7 +388,7 @@ async function boardChecks() {
   desk.eval('shrink = () => { visit = {...visit, code: "KT-0000"}; return Promise.reject(new Error("late")); }');
   await desk.eval('takePhoto(new File(["x"], "visitor.jpg", {type: "image/jpeg"}))');
   ok("a late photo failure stays off another pass", desk.eval("notice") !== "late");
-  ok("no request ever used the reference to act", !calls.some(u => /VR-\d{4}\/(entry|exit)/.test(u)));
+  ok("no request ever used the reference to act", !calls.some(u => /VR-\d{4,5}\/(entry|exit)/.test(u)));
   ok("inside, it asks for the exit code", byId("out").innerHTML.includes("type the exit code"));
   // act() refreshes the lists in the background. Let that finish first.
   await new Promise(done => setTimeout(done, 0));
@@ -787,6 +790,12 @@ async function visitorAutoChecks() {
     S.s="status";render()`);
   const text = v.document.getElementById("view").textContent;
   ok("the waiting screen shows no automatic approval", !/automatic|by itself/i.test(text));
+  const gapFor = status => v.eval(`S.visit.status=${JSON.stringify(status)};gap()`);
+  ok("waiting for a decision, the page asks every 5 seconds", gapFor("pending") === 5000
+     && gapFor("escalated") === 5000);
+  ok("approved, every 10 seconds", gapFor("approved") === 10000);
+  ok("inside, every 30 seconds", gapFor("inside") === 30000);
+  ok("a failure backs off to a minute at most", v.eval("POLL_SLOWEST") === 60000);
 }
 
 void boardChecks().then(offlinePassChecks).then(approverChecks).then(guardChecks).then(forgotChecks).then(visitorAutoChecks).then(wrongKeyChecks).then(adminChecks).then(downloadChecks).then(() => {

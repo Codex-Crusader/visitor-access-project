@@ -6,6 +6,7 @@ the query itself.
 """
 
 import atexit
+import copy
 import functools
 import hashlib
 import json
@@ -308,6 +309,60 @@ def read(query):
     return read_again
 
 
+# The reads that open pages repeat: the gate board every 30 seconds, the
+# visitor's status, and the guard list on every gate call. They come from
+# memory until a change to the data, so Neon can sleep while pages stay
+# open. This holds because one process makes every write: keep --workers 1.
+# The old version can still write while Render swaps versions, so nothing is
+# kept in the first minutes after start.
+CACHE_AFTER_SECONDS = 120
+CACHE_LIMIT = 500
+_cache: dict = {}
+_cache_lock = threading.Lock()
+_changes = [0]
+_started = time.monotonic()
+
+
+def forget_cache():
+    """Drop every cached read. Each write calls this, and the timer does every round."""
+    with _cache_lock:
+        _changes[0] += 1
+        _cache.clear()
+
+
+def writes(change):
+    """A change to the data. Once it ends, after its commit, the cached reads are stale."""
+    @functools.wraps(change)
+    def write_then_forget(*args, **kwargs):
+        try:
+            return change(*args, **kwargs)
+        finally:
+            forget_cache()
+    return write_then_forget
+
+
+def cached(query):
+    """A read kept in memory until the next write. A None answer is never kept."""
+    @functools.wraps(query)
+    def from_memory(*args):
+        key = (query.__name__, *args)
+        with _cache_lock:
+            hit = _cache.get(key)
+            seen = _changes[0]
+        if hit is None:
+            hit = query(*args)
+            with _cache_lock:
+                # Kept only if no write ran during the query, or it may be stale.
+                if (hit is not None and _changes[0] == seen
+                        and time.monotonic() - _started > CACHE_AFTER_SECONDS):
+                    if len(_cache) >= CACHE_LIMIT:
+                        _cache.clear()
+                    _cache[key] = hit
+        # Each caller gets a copy, so a change to it never reaches the cache.
+        return copy.deepcopy(hit)
+    return from_memory
+
+
 def pass_cutoff():
     """A request made before this time can no longer be approved or used."""
     return ago(config.PASS_HOURS / 24)
@@ -346,10 +401,12 @@ def new_gate_code():
             return f"{letters}-{secrets.randbelow(10000):04d}"
 
 
+@writes
 def create(fields, guests, auto_approve_at=None):
     """Insert a visit and its two codes. Retries when a code is already taken."""
     for _ in range(CODE_ATTEMPTS):
-        reference = f"VR-{random.randint(1000, 9999)}"
+        # Five digits: 90,000 references. Older visits keep their four-digit one.
+        reference = f"VR-{random.randint(10000, 99999)}"
         try:
             with connect() as conn:
                 conn.cursor().executemany(
@@ -389,12 +446,10 @@ def get(reference):
     return to_dict(row) if row is not None else None
 
 
+@cached
 @read
-def visitor_pass(token):
-    """(visit, {"entry": code, "exit": code}) for the visitor's page, or (None, {}).
-
-    One query: the page asks every three seconds, often on a weak signal.
-    """
+def _pass_row(token):
+    """The visit with this token and its two codes, as stored, or None. One query."""
     with connect() as conn:
         row = conn.execute(
             "SELECT visits.*, coming.code AS entry_code, going.code AS exit_code"
@@ -406,8 +461,17 @@ def visitor_pass(token):
             " WHERE visits.token = %s",
             (ENTRY, EXIT, token),
         ).fetchone()
+    return dict(row) if row else None
+
+
+def visitor_pass(token):
+    """(visit, {"entry": code, "exit": code}) for the visitor's page, or None.
+
+    The status is worked out now, so a cached row never shows a pass past its end.
+    """
+    row = _pass_row(token)
     if row is None:
-        return None, {}
+        return None
     codes = {ENTRY: row.pop("entry_code"), EXIT: row.pop("exit_code")}
     return to_dict(row), codes
 
@@ -438,6 +502,7 @@ def by_code(code):
     return to_dict(row), kind
 
 
+@writes
 def delete(reference):
     with connect() as conn:
         conn.execute("DELETE FROM visits WHERE reference = %s", (reference,))
@@ -464,26 +529,33 @@ def all_visits():
 BOARD_FIELDS = "reference, name, visiting, guests, status, created_at, decided_at, entered_at"
 
 
+@cached
 @read
-def at_gate():
-    """What the gate desk board shows: (expected, inside).
-
-    expected is every approved pass that has not expired or been used, newest
-    decision first. inside is everyone inside now, longest inside first, so a
-    visitor who never left is at the top. Two queries, each one a lookup on
-    the status index, rather than one OR that reads the whole table.
-    """
+def _gate_rows():
+    """The approved and the inside rows, as stored. Two lookups on the status index."""
     with connect() as conn:
         expected = conn.execute(
-            f"SELECT {BOARD_FIELDS} FROM visits WHERE status = %s AND created_at >= %s"
-            " ORDER BY decided_at DESC",
-            (APPROVED, pass_cutoff()),
+            f"SELECT {BOARD_FIELDS} FROM visits WHERE status = %s ORDER BY decided_at DESC",
+            (APPROVED,),
         ).fetchall()
         inside = conn.execute(
             f"SELECT {BOARD_FIELDS} FROM visits WHERE status = %s ORDER BY entered_at",
             (INSIDE,),
         ).fetchall()
-    return [to_dict(row) for row in expected], [to_dict(row) for row in inside]
+    return [dict(row) for row in expected], [dict(row) for row in inside]
+
+
+def at_gate():
+    """What the gate desk board shows: (expected, inside).
+
+    expected is every approved pass that has not expired, newest decision
+    first. inside is everyone inside, longest first. The expiry is worked out
+    now, so a cached row never outlives its pass.
+    """
+    expected, inside = _gate_rows()
+    cutoff = pass_cutoff()
+    return ([to_dict(row) for row in expected if row["created_at"] >= cutoff],
+            [to_dict(row) for row in inside])
 
 
 # Everything the admin page shows. Never SELECT * here: the token is the
@@ -608,6 +680,7 @@ def due_for_escalation():
     return [to_dict(row) for row in rows]
 
 
+@writes
 def mark_escalated(reference):
     with connect() as conn:
         conn.execute(
@@ -623,6 +696,7 @@ BY_BACKUP = "backup"
 BY_AUTO = "auto"
 
 
+@writes
 def decide(reference, status, by, phone=None):
     """Record a decision. Returns the visit, or None if it was decided or expired."""
     with connect() as conn:
@@ -665,38 +739,40 @@ def key_hash(key):
     return hashlib.sha256(key.encode()).hexdigest()
 
 
+@cached
 @read
-def guards():
-    """The guards added on the admin page, by name. Never their key hash."""
+def _guard_table():
+    """Every guard added on the admin page, by name. A short list, so it is read whole."""
     with connect() as conn:
-        rows = conn.execute("SELECT name, phone, added_at FROM guards ORDER BY name").fetchall()
+        rows = conn.execute(
+            "SELECT name, phone, key_hash, added_at FROM guards ORDER BY name"
+        ).fetchall()
     return [dict(row) for row in rows]
 
 
-@read
+def guards():
+    """The guards added on the admin page, by name. Never their key hash."""
+    return [{key: g[key] for key in ("name", "phone", "added_at")} for g in _guard_table()]
+
+
 def guard_by_phone(phone):
-    """The guard with this +number, or None."""
-    with connect() as conn:
-        row = conn.execute(
-            "SELECT name, phone FROM guards WHERE phone = %s", (phone,)
-        ).fetchone()
-    return dict(row) if row else None
+    """The guard with this +number, as {name, phone}, or None."""
+    found = [g for g in _guard_table() if g["phone"] == phone]
+    return {"name": found[0]["name"], "phone": phone} if found else None
 
 
-@read
 def guard_by_key(key):
-    """The guard whose own gate key this is, or None."""
-    with connect() as conn:
-        row = conn.execute(
-            "SELECT name, phone FROM guards WHERE key_hash = %s", (key_hash(key),)
-        ).fetchone()
-    return dict(row) if row else None
+    """The guard whose own gate key this is, as {name, phone}, or None."""
+    wanted = key_hash(key)
+    found = [g for g in _guard_table() if g["key_hash"] == wanted]
+    return {"name": found[0]["name"], "phone": found[0]["phone"]} if found else None
 
 
 def new_key():
     return secrets.token_urlsafe(18)
 
 
+@writes
 def add_guard(name, phone):
     """Add a guard. Returns their new gate key, or None when the number is already a guard."""
     key = new_key()
@@ -709,6 +785,7 @@ def add_guard(name, phone):
     return key if added == 1 else None
 
 
+@writes
 def renew_guard_key(phone):
     """Give a guard a new gate key. The old one stops at once. None when no such guard."""
     key = new_key()
@@ -719,6 +796,7 @@ def renew_guard_key(phone):
     return key if changed == 1 else None
 
 
+@writes
 def remove_guard(phone):
     """Remove a guard. Their key and their WhatsApp commands stop at once."""
     with connect() as conn:
@@ -737,6 +815,7 @@ def save_approvers(reason, main, backup):
         )
 
 
+@writes
 def check_in(reference, by, image):
     """Let an approved, unexpired visitor in and save the photo. Returns the visit, or None.
 
@@ -759,6 +838,7 @@ def check_in(reference, by, image):
     return to_dict(row) if row is not None else None
 
 
+@writes
 def check_out(reference, by):
     """Close the pass on the way out. Returns the visit, or None unless the visitor is inside."""
     with connect() as conn:
@@ -781,6 +861,7 @@ def wait_for_photo(guard, reference):
         )
 
 
+@writes
 def enter_with_photo(guard, minutes, media_id, by):
     """Let in the visitor this guard's photo is for. Returns (reference, entered).
 
@@ -842,6 +923,7 @@ def is_new_message(message_id):
     return added == 1
 
 
+@writes
 def expire_old():
     """Save EXPIRED on every pass past PASS_HOURS, so counts and filters match. Returns how many."""
     with connect() as conn:
@@ -851,6 +933,7 @@ def expire_old():
         ).rowcount
 
 
+@writes
 def purge_old():
     """Delete visits after the retention period. Returns how many went."""
     cutoff = ago(config.RETAIN_DAYS)
