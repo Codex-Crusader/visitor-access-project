@@ -71,18 +71,26 @@ screen carries a "Call gate desk" button.
 
 The working app lives in [`application/`](application/). A visitor fills in the form. The server
 sends the details to an approver on WhatsApp. The approver replies `YES` or `NO`. The visitor sees
-the decision on the same page within three seconds. At the gate, a guard checks the code, records
-the entry and the exit, and the code then stops working.
+the decision on the same page a few seconds later. At the gate, a guard checks the entry code on the
+pass, takes a photo of the visitor and records the entry. On the way out, the pass shows a new exit
+code. After the exit, neither code works. The admin page lists every request.
+
+The pictures below come from the working app, with made-up visitors. The demo has only the visitor
+screens, with fixed codes and no server, so some details are different.
 
 <div align="center">
 
-|                                    Home                                    |                                                  Request a visit                                                   |                                                   Waiting on the approver                                                   |
-|:--------------------------------------------------------------------------:|:------------------------------------------------------------------------------------------------------------------:|:---------------------------------------------------------------------------------------------------------------------------:|
-| <img src="images/app-01-home.png" alt="The five section menu" width="250"> | <img src="images/app-02-form.png" alt="Reason chips, the student being visited, and a second visitor" width="250"> | <img src="images/app-03-waiting.png" alt="Not approved yet, with a tracker and the time the backup takes over" width="250"> |
+|                                    Home                                    |                                                Request a visit                                                 |                                                   Waiting on the approver                                                   |
+|:--------------------------------------------------------------------------:|:--------------------------------------------------------------------------------------------------------------:|:---------------------------------------------------------------------------------------------------------------------------:|
+| <img src="images/app-01-home.png" alt="The five section menu" width="250"> | <img src="images/app-02-form.png" alt="Reason chips, the student being visited, and one guest" width="250"> | <img src="images/app-03-waiting.png" alt="Not approved yet, with a tracker and the time the backup takes over" width="250"> |
 
-|                                   Approved, with the pass                                   |                                                         The gate desk                                                         |
-|:-------------------------------------------------------------------------------------------:|:-----------------------------------------------------------------------------------------------------------------------------:|
-| <img src="images/app-04-pass.png" alt="An entry pass showing the code VR-6124" width="250"> | <img src="images/app-05-gate.png" alt="The guard looks up a code and sees Inside now, with a Record exit button" width="250"> |
+|                                           Approved, with the pass                                            |                                                              The gate desk                                                              |
+|:------------------------------------------------------------------------------------------------------------:|:---------------------------------------------------------------------------------------------------------------------------------------:|
+| <img src="images/app-04-pass.png" alt="An entry pass showing the entry code UW-6831" width="250"> | <img src="images/app-05-gate.png" alt="The guard types the entry code and sees Let them in, and must take a photo before Record entry" width="250"> |
+
+|                                                                 The admin page                                                                  |
+|:-----------------------------------------------------------------------------------------------------------------------------------------------:|
+| <img src="images/app-06-admin.png" alt="Every request, newest first, with counts by status and the approver who decided each one" width="760"> |
 
 </div>
 
