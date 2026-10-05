@@ -478,6 +478,8 @@ async function adminChecks() {
   tab("visits").click();
   ok("the visits tab opens the list again", !byId("visits").hidden && byId("numbers").hidden);
   ok("the admin page is light only", !read("admin.html").includes("dark"));
+  ok("the gate page is light only", !read("gate.html").includes("dark")
+     && read("gate.html").includes('content="only light"'));
 
   byId("more").click();
   await new Promise(done => setTimeout(done, 0));

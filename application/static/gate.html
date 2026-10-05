@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="color-scheme" content="light dark">
+<meta name="color-scheme" content="only light">
 <meta name="theme-color" content="#16325B">
 <meta name="description" content="Gate desk: check a visitor pass, record entry and exit.">
 <title>Gate Desk</title>
@@ -15,24 +15,6 @@
  --wait:#8A5710;--waitBg:#FDF4E6;--waitLn:#EBCE9E;
  --stop:#992724;--stopBg:#FBEDEB;--stopLn:#E9B6B0;
  --bg:#D9E1EA;--r:14px;--sh:0 1px 2px rgba(16,30,50,.06),0 1px 1px rgba(16,30,50,.04);
-}
-/* Before, only the page behind the card turned dark, so a guard at night
-   read a white card on a black screen. Now every colour has a dark value. */
-@media (prefers-color-scheme:dark){:root:not([data-theme=light]){
- --ink:#E4EBF3;--soft:#93A3B5;--line:#243243;--paper:#111A24;--mute:#0C141D;
- --brand:#2A5DA3;--brand2:#7AA9EA;--tint:#16263A;--accent:#9CC0F2;
- --go:#5CCB9A;--goBg:#0F2A20;--goLn:#1F5A41;--goBtn:#12805A;
- --wait:#EBB866;--waitBg:#2A2013;--waitLn:#5B4521;
- --stop:#F2958D;--stopBg:#2D1616;--stopLn:#6B2E2A;
- --bg:#070C12;--sh:0 1px 2px rgba(0,0,0,.4);
-}}
-:root[data-theme=dark]{
- --ink:#E4EBF3;--soft:#93A3B5;--line:#243243;--paper:#111A24;--mute:#0C141D;
- --brand:#2A5DA3;--brand2:#7AA9EA;--tint:#16263A;--accent:#9CC0F2;
- --go:#5CCB9A;--goBg:#0F2A20;--goLn:#1F5A41;--goBtn:#12805A;
- --wait:#EBB866;--waitBg:#2A2013;--waitLn:#5B4521;
- --stop:#F2958D;--stopBg:#2D1616;--stopLn:#6B2E2A;
- --bg:#070C12;--sh:0 1px 2px rgba(0,0,0,.4);
 }
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 /* A class that sets display would otherwise beat the hidden attribute. */
