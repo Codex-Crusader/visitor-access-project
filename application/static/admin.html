@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="color-scheme" content="light dark">
+<meta name="color-scheme" content="only light">
 <meta name="theme-color" content="#16325B">
 <meta name="robots" content="noindex">
 <meta name="description" content="Admin: every visitor request, its status and its approvers.">
@@ -16,22 +16,6 @@
  --wait:#8A5710;--waitBg:#FDF4E6;--waitLn:#EBCE9E;
  --stop:#992724;--stopBg:#FBEDEB;--stopLn:#E9B6B0;
  --bg:#D9E1EA;--r:14px;--sh:0 1px 2px rgba(16,30,50,.06),0 1px 1px rgba(16,30,50,.04);
-}
-@media (prefers-color-scheme:dark){:root:not([data-theme=light]){
- --ink:#E4EBF3;--soft:#93A3B5;--line:#243243;--paper:#111A24;--mute:#0C141D;
- --brand:#2A5DA3;--brand2:#7AA9EA;--tint:#16263A;--accent:#9CC0F2;
- --go:#5CCB9A;--goBg:#0F2A20;--goLn:#1F5A41;
- --wait:#EBB866;--waitBg:#2A2013;--waitLn:#5B4521;
- --stop:#F2958D;--stopBg:#2D1616;--stopLn:#6B2E2A;
- --bg:#070C12;--sh:0 1px 2px rgba(0,0,0,.4);
-}}
-:root[data-theme=dark]{
- --ink:#E4EBF3;--soft:#93A3B5;--line:#243243;--paper:#111A24;--mute:#0C141D;
- --brand:#2A5DA3;--brand2:#7AA9EA;--tint:#16263A;--accent:#9CC0F2;
- --go:#5CCB9A;--goBg:#0F2A20;--goLn:#1F5A41;
- --wait:#EBB866;--waitBg:#2A2013;--waitLn:#5B4521;
- --stop:#F2958D;--stopBg:#2D1616;--stopLn:#6B2E2A;
- --bg:#070C12;--sh:0 1px 2px rgba(0,0,0,.4);
 }
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 /* A class that sets display would otherwise beat the hidden attribute. */
@@ -55,6 +39,11 @@ button{cursor:pointer;border:0;background:none}
  font-size:.84rem;font-weight:600}
 .top nav button:hover{background:rgba(255,255,255,.22)}
 .main{padding:20px 22px 40px}
+
+.tabs{display:grid;grid-template-columns:1fr 1fr;gap:6px;padding:5px;margin-bottom:18px;
+ background:var(--mute);border:1px solid var(--line);border-radius:var(--r)}
+.tabs button{padding:11px 8px;border-radius:10px;font-weight:650;color:var(--soft)}
+.tabs button[aria-selected=true]{background:var(--paper);color:var(--brand);box-shadow:var(--sh)}
 
 label{display:block;font-weight:650;font-size:.84rem;margin:0 0 7px}
 input{width:100%;padding:13px 14px;border:1px solid var(--line);border-radius:12px;background:var(--mute)}
@@ -89,6 +78,9 @@ summary:hover{background:var(--mute)}
 summary b{font-weight:650;overflow-wrap:anywhere}
 summary small{display:block;color:var(--soft);font-size:.8rem;overflow-wrap:anywhere}
 summary .side{text-align:right}
+summary .by{margin-top:3px}
+summary .by[data-tone=go]{color:var(--go)}
+summary .by[data-tone=stop]{color:var(--stop)}
 code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-weight:650;letter-spacing:.04em}
 .pill{display:inline-block;padding:2px 9px;border-radius:999px;font-size:.76rem;font-weight:700;
  border:1px solid;white-space:nowrap}
@@ -106,7 +98,7 @@ code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-weigh
 }
 .empty{padding:16px;color:var(--soft)}
 
-h2{margin:30px 0 10px;font-size:1rem;font-weight:700}
+h2{margin:0 0 10px;font-size:1rem;font-weight:700}
 table{width:100%;border-collapse:collapse;font-size:.9rem}
 th,td{text-align:left;padding:10px 12px;border-bottom:1px solid var(--line)}
 th{color:var(--soft);font-weight:600;font-size:.8rem}

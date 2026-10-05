@@ -216,7 +216,7 @@ function render() {
       ${fact("Visiting", visit.visiting)}
       ${fact("Reason", visit.reason)}
       ${visit.guests && visit.guests.length ? fact("With", visit.guests.join(", ")) : ""}
-      ${fact("Approved", hm(visit.decided_at))}`;
+      ${fact(visit.status === "declined" ? "Declined" : "Approved", hm(visit.decided_at))}`;
 
   out.innerHTML = `
     ${notice ? problem(notice) : ""}

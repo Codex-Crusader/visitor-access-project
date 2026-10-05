@@ -61,21 +61,28 @@ guard holds the gate key. Without `ADMIN_KEY`, or when it is the same as
 `GATE_KEY`, the admin page stays locked and the server log says why. The rest
 of the app runs as usual.
 
-1. The tiles count the requests by status. Tap a tile to show only that
-   status. Waiting is pending and escalated together.
+The page is always light. It has two tabs: Visits and Approver numbers.
+
+1. On the Visits tab, the tiles count the requests by status. Tap a tile to
+   show only that status. Waiting is pending and escalated together.
 2. The search box finds a name, phone number, reference or person visited.
-3. Tap a request to see the address, the guests, its two approvers, who
-   decided (the approver, the backup, or the automatic approval), and every
-   time: requested, sent to the backup, decided, entered, gate photo and exited.
-4. The Show more button loads the next 50.
-5. The table at the end lists the two approvers for each reason. Change opens
-   both numbers for that reason. Both are required, with `+` and the country
-   code, and they must differ. The change works at once, see "Approvers for
-   each reason".
+3. Each decided request shows the decision and who made it, for example
+   "Declined by the backup approver +919000000002". The number is the one
+   that decided. The app keeps it in `decided_phone`. A decision made before
+   this column existed names only the role.
+4. Tap a request to see the address, the guests, the approvers it has now,
+   the decision, and every time: requested, sent to the backup, decided,
+   entered, gate photo and exited.
+5. The Show more button loads the next 50.
+6. The Approver numbers tab lists the two approvers for each reason. Change
+   opens both numbers for that reason. Both are required, with `+` and the
+   country code, and they must differ. The change works at once, see
+   "Approvers for each reason".
 
 The page reads `GET /api/admin/visits` and `GET /api/admin/summary` with the
-`X-Admin-Key` header. Neither returns the visitor's private token. Download
-CSV gives the same log as the gate page.
+`X-Admin-Key` header. Neither returns the visitor's private token. Only the
+admin list returns `decided_phone`. The visitor page and the gate page never
+get it. Download CSV gives the same log as the gate page.
 
 ## Approvers for each reason
 
@@ -216,7 +223,10 @@ same time, so each job has its own word.
 | `KEY`         | From `GUARD` or `ADMIN_PHONE`: sends back that number's key |
 | anything else | Sends back the request that is waiting, with full details   |
 
-`YES` and `NO` work without a reference when exactly one request is waiting. The
+`YES` and `NO` work without a reference when exactly one request is waiting.
+A reference can also be typed as `VR4022`, `VR 4022` or `4022`. A reference
+that does not read as one gets "No request has reference". It never decides
+the request that is waiting. The
 server ignores every number that is not an approver, `GUARD` or `ADMIN_PHONE`.
 
 ### The photo at the gate

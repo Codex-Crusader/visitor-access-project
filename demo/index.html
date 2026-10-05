@@ -382,7 +382,7 @@ function n2(){
   else{
     const who=needed("visiting","This");
     if(who)found.visiting=who;
-    else if(/prof|dr[.]|sir|madam/i.test(S.f.visiting))found.visiting=STAFF;
+    else if(/\b(prof|professor|dr|sir|madam|ma'am)\b/i.test(S.f.visiting))found.visiting=STAFF;
   }
 
   // A name typed in the open box but not added yet still counts.

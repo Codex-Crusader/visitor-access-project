@@ -175,7 +175,9 @@ You get a WhatsApp message with the visitor's details and a reference such as
 1. To approve, reply `YES VR-4022`.
 2. To decline, reply `NO VR-4022`.
 
-If only one request is waiting, `YES` or `NO` alone is enough. Send any other
+If only one request is waiting, `YES` or `NO` alone is enough. If you add a
+reference with a typing mistake, the app answers "No request has reference"
+and decides nothing. Send any other
 message to see the requests that wait for you.
 
 If you do not answer in time, the backup approver gets the same request. The
@@ -239,15 +241,19 @@ reference.
    it, tap "Forgot admin key?". The app sends the key to `ADMIN_PHONE` on
    WhatsApp. If it does not arrive, send `KEY` from that phone to the app's
    WhatsApp number.
-3. Tap a tile to show only the requests with that status.
-4. Use the search box to find a name, phone number, reference or the person
+3. The page has two tabs: Visits and Approver numbers. Visits opens first.
+4. On the Visits tab, tap a tile to show only the requests with that status.
+5. Use the search box to find a name, phone number, reference or the person
    visited.
-5. Tap a request to see all its details and times.
-6. Use Download CSV to save the whole log.
+6. Read the line under each name to see the decision and who made it, for
+   example "Approved by the approver +919876543210" or "Declined by the
+   backup approver +919876543211".
+7. Tap a request to see all its details and times.
+8. Use Download CSV to save the whole log.
 
 ### Change the approvers
 
-1. At the end of the admin page, find "Who approves each reason".
+1. Tap the Approver numbers tab.
 2. Tap Change on the reason.
 3. Type the approver's number and the backup's number. Write each one with
    `+` and the country code, like `+919876543210`. Both are required, and

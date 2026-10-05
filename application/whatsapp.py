@@ -10,7 +10,8 @@ import db
 API_URL = f"https://graph.facebook.com/v21.0/{config.META_PHONE_NUMBER_ID}/messages"
 TIMEOUT_SECONDS = 15
 
-CODE = re.compile(r"^(?:VR-)?(\d{4})$", re.IGNORECASE)
+# A reference, as VR-4022. An approver may type VR4022, VR 4022 or 4022.
+CODE = re.compile(r"^(?:VR-?)?(\d{4})$", re.IGNORECASE)
 # An entry or exit code, as KT-4821. A guard may type kt4821 or KT 4821.
 GATE_CODE = re.compile(r"^([A-HJ-NP-Z]{2})-?(\d{4})$")
 
@@ -233,10 +234,12 @@ def read_reply(body):
 
     if word == KEY_WORD and len(parts) == 1:
         return "key", None, None
-    if word in DECIDE_WORDS:
-        return "decide", DECIDE_WORDS[word], normalize_reference(parts[1] if len(parts) > 1 else "")
     # A code may come with a space in it, as KT 4821, so the rest is joined.
     rest = "".join(parts[1:])
+    if word in DECIDE_WORDS:
+        # A reference that does not read as one goes on as typed, so the reply
+        # names it. It must never fall back to the one request waiting.
+        return "decide", DECIDE_WORDS[word], normalize_reference(rest) or rest.upper() or None
     if word in GATE_WORDS:
         # Whatever was typed goes on, so a wrong code is named in the reply.
         return "gate", GATE_WORDS[word], normalize_gate_code(rest) or rest.upper() or None

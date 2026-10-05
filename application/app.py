@@ -390,7 +390,7 @@ def read_visit(token):
     # the visitor in, then the exit code. Before approval and after the exit,
     # neither.
     # The visitor does not see how or when a request is approved.
-    for private in ("auto_approve_at", "decided_by"):
+    for private in ("auto_approve_at", "decided_by", "decided_phone"):
         visit.pop(private, None)
     showing = {db.APPROVED: db.ENTRY, db.INSIDE: db.EXIT}.get(visit["status"])
     if showing:
@@ -408,7 +408,8 @@ CLOSED_PASS = ("reference", "status", "created_at", "decided_at",
 
 def gate_view(visit):
     if visit["status"] != db.CLOSED:
-        return visit
+        # The approver's number is for the admin page only.
+        return {key: value for key, value in visit.items() if key != "decided_phone"}
     # The page reads guests.length, so guests is emptied rather than dropped.
     return {key: [] if key == "guests" else visit[key] for key in CLOSED_PASS}
 
@@ -693,7 +694,9 @@ def handle_decide(sender, status, reference, table):
     by = role(sender, visit, table)
     if not by:
         return f"{reference} goes to another approver. You cannot decide it."
-    if not db.decide(reference, status, by):
+    main, backup = db.approvers_for(table, visit["reason"])
+    phone = main if by == db.BY_MAIN else backup
+    if not db.decide(reference, status, by, phone):
         return f"{reference} was already {visit['status']}."
     return f"{reference} is now {status}.\n\n{whatsapp.brief(visit)}"
 

@@ -21,6 +21,7 @@ const STATUS = {
   declined: ["stop", "Declined"], closed: ["done", "Closed"],
 };
 
+let section = "visits"; // the open tab: "visits" or "numbers"
 let rows = [];
 let next = null;
 let filter = "all";
@@ -97,14 +98,25 @@ function renderTiles() {
 }
 
 const plus = v => v.guests.length ? ` +${v.guests.length}` : "";
-const DECIDED_BY = {main: "The approver", backup: "The backup approver",
-  auto: "Approved automatically: no one answered in time"};
+const DECIDER = {main: "the approver", backup: "the backup approver"};
+
+// [tone, line] for who decided, such as "Declined by the backup approver +91…".
+// A decision made before the app kept the number names only the role.
+function decision(v) {
+  if (!v.decided_at) return ["", ""];
+  if (v.decided_by === "auto") return ["go", "Approved automatically: no one answered in time"];
+  const [tone, word] = v.status === "declined" ? ["stop", "Declined"] : ["go", "Approved"];
+  const who = DECIDER[v.decided_by];
+  return [tone, who ? `${word} by ${who}${v.decided_phone ? ` ${v.decided_phone}` : ""}` : word];
+}
 
 function item(v) {
   const [main1, backup] = v.approvers || [];
   const [tone, word] = STATUS[v.status] || ["", v.status];
+  const [byTone, byLine] = decision(v);
   return `<details><summary>
-      <span><b>${x(v.name)}${plus(v)}</b><small>${x(v.phone)}</small></span>
+      <span><b>${x(v.name)}${plus(v)}</b><small>${x(v.phone)}</small>
+        ${byLine ? `<small class="by" data-tone="${byTone}">${x(byLine)}</small>` : ""}</span>
       <span class="mid"><b>${x(v.reason)}</b><small>Visiting ${x(v.visiting)}</small></span>
       <span class="side"><code>${x(v.reference)}</code><br>
         <span class="pill" data-tone="${tone}">${x(word)}</span></span>
@@ -114,11 +126,11 @@ function item(v) {
       <dt>Reason</dt><dd>${x(v.reason)}</dd>
       <dt>Visiting</dt><dd>${x(v.visiting)}</dd>
       <dt>With</dt><dd>${v.guests.length ? x(v.guests.join(", ")) : "No one"}</dd>
-      <dt>Approvers</dt><dd>${x(main1)}${backup && backup !== main1 ? `, backup ${x(backup)}` : " (also the backup)"}</dd>
+      <dt>Approvers now</dt><dd>${x(main1)}${backup && backup !== main1 ? `, backup ${x(backup)}` : " (also the backup)"}</dd>
       <dt>Requested</dt><dd>${when(v.created_at)}</dd>
       <dt>Sent to backup</dt><dd>${when(v.escalated_at)}</dd>
       <dt>Decided</dt><dd>${when(v.decided_at)}</dd>
-      <dt>Decided by</dt><dd>${x(DECIDED_BY[v.decided_by] || "—")}</dd>
+      <dt>Decision</dt><dd>${x(byLine || "Not decided yet")}</dd>
       <dt>Entered</dt><dd>${when(v.entered_at)}</dd>
       <dt>Gate photo</dt><dd>${when(v.photo_at)}</dd>
       <dt>Exited</dt><dd>${when(v.exited_at)}</dd>
@@ -187,6 +199,14 @@ async function saveApprovers() {
   renderApprovers();
 }
 
+function renderTabs() {
+  for (const tab of el("tabs").children) {
+    const open = tab.dataset.section === section;
+    tab.setAttribute("aria-selected", open ? "true" : "false");
+    el(tab.dataset.section).hidden = !open;
+  }
+}
+
 function renderNotice() {
   el("notice").innerHTML = notice ? `<div class="note bad">${x(notice)}</div>` : "";
 }
@@ -227,12 +247,19 @@ function render() {
   if (!el("list")) {
     main.innerHTML = `
       <div id="notice"></div>
+      <div class="tabs" id="tabs" role="tablist">
+        <button role="tab" data-section="visits" aria-controls="visits">Visits</button>
+        <button role="tab" data-section="numbers" aria-controls="numbers">Approver numbers</button>
+      </div>
+      <section id="visits" role="tabpanel">
       <div class="tiles" id="tiles"></div>
       <div class="bar"><input id="q" type="search" placeholder="Search name, phone, code or person visited"
         aria-label="Search" autocomplete="off" spellcheck="false"></div>
       <p class="found" id="found"></p>
       <div class="list" id="list"></div>
       <button class="btn plain" id="more" hidden>Show more</button>
+      </section>
+      <section id="numbers" role="tabpanel" hidden>
       <h2>Who approves each reason</h2>
       <div id="approver-note"></div>
       <div class="wrap" id="approvers"></div>
@@ -240,7 +267,12 @@ function render() {
         A change works at once: the old numbers can no longer decide that reason's requests,
         including requests already sent to them. While the app uses Meta's test number, also
         add each new number to the recipient list in Meta's API Setup page.</p>
-      <p class="hint" id="rules"></p>`;
+      <p class="hint" id="rules"></p>
+      </section>`;
+    el("tabs").onclick = e => {
+      const hit = e.target.closest("[data-section]");
+      if (hit) { section = hit.dataset.section; renderTabs(); }
+    };
     el("tiles").onclick = e => {
       const hit = e.target.closest("[data-filter]");
       if (hit && hit.dataset.filter !== filter) { filter = hit.dataset.filter; void load(); }
@@ -256,6 +288,7 @@ function render() {
     };
   }
   renderNotice();
+  renderTabs();
   renderTiles();
   renderList();
   renderApprovers();

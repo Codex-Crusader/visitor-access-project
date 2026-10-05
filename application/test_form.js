@@ -122,6 +122,10 @@ ok("the staff note still shows",
 S.f.visiting = "2024SEPVUGP0003";
 call("n2");
 ok("a student roll number passes", S.s === "review");
+S.s = "step2"; S.f.visiting = "Dr. Rao"; call("n2");
+ok("Dr. is a staff name", S.s === "step2" && S.e.visiting);
+S.f.visiting = "Sirisha Madhuri Profulla"; call("n2");
+ok("a student name that holds sir, mad or prof passes", S.s === "review");
 ok("the staff note is gone once fixed", Object.keys(S.e).length === 0);
 
 // ------------------------------------------------ adding people with a "+"
@@ -262,6 +266,13 @@ gate.eval('visit = {reference:"VR-4022", status:"approved", name:"Asha Rao",' +
           ' guests:[], decided_at:"2026-09-20T10:05:00Z"}');
 gRender();
 ok("an open pass still shows the visitor", gOut().includes("Asha Rao"));
+ok("an approved pass says when it was approved", gOut().includes(">Approved<"));
+gate.eval('visit = {...visit, status: "declined"}');
+gRender();
+ok("a declined pass never says Approved", gOut().includes(">Declined<")
+   && !gOut().includes(">Approved<"));
+gate.eval('visit = {...visit, status: "approved"}');
+gRender();
 ok("opened by reference, it offers no button", !gOut().includes("Record entry"));
 ok("and asks for the entry code instead", gOut().includes("type the entry code"));
 gate.eval('visit = {...visit, code: "KT-4821", code_kind: "entry"}');
@@ -405,7 +416,9 @@ async function adminChecks() {
   const row = n => ({reference: `VR-${1000 + n}`, name: n ? `Visitor ${n}` : "Kiran <b>",
     phone: "9876543210", address: "Karjat", reason: "Delivery", visiting: "Office",
     guests: n % 2 ? ["Ravi"] : [], status: n % 3 ? "pending" : "inside",
-    created_at: "2026-09-29T10:00:00+00:00", approvers: ["+911", "+912"]});
+    created_at: "2026-09-29T10:00:00+00:00", approvers: ["+911", "+912"],
+    ...(n % 3 ? {} : {decided_at: "2026-09-29T10:05:00+00:00", decided_by: "backup",
+                      decided_phone: "+912"})});
   const calls = [];
   const pages = {
     first: {visits: [row(0), row(1)], next: "2026-09-29T10:00:00+00:00|VR-1001"},
@@ -438,6 +451,24 @@ async function adminChecks() {
   ok("Show more is offered", !byId("more").hidden);
   ok("the approvers table shows", byId("approvers").innerHTML.includes("+912"));
   ok("the escalation time shows", byId("rules").textContent.includes("15 minutes"));
+  ok("a decided request names who decided and the number",
+     byId("list").querySelector(".by").textContent === "Approved by the backup approver +912");
+  ok("a decline says so", admin.eval(`decision({decided_at: "t", decided_by: "main",
+     decided_phone: "+911", status: "declined"}).join()`) === "stop,Declined by the approver +911");
+  ok("an old decision with no number names the role",
+     admin.eval('decision({decided_at: "t", decided_by: "main", status: "closed"})[1]')
+     === "Approved by the approver");
+  ok("an open request has no decision line", admin.eval('decision({status: "pending"})[1]') === "");
+
+  const tab = name => byId("tabs").querySelector(`[data-section="${name}"]`);
+  ok("the visits tab is open first", !byId("visits").hidden && byId("numbers").hidden
+     && tab("visits").getAttribute("aria-selected") === "true");
+  tab("numbers").click();
+  ok("the numbers tab opens the approver table", byId("visits").hidden && !byId("numbers").hidden
+     && tab("numbers").getAttribute("aria-selected") === "true");
+  tab("visits").click();
+  ok("the visits tab opens the list again", !byId("visits").hidden && byId("numbers").hidden);
+  ok("the admin page is light only", !read("admin.html").includes("dark"));
 
   byId("more").click();
   await new Promise(done => setTimeout(done, 0));
@@ -552,6 +583,7 @@ async function approverChecks() {
            work_hours: [10, 17], work_days: ["Mon", "Sat"], approvers: table}
         : {visits: [{reference: "VR-1", name: "A", phone: "1", address: "x", reason: "Delivery",
                      visiting: "y", guests: [], status: "approved", decided_by: "auto",
+                     decided_at: "2026-10-05T05:30:00+00:00",
                      created_at: "2026-10-05T05:00:00+00:00", approvers: ["+911", "+912"]}],
            next: null});
     },

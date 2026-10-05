@@ -114,6 +114,12 @@ ALTER TABLE visits ADD COLUMN auto_approve_at TEXT;
 ALTER TABLE visits ADD COLUMN decided_by TEXT;
 CREATE INDEX visits_status_auto ON visits (status, auto_approve_at);
 """,
+    # 3: the number that decided, for the admin page only.
+    """
+-- The approver's number as set when they decided. Empty for an automatic
+-- approval and for decisions made before this step.
+ALTER TABLE visits ADD COLUMN decided_phone TEXT;
+""",
 ]
 
 # Any fixed number. Two instances that start at once, as when Render deploys,
@@ -445,7 +451,7 @@ def at_gate(expected_hours):
 # visitor's private status link and must not leave the server.
 ADMIN_FIELDS = (
     "visits.reference, name, phone, address, reason, visiting, guests, status,"
-    " created_at, escalated_at, decided_at, decided_by, auto_approve_at,"
+    " created_at, escalated_at, decided_at, decided_by, decided_phone, auto_approve_at,"
     " entered_at, exited_at"
 )
 
@@ -541,13 +547,13 @@ BY_BACKUP = "backup"
 BY_AUTO = "auto"
 
 
-def decide(reference, status, by):
+def decide(reference, status, by, phone=None):
     """Record a decision. Returns the visit, or None if it was already decided."""
     with connect() as conn:
         row = conn.execute(
-            "UPDATE visits SET status = %s, decided_at = %s, decided_by = %s"
+            "UPDATE visits SET status = %s, decided_at = %s, decided_by = %s, decided_phone = %s"
             " WHERE reference = %s AND status IN (%s, %s) RETURNING *",
-            (status, now(), by, reference, *OPEN_STATUSES),
+            (status, now(), by, phone, reference, *OPEN_STATUSES),
         ).fetchone()
     return to_dict(row) if row is not None else None
 

@@ -508,6 +508,7 @@ open_pass = client.get(f"/api/pass/{live['reference']}", headers=KEY).get_json()
 for field in PERSONAL:
     assert open_pass[field], field
 assert "code_kind" not in open_pass
+assert "decided_phone" not in open_pass, "the approver's number is for the admin only"
 assert client.post(f"/api/pass/{ref2}/sideways", headers=KEY).status_code == 404
 assert client.post("/api/pass/VR-9999/entry", headers=KEY).status_code == 404
 assert client.get(f"/api/pass/{ref2}", headers={"X-Gate-Key": "wrong"}).status_code == 403
@@ -556,6 +557,15 @@ assert "These requests are waiting" in many
 assert a["reference"] in many and b["reference"] in many and "Asha Rao" in many
 say(APPROVER, f"YES {a['reference']}")
 assert client.get(f"/api/visit/{a['token']}").get_json()["status"] == "approved"
+# Only b waits now. A reference that does not read must not decide b.
+for typo in ("VR-40222", "VR 99", "please"):
+    reply = say(APPROVER, f"NO {typo}")
+    assert "No request has reference" in reply, reply
+    assert db.get(b["reference"])["status"] == "pending", typo
+# VR 4022 and VR4022 read as VR-4022. YES alone still means the one waiting.
+for typed in ("YES VR 4022", "YES vr4022", "YES 4022"):
+    assert whatsapp.read_reply(typed) == ("decide", db.APPROVED, "VR-4022"), typed
+assert whatsapp.read_reply("YES") == ("decide", db.APPROVED, None)
 
 print("escalation never decides, it only asks again")
 with db.connect() as conn:
@@ -637,6 +647,7 @@ try:
     assert "is now approved" in say(DELIVERY_BACKUP[1:], f"YES {delivery['reference']}")
     assert db.get(delivery["reference"])["status"] == "approved"
     assert db.get(delivery["reference"])["decided_by"] == db.BY_BACKUP
+    assert db.get(delivery["reference"])["decided_phone"] == DELIVERY_BACKUP
 
     # Escalation goes to the backup of the request's own reason.
     late = client.post("/api/requests", json={**payload, "reason": "Delivery"}).get_json()
@@ -729,6 +740,8 @@ for path, headers in (("/api/admin/visits", ADMIN),
                       ("/api/export.csv", KEY)):
     answer = client.get(path, headers=headers).get_data(as_text=True)
     assert not any(c in answer for c in live_codes), path
+decided = client.get(f"/api/admin/visits?q={live['reference']}", headers=ADMIN).get_json()
+assert decided["visits"][0]["decided_phone"] == "+" + APPROVER, decided
 print(f"  {total} visits over {pages} pages, none twice, none missed, no token, no code")
 
 print("pages are served")
@@ -993,6 +1006,7 @@ assert "another approver" in say(APPROVER, f"YES {event['reference']}")
 assert event["reference"] in say(NEW_MAIN[1:], event["reference"])
 assert "is now approved" in say(NEW_MAIN[1:], f"YES {event['reference']}")
 assert db.get(event["reference"])["decided_by"] == db.BY_MAIN
+assert db.get(event["reference"])["decided_phone"] == NEW_MAIN
 with db.connect() as conn:
     conn.execute("DELETE FROM approvers")
 print("  both numbers required and checked, new number used at once, old one refused")
@@ -1030,6 +1044,7 @@ application.auto_approve_due()
 for case in (due, with_backup):
     got = db.get(case["reference"])
     assert got["status"] == "approved" and got["decided_by"] == db.BY_AUTO, got
+    assert got["decided_phone"] is None, got
 assert db.get(declined["reference"])["status"] == "declined"
 assert db.get(not_yet["reference"])["status"] == "pending"
 notices = [body for _, body in sent[before:] if "approved automatically" in body]
@@ -1038,7 +1053,8 @@ application.auto_approve_due()
 assert len(sent) == before + 2, "a second round must not approve or notify again"
 view = client.get(f"/api/visit/{due['token']}").get_json()
 assert view["status"] == "approved" and view["entry_code"]
-assert "decided_by" not in view and "auto_approve_at" not in view, "the visitor must not see it"
+private = {"decided_by", "decided_phone", "auto_approve_at"}
+assert not private & view.keys(), "the visitor must not see it"
 print("  10:00 to 16:59 Monday to Saturday only, a NO first wins, approvers told once")
 
 print("a forgotten key goes to its own number, never to the page")

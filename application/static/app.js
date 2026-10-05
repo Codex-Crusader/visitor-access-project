@@ -199,6 +199,8 @@ function view(){
 // refuses the same things first and says which field is wrong.
 const MAX=200;
 const STAFF="Name a student, not a staff member.";
+// Whole words only, so a student named Sirisha or Madhuri is not refused.
+const STAFF_WORDS=/\b(prof|professor|dr|sir|madam|ma'am)\b/i;
 const STEP1=["name","phone","address"];
 const STEP2=["reason","other","visiting","guest"];
 // Line breaks, control codes, invisible marks and the overrides that make
@@ -290,7 +292,7 @@ function n2(){
   else{
     const who=needed("visiting","This");
     if(who)found.visiting=who;
-    else if(/prof|dr\.|sir|madam/i.test(S.f.visiting))found.visiting=STAFF;
+    else if(STAFF_WORDS.test(S.f.visiting))found.visiting=STAFF;
   }
 
   // A name typed in the open box but not added yet still counts. Pressing
