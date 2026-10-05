@@ -12,6 +12,7 @@ import threading
 import time
 import unicodedata
 from collections import deque
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -39,6 +40,8 @@ META_CHECK_SECONDS = 3600
 META_RETRY_SECONDS = 300
 # After IN <code>, the guard has this long to send the visitor's photo.
 PHOTO_MINUTES = 10
+# How many approval messages to guards go to Meta at the same time.
+GUARD_SENDS_AT_ONCE = 8
 # The gate page shrinks its photo to about 30-40 KB. The server takes up to this.
 PHOTO_BYTES = 150_000
 PHOTO_PREFIX = "data:image/jpeg;base64,"
@@ -300,12 +303,13 @@ def tell_guards(visit, skip=()):
         app.logger.error("Could not read the guards to tell them about %s: %s",
                          visit["reference"], failure)
         return
-    done = {whatsapp.digits(phone) for phone in skip}
+    skipped = {whatsapp.digits(phone) for phone in skip}
+    to_tell = {whatsapp.digits(p): p for p in phones if whatsapp.digits(p) not in skipped}
     body = whatsapp.guard_update_body(visit)
-    for phone in phones:
-        if whatsapp.digits(phone) not in done:
-            done.add(whatsapp.digits(phone))
-            reply_to(phone, body)
+    # Sent together, so the approver waits for one call to Meta, not one per guard.
+    with ThreadPoolExecutor(max_workers=GUARD_SENDS_AT_ONCE) as pool:
+        for phone in to_tell.values():
+            pool.submit(reply_to, phone, body)
 
 
 def is_admin_phone(phone):
