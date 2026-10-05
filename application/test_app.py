@@ -514,6 +514,11 @@ for field in PERSONAL:
     assert open_pass[field], field
 assert "code_kind" not in open_pass
 assert "decided_phone" not in open_pass, "the approver's number is for the admin only"
+# The token opens the visitor's page, which shows the gate code. A guard who
+# taps a name on the board must never get from the reference to the code.
+for gate_answer in (open_pass,
+                    client.get(f"/api/pass/{entry_of(live)}", headers=KEY).get_json()):
+    assert "token" not in gate_answer, "the gate must never get the visitor's private link"
 assert client.post(f"/api/pass/{ref2}/sideways", headers=KEY).status_code == 404
 assert client.post("/api/pass/VR-9999/entry", headers=KEY).status_code == 404
 assert client.get(f"/api/pass/{ref2}", headers={"X-Gate-Key": "wrong"}).status_code == 403

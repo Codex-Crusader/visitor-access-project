@@ -6,6 +6,8 @@
 ** [codex-crusader.github.io/projects/campus-visitor-access/](https://codex-crusader.github.io/projects/campus-visitor-access/)
 > covers the problem, the architecture, the results and what it deliberately does not do.
 
+> **Run the app:** [setup](application/docs/setup.md) · [maintenance](application/docs/maintenance.md) · [safety](application/docs/safety.md)
+
 **A product ideation study of the visitor entry system at Vijaybhoomi University, from research to a tested, working
 prototype**
 
@@ -86,8 +88,9 @@ the entry and the exit, and the code then stops working.
 
 The waiting screen is the whole recommendation in one picture. It names who holds the request and
 states the minute the backup approver takes over.
-[`application/README.md`](application/README.md) covers the WhatsApp commands, the settings and
-how to run it.
+[`application/docs/setup.md`](application/docs/setup.md) covers the settings and the setup.
+[`application/docs/maintenance.md`](application/docs/maintenance.md) covers the WhatsApp commands
+and daily use.
 
 ## How it was done
 
@@ -132,7 +135,7 @@ request, `t` to skip 10 minutes, or `r` to start again. These keys do nothing wh
 a field.
 
 The Flask app is a separate program with its own setup. See
-[`application/README.md`](application/README.md).
+[`application/docs/setup.md`](application/docs/setup.md).
 
 ## Publishing
 

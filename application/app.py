@@ -468,10 +468,15 @@ CLOSED_PASS = ("reference", "status", "created_at", "decided_at",
                "entered_at", "exited_at", "guests")
 
 
+# Never sent to the gate. The token is the visitor's private link, and it
+# opens their page, which shows the gate code. The approver's number is for
+# the admin page only.
+GATE_PRIVATE = ("token", "decided_phone")
+
+
 def gate_view(visit):
     if visit["status"] != db.CLOSED:
-        # The approver's number is for the admin page only.
-        return {key: value for key, value in visit.items() if key != "decided_phone"}
+        return {key: value for key, value in visit.items() if key not in GATE_PRIVATE}
     # The page reads guests.length, so guests is emptied rather than dropped.
     return {key: [] if key == "guests" else visit[key] for key in CLOSED_PASS}
 
