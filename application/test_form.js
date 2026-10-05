@@ -498,6 +498,14 @@ async function adminChecks() {
   tab("visits").click();
   ok("the visits tab opens the list again", !byId("visits").hidden && byId("numbers").hidden);
   ok("the admin page is light only", !read("admin.html").includes("dark"));
+  const logo = page => /<div class="brand"><img src="(data:image\/png;base64,[^"]+)" alt="Vijaybhoomi University"/
+    .exec(read(page));
+  const visitorLogo = /<img src="(data:image\/png;base64,[^"]+)" alt="Vijaybhoomi University"/.exec(read("index.html"));
+  ok("the gate and admin pages show the university logo, as the visitor page does",
+     !!logo("gate.html") && !!logo("admin.html") && !!visitorLogo
+     && logo("gate.html")[1] === visitorLogo[1] && logo("admin.html")[1] === visitorLogo[1]);
+  ok("the logo sits above the header", byId("app") === null
+     && admin.document.querySelector(".app > .brand + header.top") !== null);
   ok("the gate page is light only", !read("gate.html").includes("dark")
      && read("gate.html").includes('content="only light"'));
 
