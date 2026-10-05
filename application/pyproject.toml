@@ -13,6 +13,8 @@ dependencies = [
     "psycopg-pool",
     # Time zones for working hours. Not every server has them.
     "tzdata",
+    # Checks and redraws each gate photo before it is stored.
+    "pillow",
 ]
 
 [dependency-groups]

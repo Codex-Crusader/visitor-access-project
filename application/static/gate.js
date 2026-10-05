@@ -1,4 +1,4 @@
-/* global saveFile, askForKey */  // from shared.js, which gate.html loads first
+/* global askForKey */  // from shared.js, which gate.html loads first
 const CALL_TIMEOUT = 75000;  // a sleeping free server can take ~50s to wake
 const BOARD_EVERY = 30000;   // how often the lists refresh by themselves
 const LONG_HOURS = 8;        // inside longer than this is marked on the board
@@ -397,25 +397,6 @@ async function act(action) {
   void loadBoard();
 }
 
-async function downloadLog() {
-  notice = "";
-  busy = "Preparing the log";
-  render();
-  try {
-    const r = await fetch("/api/export.csv", {headers: {"X-Gate-Key": key()}});
-    if (r.status === 403) {
-      busy = "";
-      return forgetKey("That gate key is not right. Type it again.");
-    }
-    if (r.ok) await saveFile(r);
-    else notice = `Could not download (${r.status})`;
-  } catch (err) {
-    notice = err.message;
-  }
-  busy = "";
-  render();
-}
-
 function clear_() {
   visit = null;
   photo = "";
@@ -432,7 +413,6 @@ boardBox.onclick = e => {
   if (hit) openPass(hit.dataset.ref);
 };
 el("refresh").onclick = () => void loadBoard();
-el("log").onclick = () => void downloadLog();
 el("rekey").onclick = () => forgetKey();
 // A hidden tab does not need fresh lists. It catches up when shown again.
 setInterval(() => { if (!document.hidden) void loadBoard(); }, BOARD_EVERY);

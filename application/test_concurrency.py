@@ -1,6 +1,7 @@
 """Hammer the app from many threads at once and check nothing corrupts."""
 
 import base64
+import io
 import os
 import threading
 import time
@@ -19,6 +20,8 @@ os.environ.update(
     REQUESTS_PER_HOUR="100000", GATE_TRIES_PER_HOUR="100000",
     DATABASE_URL=testdb.url(),
 )
+
+from PIL import Image
 
 import app as application
 import db
@@ -39,10 +42,19 @@ client =application.app.test_client()
 KEY = {"X-Gate-Key": "test-gate-key-long-enough"}
 
 
-def photo(tag):
-    """A gate page photo: JPEG start bytes, then the tag."""
-    return {"photo": application.PHOTO_PREFIX
-            + base64.b64encode(b"\xff\xd8\xff\xe0" + tag.encode()).decode()}
+def photo(shade=0):
+    """A real gate page photo, one solid color, so the stored one can be told apart."""
+    out = io.BytesIO()
+    Image.new("RGB", (32, 32), (shade, 60, 200)).save(out, "JPEG")
+    return {"photo": application.PHOTO_PREFIX + base64.b64encode(out.getvalue()).decode()}
+
+
+def shade_of(data):
+    """The red level of a stored photo: the shade it was taken with."""
+    with Image.open(io.BytesIO(data)) as picture:
+        pixel = picture.convert("RGB").getpixel((16, 16))
+    assert isinstance(pixel, tuple), pixel
+    return pixel[0]
 
 
 N = 60
@@ -92,7 +104,7 @@ def race(action):
     results.clear()
     code = db.codes_of(target)[action]
     def press():
-        r = client.post(f"/api/pass/{code}/{action}", headers=KEY, json=photo("race"))
+        r = client.post(f"/api/pass/{code}/{action}", headers=KEY, json=photo())
         with lock:
             results.append(r.status_code)
     racers = [threading.Thread(target=press) for _ in range(20)]
@@ -117,7 +129,7 @@ assert db.get(target)["status"] == "closed"
 busy = codes[1:41]
 def cycle(reference):
     pass_codes = db.codes_of(reference)
-    client.post(f"/api/pass/{pass_codes['entry']}/entry", headers=KEY, json=photo(reference))
+    client.post(f"/api/pass/{pass_codes['entry']}/entry", headers=KEY, json=photo())
     client.post(f"/api/pass/{pass_codes['exit']}/exit", headers=KEY)
 threads = [threading.Thread(target=cycle, args=(c,)) for c in busy]
 for t in threads:
@@ -162,6 +174,8 @@ for t in threads:
     t.join()
 assert all(r.status_code == 200 for r in added), [r.status_code for r in added]
 guard_keys = {r.get_json()["name"]: r.get_json()["key"] for r in added}
+# Each guard's photo has its own color, 12 apart, so the stored one names its guard.
+SHADES = {f"Guard {n}": 12 * n for n in range(20)}
 assert len(set(guard_keys.values())) == 20, "every guard key unique"
 assert len(db.guards()) == 20
 print("  20 guards added at once -> 20 unique keys")
@@ -179,7 +193,7 @@ entry = db.codes_of(target)["entry"]
 winners = []
 def own_press(name):
     r = client.post(f"/api/pass/{entry}/entry", headers={"X-Gate-Key": guard_keys[name]},
-                    json=photo(name))
+                    json=photo(SHADES[name]))
     with lock:
         winners.append((r.status_code, name))
 threads = [threading.Thread(target=own_press, args=(name,)) for name in guard_keys]
@@ -192,14 +206,15 @@ print(f"  20 own keys raced one entry -> {len(won)} accepted")
 assert len(won) == 1, won
 phone = guard_phones[int(won[0].split()[1])]
 assert db.get(target)["entered_by"] == f"{won[0]} {phone}", "the winner is the guard on record"
-assert db.photo_of(target)["image"].endswith(won[0].encode()), "only the winner's photo is kept"
+assert abs(shade_of(db.photo_of(target)["image"]) - SHADES[won[0]]) <= 6, \
+    "only the winner's photo is kept"
 
 # --- Each guard lets a different visitor in and out at once ---
 refs = fresh_approved(20)
 def own_cycle(n):
     pass_codes = db.codes_of(refs[n])
     headers = {"X-Gate-Key": guard_keys[f"Guard {n}"]}
-    client.post(f"/api/pass/{pass_codes['entry']}/entry", headers=headers, json=photo(f"g{n}"))
+    client.post(f"/api/pass/{pass_codes['entry']}/entry", headers=headers, json=photo())
     client.post(f"/api/pass/{pass_codes['exit']}/exit", headers=headers)
 tokens = [db.get(ref)["token"] for ref in refs]
 racing = threading.Event()

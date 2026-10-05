@@ -78,7 +78,6 @@ gate sees only its times.
 | `GET /api/pass/<code or reference>` | `X-Gate-Key`   | Shows a pass at the gate                 |
 | `POST /api/pass/<code>/<action>`    | `X-Gate-Key`   | Records an entry or an exit              |
 | `GET /api/gate/board`               | `X-Gate-Key`   | The Inside now and Expected lists        |
-| `GET /api/export.csv`               | `X-Gate-Key`   | The whole visit log                      |
 | `GET /api/admin/visits`             | `X-Admin-Key`  | One page of requests, newest first       |
 | `GET /api/admin/summary`            | `X-Admin-Key`  | Counts, approvers and rules              |
 | `POST /api/admin/approvers`         | `X-Admin-Key`  | Changes one reason's two approvers       |
@@ -93,23 +92,24 @@ visitor, `/gate` for the guard and `/admin` for the admin.
 
 ## Files
 
-| File                                   | What it holds                                                |
-|----------------------------------------|--------------------------------------------------------------|
-| `docs/`                                | Setup, maintenance and safety                                |
-| `app.py`                               | Flask routes, the security headers and the background timer  |
-| `db.py`                                | Postgres storage, and the migrations that build its tables   |
-| `whatsapp.py`                          | Meta API calls, message text, and command reading            |
-| `config.py`                            | Settings read from the environment                           |
-| `check_setup.py`                       | Checks your settings and sends one test message              |
-| `gunicorn.conf.py`                     | Starts and stops the database and timer in the worker        |
-| `render.yaml`                          | A record of the Render settings                              |
-| `static/index.html`, `static/app.js`   | The visitor page                                             |
-| `static/gate.html`, `static/gate.js`   | The gate desk page                                           |
-| `static/admin.html`, `static/admin.js` | The admin page                                               |
-| `static/shared.js`                     | The CSV download and the forgot-key call, for gate and admin |
-| `static/sw.js`                         | Keeps the visitor page on the phone, so it opens offline     |
-| `test_app.py`                          | Runs the whole flow with WhatsApp stubbed out                |
-| `test_concurrency.py`                  | Makes many calls at once to check the races                  |
-| `test_form.js`                         | Checks the three pages in a real DOM with jsdom              |
-| `testdb.py`                            | Starts a throwaway Postgres for the two Python tests         |
-| `ruff.toml`, `eslint.config.mjs`       | Linter settings, and why some rules are off                  |
+| File                                   | What it holds                                                          |
+|----------------------------------------|------------------------------------------------------------------------|
+| `docs/`                                | Setup, maintenance and safety                                          |
+| `app.py`                               | Flask routes, the security headers and the background timer            |
+| `db.py`                                | Postgres storage, and the migrations that build its tables             |
+| `whatsapp.py`                          | Meta API calls, message text, and command reading                      |
+| `config.py`                            | Settings read from the environment                                     |
+| `check_setup.py`                       | Checks your settings and sends one test message                        |
+| `gunicorn.conf.py`                     | Starts and stops the database and timer in the worker                  |
+| `render.yaml`                          | A record of the Render settings                                        |
+| `static/index.html`, `static/app.js`   | The visitor page                                                       |
+| `static/gate.html`, `static/gate.js`   | The gate desk page                                                     |
+| `static/admin.html`, `static/admin.js` | The admin page                                                         |
+| `static/shared.js`                     | The CSV download for admin, and the forgot-key call for gate and admin |
+| `static/sw.js`                         | Keeps the visitor page on the phone, so it opens offline               |
+| `test_app.py`                          | Runs the whole flow with WhatsApp stubbed out                          |
+| `test_concurrency.py`                  | Makes many calls at once to check the races                            |
+| `run_tests.py`                         | Runs every test and both linters with one command                      |
+| `test_form.js`                         | Checks the three pages in a real DOM with jsdom                        |
+| `testdb.py`                            | Starts a throwaway Postgres for the two Python tests                   |
+| `ruff.toml`, `eslint.config.mjs`       | Linter settings, and why some rules are off                            |

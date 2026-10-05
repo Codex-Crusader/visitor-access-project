@@ -7,6 +7,7 @@ It sends no WhatsApp messages and uses a throwaway database.
 import ast
 import base64
 import contextlib
+import io
 import logging
 import os
 import re
@@ -16,6 +17,7 @@ import time
 from datetime import datetime, timedelta, timezone
 
 import psycopg
+from PIL import Image
 from psycopg_pool import PoolTimeout
 
 import testdb
@@ -63,10 +65,26 @@ client =application.app.test_client()
 GATE_KEY_TEXT, ADMIN_KEY_TEXT = "test-gate-key-long-enough", "test-admin-key-long-enough"
 KEY = {"X-Gate-Key": GATE_KEY_TEXT}
 ADMIN = {"X-Admin-Key": "test-admin-key-long-enough"}
-# The gate page sends a JPEG of the visitor with each entry. The server checks
-# only that it is a JPEG, so a few bytes after the JPEG start do.
-JPEG = b"\xff\xd8\xff\xe0" + b"visitor-photo" * 8
-PHOTO = {"photo": application.PHOTO_PREFIX + base64.b64encode(JPEG).decode()}
+def jpeg(width=64, height=48, exif=None):
+    """A real JPEG, as the gate page sends it. The server decodes every photo."""
+    out = io.BytesIO()
+    extra = {"exif": exif} if exif else {}
+    Image.new("RGB", (width, height), (120, 90, 160)).save(out, "JPEG", **extra)
+    return out.getvalue()
+
+
+def as_photo(data):
+    return {"photo": application.PHOTO_PREFIX + base64.b64encode(data).decode()}
+
+
+def is_clean_photo(data):
+    """True for a JPEG the server redrew: the same size, and no metadata."""
+    with Image.open(io.BytesIO(data)) as decoded:
+        return decoded.format == "JPEG" and decoded.size == (64, 48) and not decoded.getexif()
+
+
+JPEG = jpeg()
+PHOTO = as_photo(JPEG)
 # A gate code: two letters without I or O, a dash, four digits.
 GATE_CODE = re.compile(r"^[A-HJ-NP-Z]{2}-\d{4}$")
 
@@ -360,6 +378,11 @@ assert changed.status_code == 200, "a changed pass sends the new answer"
 print("  duplicate delivery ignored, an unchanged poll costs a 304")
 
 assert "already approved" in say(APPROVER, f"NO {code}")
+# The other way round: a YES after a NO changes nothing either.
+turned_down = new_request()
+assert "is now declined" in say(APPROVER, f"NO {turned_down['reference']}")
+assert "already declined" in say(APPROVER, f"YES {turned_down['reference']}")
+assert db.get(turned_down["reference"])["status"] == "declined"
 # Once approved, the visitor's pass shows the entry code, and only that one.
 approved_view = client.get(f"/api/visit/{token}").get_json()
 assert approved_view["entry_code"] == entry_code, approved_view
@@ -453,7 +476,8 @@ say(APPROVER, f"IN {entry_of(first)}")
 client.post(f"/api/pass/{entry_of(first)}/entry", headers=KEY, json=PHOTO)
 assert "Already inside" in snap(APPROVER)
 gate_shot = db.photo_of(first["reference"])
-assert gate_shot["image"] == JPEG and gate_shot["media_id"] is None, "a late photo changes nothing"
+assert is_clean_photo(gate_shot["image"]) and gate_shot["media_id"] is None, \
+    "a late photo changes nothing"
 
 # A photo from a stranger gets no answer and changes nothing.
 third = approved()
@@ -549,7 +573,14 @@ live = new_request()
 say(APPROVER, f"YES {live['reference']}")
 open_pass = client.get(f"/api/pass/{live['reference']}", headers=KEY).get_json()
 for field in PERSONAL:
-    assert open_pass[field], field
+    if field != "address":
+        assert open_pass[field], field
+# The gate needs no address, so no gate answer holds it, not even a refusal.
+assert "address" not in open_pass
+assert "address" not in client.get(f"/api/pass/{entry_of(live)}", headers=KEY).get_json()
+refused_entry = client.post(f"/api/pass/{exit_of(live)}/entry", headers=KEY).get_json()
+assert "visit" in refused_entry and "address" not in refused_entry["visit"]
+assert payload["address"] not in client.get("/api/gate/board", headers=KEY).get_data(as_text=True)
 assert "code_kind" not in open_pass
 assert "decided_phone" not in open_pass, "the approver's number is for the admin only"
 # The token opens the visitor's page, which shows the gate code. A guard who
@@ -824,8 +855,7 @@ assert client.get("/api/admin/export.csv", headers=ADMIN).status_code == 200
 live_codes = (entry_of(live), exit_of(live))
 for path, headers in (("/api/admin/visits", ADMIN),
                       (f"/api/admin/visits?q={live['reference']}", ADMIN),
-                      ("/api/admin/summary", ADMIN), ("/api/admin/export.csv", ADMIN),
-                      ("/api/export.csv", KEY)):
+                      ("/api/admin/summary", ADMIN), ("/api/admin/export.csv", ADMIN)):
     answer = client.get(path, headers=headers).get_data(as_text=True)
     assert not any(c in answer for c in live_codes), path
 decided = client.get(f"/api/admin/visits?q={live['reference']}", headers=ADMIN).get_json()
@@ -918,11 +948,12 @@ assert cfg["escalate_minutes"] == 30 and cfg["retain_days"] == 1
 assert "gate_key" not in str(cfg).lower(), "the gate key must never be published"
 
 print("export of every entry and exit")
-# Needs the gate key, same as the rest of the gate.
-assert client.get("/api/export.csv").status_code == 403
-assert client.get("/api/export.csv", headers={"X-Gate-Key": "wrong"}).status_code == 403
+# The whole history is for the admin only. The gate has no export at all.
+assert client.get("/api/export.csv", headers=KEY).status_code == 404
+assert client.get("/api/admin/export.csv", headers=KEY).status_code == 403
+assert client.get("/api/admin/export.csv").status_code == 403
 
-dump = client.get("/api/export.csv", headers=KEY)
+dump = client.get("/api/admin/export.csv", headers=ADMIN)
 assert dump.status_code == 200
 assert "text/csv" in dump.headers["Content-Type"]
 assert "attachment" in dump.headers["Content-Disposition"]
@@ -954,7 +985,7 @@ assert never["entered_at"] == "" and never["exited_at"] == ""
 attack = dict(payload, name="=HYPERLINK(\"http://evil.test\",\"click\")",
               address="+1+1", reason="@SUM(1:9)", visiting="-2+3")
 assert client.post("/api/requests", json=attack).status_code == 201
-armed = client.get("/api/export.csv", headers=KEY).get_data(as_text=True)
+armed = client.get("/api/admin/export.csv", headers=ADMIN).get_data(as_text=True)
 row = next(r for r in _csv.DictReader(_io.StringIO(armed))
            if r["name"].endswith('click")'))
 for column in ("name", "address", "reason", "visiting"):
@@ -1420,7 +1451,11 @@ png = "data:image/png;base64," + base64.b64encode(b"\x89PNG\r\n\x1a\n").decode()
 not_jpeg = "data:image/jpeg;base64," + base64.b64encode(b"\x89PNG\r\n\x1a\n").decode()
 too_big = "data:image/jpeg;base64," + base64.b64encode(
     b"\xff\xd8\xff" + b"x" * application.PHOTO_BYTES).decode()
-for bad in (png, not_jpeg, too_big, "data:image/jpeg;base64,not base64!", 42, ""):
+# A broken JPEG, and one that claims more pixels than any phone photo, are refused too.
+broken = as_photo(jpeg(400, 300)[:300])["photo"]
+too_wide = as_photo(jpeg(application.PHOTO_SIDE + 1, 8))["photo"]
+for bad in (png, not_jpeg, too_big, broken, too_wide, "data:image/jpeg;base64,not base64!",
+            42, ""):
     refused = client.post(shot_entry, headers=KEY, json={"photo": bad})
     assert refused.status_code == 400, (str(bad)[:40], refused.status_code)
 huge = client.post(shot_entry, headers=KEY, json={"photo": "x" * 1_100_000})
@@ -1428,17 +1463,22 @@ assert huge.status_code == 413 and "too big" in huge.get_json()["error"], huge.s
 assert status_of(shot) == "approved", "a refused photo lets nobody in"
 # A pass that cannot enter is refused for that reason, not for the photo.
 assert client.post(f"/api/pass/{exit_of(shot)}/entry", headers=KEY).status_code == 409
-let_in = client.post(shot_entry, headers=KEY, json=PHOTO)
+# The phone's details, such as its maker or a location, never reach the database.
+with_details = Image.Exif()
+with_details[0x010F] = "PhoneMaker"
+let_in = client.post(shot_entry, headers=KEY, json=as_photo(jpeg(exif=with_details)))
 assert let_in.status_code == 200, let_in.get_json()
 stored = db.photo_of(shot["reference"])
-assert stored["image"] == JPEG and stored["media_id"] is None
+assert is_clean_photo(stored["image"]) and stored["media_id"] is None
+assert b"PhoneMaker" not in stored["image"]
 assert stored["taken_at"] == db.get(shot["reference"])["entered_at"]
 
 # The photo is for the admin only. No gate, visitor or log answer holds it.
-encoded = PHOTO["photo"].split(",")[1]
+stored_photo = application.PHOTO_PREFIX + base64.b64encode(stored["image"]).decode()
+encoded = stored_photo.split(",")[1]
 for path, headers in ((f"/api/pass/{exit_of(shot)}", KEY), (f"/api/pass/{shot['reference']}", KEY),
                       ("/api/gate/board", KEY), (f"/api/visit/{shot['token']}", {}),
-                      ("/api/export.csv", KEY), ("/api/admin/export.csv", ADMIN),
+                      ("/api/admin/export.csv", ADMIN),
                       (f"/api/admin/visits?q={shot['reference']}", ADMIN)):
     assert encoded not in client.get(path, headers=headers).get_data(as_text=True), path
 listed = client.get(f"/api/admin/visits?q={shot['reference']}", headers=ADMIN).get_json()
@@ -1447,7 +1487,7 @@ photo_path = f"/api/admin/photo/{shot['reference']}"
 assert client.get(photo_path, headers=KEY).status_code == 403, "the gate key opens no photo"
 assert client.get(photo_path).status_code == 403
 viewed = client.get(photo_path, headers=ADMIN)
-assert viewed.status_code == 200 and viewed.get_json()["photo"] == PHOTO["photo"]
+assert viewed.status_code == 200 and viewed.get_json()["photo"] == stored_photo
 assert viewed.headers["Cache-Control"] == "no-store"
 assert client.get("/api/admin/photo/VR-0000", headers=ADMIN).status_code == 404
 # A WhatsApp photo stays in the chat, so there is nothing to show.
@@ -1507,7 +1547,6 @@ listed = client.get(f"/api/admin/visits?q={by_page['reference']}", headers=ADMIN
 assert listed["visits"][0]["entered_by"] == RAVI_LABEL
 assert listed["visits"][0]["exited_by"] == application.DESK_KEY
 assert RAVI_PHONE in client.get("/api/admin/export.csv", headers=ADMIN).get_data(as_text=True)
-assert RAVI_PHONE not in client.get("/api/export.csv", headers=KEY).get_data(as_text=True)
 
 # On WhatsApp the guard's own number lets visitors in and out.
 by_phone = approved()

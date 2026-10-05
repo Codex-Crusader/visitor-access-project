@@ -527,11 +527,13 @@ async function adminChecks() {
 }
 
 // ------------------------------------------------------ the CSV download
-// Both pages download the same log. Each case answers the download with one
-// response and reports what the page did with it.
+// Only the admin page downloads the log. Each case answers the download with
+// one response and reports what the page did with it.
 async function downloadChecks() {
+  const gate = read("gate.html") + read("gate.js");
+  ok("the gate page offers no download of the log", !gate.includes("export.csv")
+     && !gate.includes("Download log"));
   const cases = [
-    ["gate.html", "gate.js", "gatekey", "downloadLog()", "out"],
     ["admin.html", "admin.js", "adminkey", "downloadCsv()", "notice"],
   ];
   for (const [page, script, storeKey, start, noticeBox] of cases) {

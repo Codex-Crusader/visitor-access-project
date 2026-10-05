@@ -17,6 +17,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from flask import Flask, Response, jsonify, request
+from PIL import Image
 
 import config
 import db
@@ -44,6 +45,11 @@ PHOTO_MINUTES = 10
 GUARD_SENDS_AT_ONCE = 8
 # The gate page shrinks its photo to about 30-40 KB. The server takes up to this.
 PHOTO_BYTES = 150_000
+# The longest side a photo may claim. The page sends 640 pixels. The limit is
+# read from the file's header, before the picture is decoded.
+PHOTO_SIDE = 2000
+Image.MAX_IMAGE_PIXELS = PHOTO_SIDE * PHOTO_SIDE
+PHOTO_QUALITY = 60
 PHOTO_PREFIX = "data:image/jpeg;base64,"
 NO_PHOTO = ("Take a photo of the visitor first. The entry needs one."
             " If this page shows no photo button, reload the page.")
@@ -361,7 +367,11 @@ def reply_to(phone, text):
 
 
 def read_photo(payload):
-    """The JPEG bytes of the photo in the call's JSON, or None when it is missing or not a JPEG."""
+    """The photo in the call's JSON, redrawn as a clean JPEG, or None when it is not one.
+
+    The server does not trust the page: it decodes the picture, and stores a
+    new copy, so a broken file or a hidden location never reaches the database.
+    """
     text = payload.get("photo") if isinstance(payload, dict) else None
     if not isinstance(text, str) or not text.startswith(PHOTO_PREFIX):
         return None
@@ -371,7 +381,17 @@ def read_photo(payload):
         return None
     if not image.startswith(b"\xff\xd8\xff") or len(image) > PHOTO_BYTES:
         return None
-    return image
+    try:
+        with Image.open(io.BytesIO(image)) as picture:
+            if picture.format != "JPEG" or max(picture.size) > PHOTO_SIDE:
+                return None
+            picture.load()
+            clean = io.BytesIO()
+            # Saved without its metadata, so no location or phone details stay.
+            picture.convert("RGB").save(clean, "JPEG", quality=PHOTO_QUALITY)
+    except (OSError, ValueError, Image.DecompressionBombError):
+        return None
+    return clean.getvalue()
 
 
 def short_hash(data: bytes):
@@ -567,8 +587,9 @@ CLOSED_PASS = ("reference", "status", "created_at", "decided_at",
 
 # Never sent to the gate. The token is the visitor's private link, and it
 # opens their page, which shows the gate code. The approver's number is for
-# the admin page only, and so are the guards' numbers.
-GATE_PRIVATE = ("token", "decided_phone", "entered_by", "exited_by")
+# the admin page only, and so are the guards' numbers. The gate does not
+# need the visitor's address.
+GATE_PRIVATE = ("token", "address", "decided_phone", "entered_by", "exited_by")
 
 
 def gate_view(visit):
@@ -658,13 +679,12 @@ def gate_action(key, action):
     return jsonify(typed_pass(done, code, kind))
 
 
+# The whole history, with every personal detail. Only the admin can download it.
 EXPORT_COLUMNS = (
     "reference", "name", "phone", "address", "reason", "visiting", "guests",
     "status", "created_at", "escalated_at", "decided_at", "decided_by",
-    "entered_at", "exited_at", "photo_at",
+    "entered_at", "exited_at", "photo_at", "entered_by", "exited_by",
 )
-# The guards' numbers are for the admin only, so the gate's log leaves them out.
-ADMIN_EXPORT_COLUMNS = (*EXPORT_COLUMNS, "entered_by", "exited_by")
 
 
 # Excel and Sheets run a cell that opens with one of these as a formula, so a
@@ -678,22 +698,14 @@ def safe_cell(value):
     return "'" + text if text.startswith(FORMULA_START) else text
 
 
-@app.get("/api/export.csv")
-def export_csv():
-    """The whole visit log, including every entry and exit time."""
-    if not gate_guard():
-        return jsonify(error="Wrong gate key"), 403
-    return visit_log(EXPORT_COLUMNS)
-
-
-def visit_log(columns):
+def visit_log():
     buffer = io.StringIO()
     writer = csv.writer(buffer)
-    writer.writerow(columns)
+    writer.writerow(EXPORT_COLUMNS)
     for visit in db.all_visits():
         row = dict(visit)
         row["guests"] = ", ".join(row["guests"])
-        writer.writerow([safe_cell(row.get(c)) for c in columns])
+        writer.writerow([safe_cell(row.get(c)) for c in EXPORT_COLUMNS])
 
     stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     return Response(
@@ -924,11 +936,11 @@ def forgot_key(which):
 
 @app.get("/api/admin/export.csv")
 def admin_export_csv():
-    """The gate desk's log, plus which guard let each visitor in and out."""
+    """The whole visit log, with who decided and which guard let each visitor in and out."""
     refused = admin_refusal()
     if refused:
         return refused
-    return visit_log(ADMIN_EXPORT_COLUMNS)
+    return visit_log()
 
 
 @app.get("/webhook/whatsapp")

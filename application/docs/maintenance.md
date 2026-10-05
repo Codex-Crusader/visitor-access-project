@@ -105,8 +105,8 @@ The page shows two lists:
 
 A tap on a name only shows the details. It records nothing. The lists refresh
 every 30 seconds and after each entry or exit. The badge says Live while the
-lists are fresh and Offline after a refresh fails. Download log saves every
-visit as a CSV file.
+lists are fresh and Offline after a refresh fails. The gate page has no
+download of the visit log. Only the admin page has one.
 
 ### On WhatsApp
 
@@ -165,8 +165,8 @@ WhatsApp stays in the guard's chat.
    Entered and Exited name the guard who recorded them. "Gate desk (shared
    key)" means that someone used the shared `GATE_KEY`.
 8. Show more loads the next 50 requests.
-9. Use Download CSV to save the whole log. The admin's CSV has two more
-   columns than the gate's CSV: `entered_by` and `exited_by`.
+9. Use Download CSV to save the whole log. Only the admin page can download
+   it, because it holds every visitor's personal details.
 
 ### Change the approvers
 
@@ -283,6 +283,27 @@ If the app moves and its address changes, do these steps:
 6. Read the Render log for a minute after the start. The first background
    round runs at once, and its errors show there.
 
+### Update the packages
+
+`requirements.txt` holds the exact version of every package, and Render
+installs from it. `uv.lock` holds the same versions for `uv`. Keep the two
+the same.
+
+1. Change the version numbers in `requirements.txt`.
+2. Install them, and make `uv.lock` match. Name each package you changed.
+
+   ```
+   .venv\Scripts\python.exe -m pip install -r requirements.txt
+   uv lock --upgrade-package flask
+   ```
+
+3. Run every check, see "The checks".
+4. Ship the change, as above. CI installs from `requirements.txt` on Python
+   3.11 and 3.14, so a version that breaks either one shows there.
+5. To change the Python on Render, change `PYTHON_VERSION` in `render.yaml`
+   and on the service's Environment page, then run every check on that
+   version first.
+
 ### Database changes
 
 The app builds and changes its tables by itself when it starts. `db.py` holds
@@ -316,16 +337,20 @@ never touch Neon. Install it once.
 .venv\Scripts\python.exe -m pip install pgserver
 ```
 
-Then run each check. Each one must finish with no error. The tests and
-ruff end with "passed", and eslint prints nothing when the code is clean.
+The page tests and eslint need Node.js, and ruff is a Python package.
+Install them once.
 
 ```
-.venv\Scripts\python.exe test_app.py
-.venv\Scripts\python.exe test_concurrency.py
 npm install
-node test_form.js
-ruff check .
-npx eslint static test_form.js
+.venv\Scripts\python.exe -m pip install ruff==0.16.2
+```
+
+Then run every check with one command. It runs the three test suites and
+both linters, and ends with a list of what passed. Each line must say
+"passed".
+
+```
+.venv\Scripts\python.exe run_tests.py
 ```
 
 1. `test_app.py` runs the whole flow with WhatsApp stubbed out. It sends no
@@ -390,8 +415,8 @@ The visits live in the Neon database. They stay when Render deploys a new
 version. The app deletes each visit `RETAIN_DAYS` after the request, 90 days
 by default, as the privacy screen promises.
 
-The CSV from Download log is the only copy that you control. Download it
-before a large change, and on a fixed day each week. Neon can restore the
+The CSV from Download CSV on the admin page is the only copy that you
+control. Download it before a large change, and on a fixed day each week. Neon can restore the
 database to an earlier time, under Backup & Restore in the Neon console. On
 the free plan, that window is only 6 hours (the project's "History
 retention"). A mistake found the next day cannot be undone there.
@@ -400,7 +425,8 @@ The CSV has one row for each visit, with these columns:
 
 ```
 reference, name, phone, address, reason, visiting, guests, status,
-created_at, escalated_at, decided_at, decided_by, entered_at, exited_at, photo_at
+created_at, escalated_at, decided_at, decided_by, entered_at, exited_at, photo_at,
+entered_by, exited_by
 ```
 
 Times are UTC. A visit that never entered has empty `entered_at` and
