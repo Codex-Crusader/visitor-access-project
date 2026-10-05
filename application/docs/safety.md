@@ -184,3 +184,6 @@ Tell the people who decide about the campus about these limits.
    approvals wait until the app wakes.
 9. With no signal at the gate, the guard cannot check any pass.
 10. The content policy allows inline scripts, see "The web pages".
+11. On the free Neon plan, the database can be restored only to a time in the
+    last 6 hours. The weekly CSV is the longer backup, see
+    [maintenance.md](maintenance.md).

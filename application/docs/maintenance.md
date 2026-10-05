@@ -331,9 +331,10 @@ version. The app deletes each visit `RETAIN_DAYS` after the request, 90 days
 by default, as the privacy screen promises.
 
 The CSV from Download log is the only copy that you control. Download it
-before a large change. Neon can also restore the database to an earlier time.
-The time window depends on the Neon plan. Look in the Neon console under
-Restore before you need it.
+before a large change, and on a fixed day each week. Neon can restore the
+database to an earlier time, under Backup & Restore in the Neon console. On
+the free plan, that window is only 6 hours (the project's "History
+retention"). A mistake found the next day cannot be undone there.
 
 The CSV has one row for each visit, with these columns:
 
