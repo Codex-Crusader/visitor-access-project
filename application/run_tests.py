@@ -9,13 +9,15 @@ to install what it needs.
 import shutil
 import subprocess
 import sys
+from pathlib import Path
 
 
 def tool(name: str) -> str | None:
-    """The full path of a program on PATH, or None."""
+    """The full path of a program in this Python's own folder, then on PATH, or None."""
+    here = str(Path(sys.executable).parent)
     # The warning is about a path object on old Windows Pythons. name is text.
     # noinspection PyDeprecation
-    return shutil.which(name)
+    return shutil.which(name, path=here) or shutil.which(name)
 
 
 CHECKS = [
