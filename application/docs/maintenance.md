@@ -321,6 +321,9 @@ npx eslint static test_form.js
    message.
 2. `test_concurrency.py` makes many requests and many guards at the same
    moment, and checks that each code is unique and each entry happens once.
+   It also adds 20 guards at once, and checks that each guard gets a
+   different key, each visit names the guard who let the visitor in, and
+   each guard gets one message for each approval.
 3. `test_form.js` loads the three pages in a real DOM with jsdom.
 4. `ruff` and `eslint` are the linters. Their settings files say why each
    rule that is off is off. The important one is `no-implicit-globals`. The
