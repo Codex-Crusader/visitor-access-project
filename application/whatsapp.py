@@ -149,6 +149,7 @@ GATE_LINES = {
     db.INSIDE: "Inside now. Reply OUT and the exit code on the visitor's pass"
                " to record the exit.",
     db.CLOSED: "Closed. The visit is over and its codes are finished.",
+    db.EXPIRED: "Expired. Do not let them in. They must send a new request.",
 }
 # When the guard sent the code that does the next step, the reply repeats it.
 # A reply only ever repeats a code the sender typed, so an approver who looks

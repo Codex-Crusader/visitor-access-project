@@ -267,6 +267,13 @@ gate.eval('visit = {reference:"VR-4022", status:"approved", name:"Asha Rao",' +
 gRender();
 ok("an open pass still shows the visitor", gOut().includes("Asha Rao"));
 ok("an approved pass says when it was approved", gOut().includes(">Approved<"));
+gate.eval('visit = {...visit, expires_at: "2026-09-22T10:00:00Z"}');
+gRender();
+ok("an approved pass says until when it works", gOut().includes("Valid until"));
+gate.eval('visit = {...visit, status: "expired"}');
+gRender();
+ok("an expired pass says do not let them in", gOut().includes("Pass expired")
+   && !gOut().includes("Record entry") && !gOut().includes("Valid until"));
 gate.eval('visit = {...visit, status: "declined"}');
 gRender();
 ok("a declined pass never says Approved", gOut().includes(">Declined<")
@@ -428,7 +435,7 @@ async function adminChecks() {
     fetch: url => {
       calls.push(url);
       const body = url.includes("/summary")
-        ? {counts: {pending: 2, inside: 1}, escalate_minutes: 15, retain_days: 90,
+        ? {counts: {pending: 2, inside: 1}, escalate_minutes: 15, retain_days: 90, pass_hours: 48,
            approvers: [{reason: "Delivery", main: "+911", backup: "+912"}]}
         : url.includes("after=") ? pages.second : pages.first;
       return Promise.resolve({status: 200, ok: true, json: () => Promise.resolve(body)});
@@ -451,6 +458,8 @@ async function adminChecks() {
   ok("Show more is offered", !byId("more").hidden);
   ok("the approvers table shows", byId("approvers").innerHTML.includes("+912"));
   ok("the escalation time shows", byId("rules").textContent.includes("15 minutes"));
+  ok("the pass time shows", byId("rules").textContent.includes("48 hours"));
+  ok("an expired pass has its own pill", admin.eval('STATUS.expired.join()') === "done,Expired");
   ok("a decided request names who decided and the number",
      byId("list").querySelector(".by").textContent === "Approved by the backup approver +912");
   ok("a decline says so", admin.eval(`decision({decided_at: "t", decided_by: "main",
@@ -484,7 +493,7 @@ async function adminChecks() {
   ok("a tile filters the list", calls.some(u => u.includes("status=inside")));
   const pressed = [...byId("tiles").querySelectorAll("[aria-pressed=true]")].map(t => t.dataset.filter);
   ok("only the chosen tile shows as pressed", pressed.join() === "inside"
-     && byId("tiles").querySelectorAll("[aria-pressed=false]").length === 5);
+     && byId("tiles").querySelectorAll("[aria-pressed=false]").length === 6);
 }
 
 // ------------------------------------------------------ the CSV download
@@ -556,6 +565,24 @@ async function offlinePassChecks() {
      kept.includes("PB-5100") && !kept.includes("9876543210") && !kept.includes("Hill Road"));
   v.eval('keep({token:"t2",reference:"VR-1",status:"closed",name:"B",guests:[]})');
   ok("a closed pass is forgotten", v.eval('localStorage.getItem("pass")') === null);
+
+  // A saved pass whose time has run out shows no code, even with no signal.
+  const late = JSON.stringify(JSON.stringify({seen: "2026-10-01T05:10:00+00:00",
+    visit: {...pass, expires_at: "2020-01-01T00:00:00+00:00"}}));
+  v.fetch = () => Promise.reject(new Error("offline"));
+  v.eval(`localStorage.setItem("tok","t1");localStorage.setItem("pass",${late})`);
+  await v.eval("start()");
+  v.eval('S.s="inout";render()');
+  ok("an expired saved pass shows no code offline",
+     view().includes("Pass expired") && !view().includes("KT-4821"));
+  v.eval('S.s="status";render()');
+  ok("its status says expired and offers a new request",
+     view().includes("Pass expired") && view().includes("New request"));
+  v.eval('keep({token:"t3",reference:"VR-2",status:"expired",name:"C",guests:[]})');
+  ok("an expired pass is not kept on the phone", v.eval('localStorage.getItem("pass")') === null);
+  v.eval('S.visit={...JSON.parse(JSON.parse(' + JSON.stringify(store) + ')).visit,' +
+         'expires_at:"2999-01-01T10:00:00+00:00"};S.s="inout";render()');
+  ok("a valid pass names when it ends", view().includes("until") && view().includes("KT-4821"));
 }
 
 // ------------------------------------- approvers, forgotten keys, auto-approval

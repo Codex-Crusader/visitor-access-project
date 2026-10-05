@@ -11,6 +11,7 @@ const out = el("out"), codeBox = el("code"), boardBox = el("board"), tools = el(
 const ESC = {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"};
 const x = s => String(s).replace(/[&<>"']/g, c => ESC[c]);
 const hm = t => t ? new Date(t).toLocaleTimeString([], {hour:"2-digit", minute:"2-digit"}) : "—";
+const dayHm = t => t ? new Date(t).toLocaleString([], {weekday:"short", hour:"2-digit", minute:"2-digit"}) : "—";
 
 // The visitor's pass shows an entry code, and after entry an exit code, such
 // as KT-4821. The guard may type it as kt4821 or KT 4821. A reference is
@@ -66,6 +67,7 @@ const BANNER = {
   declined: ["bad", "Declined", "Do not let them in."],
   pending:  ["wait", "Not approved yet", "Do not let them in."],
   escalated:["wait", "Not approved yet", "Do not let them in."],
+  expired:  ["bad", "Pass expired", "Do not let them in. They must send a new request."],
 };
 
 const svg = d => `<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
@@ -216,7 +218,8 @@ function render() {
       ${fact("Visiting", visit.visiting)}
       ${fact("Reason", visit.reason)}
       ${visit.guests && visit.guests.length ? fact("With", visit.guests.join(", ")) : ""}
-      ${fact(visit.status === "declined" ? "Declined" : "Approved", hm(visit.decided_at))}`;
+      ${visit.decided_at ? fact(visit.status === "declined" ? "Declined" : "Approved", hm(visit.decided_at)) : ""}
+      ${visit.status === "approved" && visit.expires_at ? fact("Valid until", dayHm(visit.expires_at)) : ""}`;
 
   out.innerHTML = `
     ${notice ? problem(notice) : ""}

@@ -136,6 +136,10 @@ WORK_TIMEZONE = ZoneInfo(os.getenv("WORK_TIMEZONE", "Asia/Kolkata").strip())
 # Days a visit record is kept. The privacy screen states this number.
 RETAIN_DAYS = _int("RETAIN_DAYS", 90)
 
+# A pass lets its visitor in for this many hours after the request. A visitor
+# already inside can always leave.
+PASS_HOURS = _int("PASS_HOURS", 48)
+
 # How many new requests one address may send per hour. The web address is
 # public, so this stops a stranger making the approver's phone ring all night.
 # Counted per IP address. People on one campus Wi-Fi share an address, so this

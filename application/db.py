@@ -132,7 +132,11 @@ APPROVED = "approved"
 DECLINED = "declined"
 INSIDE = "inside"
 CLOSED = "closed"
+# Not approved and not used within PASS_HOURS of the request.
+EXPIRED = "expired"
 OPEN_STATUSES = (PENDING, ESCALATED)
+# The statuses that turn to EXPIRED once PASS_HOURS have passed.
+EXPIRING = (PENDING, ESCALATED, APPROVED)
 
 
 def now():
@@ -281,9 +285,22 @@ def read(query):
     return read_again
 
 
+def pass_cutoff():
+    """A request made before this time can no longer be approved or used."""
+    return ago(config.PASS_HOURS / 24)
+
+
 def to_dict(row):
+    """A visit as the app uses it. A pass past PASS_HOURS reads as expired at once,
+    before the background round saves that status."""
     visit = dict(row)
     visit["guests"] = json.loads(visit["guests"])
+    created = visit.get("created_at")
+    if created:
+        expires = datetime.fromisoformat(created) + timedelta(hours=config.PASS_HOURS)
+        visit["expires_at"] = expires.isoformat(timespec="seconds")
+        if visit.get("status") in EXPIRING and created < pass_cutoff():
+            visit["status"] = EXPIRED
     return visit
 
 
@@ -421,24 +438,23 @@ def all_visits():
     return [to_dict(row) for row in rows]
 
 
-BOARD_FIELDS = "reference, name, visiting, guests, status, decided_at, entered_at"
+BOARD_FIELDS = "reference, name, visiting, guests, status, created_at, decided_at, entered_at"
 
 
 @read
-def at_gate(expected_hours):
+def at_gate():
     """What the gate desk board shows: (expected, inside).
 
-    expected is every pass approved in the last `expected_hours` and not used
-    yet, newest first. inside is everyone inside now, longest inside first, so
-    a visitor who never left is at the top. Two queries, each one a lookup on
+    expected is every approved pass that has not expired or been used, newest
+    decision first. inside is everyone inside now, longest inside first, so a
+    visitor who never left is at the top. Two queries, each one a lookup on
     the status index, rather than one OR that reads the whole table.
     """
-    since = ago(expected_hours / 24)
     with connect() as conn:
         expected = conn.execute(
-            f"SELECT {BOARD_FIELDS} FROM visits WHERE status = %s AND decided_at >= %s"
+            f"SELECT {BOARD_FIELDS} FROM visits WHERE status = %s AND created_at >= %s"
             " ORDER BY decided_at DESC",
-            (APPROVED, since),
+            (APPROVED, pass_cutoff()),
         ).fetchall()
         inside = conn.execute(
             f"SELECT {BOARD_FIELDS} FROM visits WHERE status = %s ORDER BY entered_at",
@@ -548,12 +564,12 @@ BY_AUTO = "auto"
 
 
 def decide(reference, status, by, phone=None):
-    """Record a decision. Returns the visit, or None if it was already decided."""
+    """Record a decision. Returns the visit, or None if it was decided or expired."""
     with connect() as conn:
         row = conn.execute(
             "UPDATE visits SET status = %s, decided_at = %s, decided_by = %s, decided_phone = %s"
-            " WHERE reference = %s AND status IN (%s, %s) RETURNING *",
-            (status, now(), by, phone, reference, *OPEN_STATUSES),
+            " WHERE reference = %s AND status IN (%s, %s) AND created_at >= %s RETURNING *",
+            (status, now(), by, phone, reference, *OPEN_STATUSES, pass_cutoff()),
         ).fetchone()
     return to_dict(row) if row is not None else None
 
@@ -612,8 +628,15 @@ def _stamp(reference, status, column, required):
 
 
 def check_in(reference):
-    """Let an approved visitor in. Returns the visit, or None unless the pass is approved."""
-    return _stamp(reference, INSIDE, "entered_at", APPROVED)
+    """Let an approved visitor in. Returns the visit, or None unless the pass is approved
+    and not expired. The time check is in the UPDATE, so a pass cannot expire halfway."""
+    with connect() as conn:
+        row = conn.execute(
+            "UPDATE visits SET status = %s, entered_at = %s WHERE reference = %s"
+            " AND status = %s AND created_at >= %s RETURNING *",
+            (INSIDE, now(), reference, APPROVED, pass_cutoff()),
+        ).fetchone()
+    return to_dict(row) if row is not None else None
 
 
 def check_out(reference):
@@ -653,8 +676,9 @@ def enter_with_photo(guard, minutes, media_id):
 
         reference, stamp = wait["reference"], now()
         changed = conn.execute(
-            "UPDATE visits SET status = %s, entered_at = %s WHERE reference = %s AND status = %s",
-            (INSIDE, stamp, reference, APPROVED),
+            "UPDATE visits SET status = %s, entered_at = %s WHERE reference = %s"
+            " AND status = %s AND created_at >= %s",
+            (INSIDE, stamp, reference, APPROVED, pass_cutoff()),
         ).rowcount
         if changed == 1:
             conn.execute(
@@ -686,6 +710,15 @@ def is_new_message(message_id):
             (message_id, now()),
         ).rowcount
     return added == 1
+
+
+def expire_old():
+    """Save EXPIRED on every pass past PASS_HOURS, so counts and filters match. Returns how many."""
+    with connect() as conn:
+        return conn.execute(
+            "UPDATE visits SET status = %s WHERE status IN (%s, %s, %s) AND created_at < %s",
+            (EXPIRED, *EXPIRING, pass_cutoff()),
+        ).rowcount
 
 
 def purge_old():

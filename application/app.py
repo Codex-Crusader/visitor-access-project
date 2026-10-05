@@ -28,9 +28,6 @@ FIELDS = ("name", "phone", "address", "reason", "visiting")
 BACKGROUND_SECONDS = 30
 # After IN <code>, the guard has this long to send the visitor's photo.
 PHOTO_MINUTES = 10
-# The gate board lists passes approved within this many hours as expected.
-# An older pass still works. It only leaves the list.
-BOARD_HOURS = 24
 
 GATE_ACTIONS = {
     "entry": (db.check_in, db.APPROVED),
@@ -44,6 +41,7 @@ REFUSALS = {
         db.DECLINED: "Declined. Do not let them in.",
         db.INSIDE: "Already inside.",
         db.CLOSED: "This pass is closed. The visit is over.",
+        db.EXPIRED: "This pass expired. Do not let them in. They must send a new request.",
     },
     "exit": {
         db.PENDING: "Not approved yet.",
@@ -51,6 +49,7 @@ REFUSALS = {
         db.DECLINED: "Declined.",
         db.APPROVED: "Not checked in yet.",
         db.CLOSED: "This pass is closed. The visit is over.",
+        db.EXPIRED: "This pass expired before anyone used it.",
     },
 }
 # Each code does only its own job. The refusal names the code the guard needs.
@@ -241,8 +240,9 @@ def role(phone, visit, table):
 
 
 def waiting_for(phone, table):
-    """The open requests this approver can decide, oldest first."""
-    return [visit for visit in db.open_requests() if role(phone, visit, table)]
+    """The open requests this approver can decide, oldest first. Expired ones are left out."""
+    return [visit for visit in db.open_requests()
+            if visit["status"] in db.OPEN_STATUSES and role(phone, visit, table)]
 
 
 def is_guard(phone):
@@ -356,6 +356,7 @@ def read_config():
         gate_desk_phone=config.GATE_DESK_PHONE,
         escalate_minutes=config.ESCALATE_MINUTES,
         retain_days=config.RETAIN_DAYS,
+        pass_hours=config.PASS_HOURS,
     )
 
 
@@ -448,7 +449,7 @@ def gate_board():
     """
     if not gate_key_ok():
         return jsonify(error="Wrong gate key"), 403
-    expected, inside = db.at_gate(BOARD_HOURS)
+    expected, inside = db.at_gate()
     return jsonify(expected=expected, inside=inside)
 
 
@@ -537,6 +538,7 @@ ADMIN_FILTERS = {
     "inside": (db.INSIDE,),
     "closed": (db.CLOSED,),
     "declined": (db.DECLINED,),
+    "expired": (db.EXPIRED,),
 }
 ADMIN_PAGE = 50
 
@@ -583,6 +585,7 @@ def admin_summary():
         work_hours=[config.WORK_START, config.WORK_END],
         work_days=[config.WEEKDAYS[day] for day in sorted(config.WORK_DAYS)],
         retain_days=config.RETAIN_DAYS,
+        pass_hours=config.PASS_HOURS,
     )
 
 
@@ -678,6 +681,10 @@ def verify_webhook():
     return "", 403
 
 
+EXPIRED_REQUEST = ("{reference} expired: it was made more than {hours} hours ago."
+                   " The visitor must send a new request.")
+
+
 def handle_decide(sender, status, reference, table):
     if not is_approver(sender, table):
         return "Only the approver can decide a request."
@@ -690,6 +697,8 @@ def handle_decide(sender, status, reference, table):
     visit = db.get(reference)
     if visit is None:
         return f"No request has reference {reference}."
+    if visit["status"] == db.EXPIRED:
+        return EXPIRED_REQUEST.format(reference=reference, hours=config.PASS_HOURS)
     # Each reason has its own two approvers. Nobody decides another's request.
     by = role(sender, visit, table)
     if not by:
@@ -697,7 +706,10 @@ def handle_decide(sender, status, reference, table):
     main, backup = db.approvers_for(table, visit["reason"])
     phone = main if by == db.BY_MAIN else backup
     if not db.decide(reference, status, by, phone):
-        return f"{reference} was already {visit['status']}."
+        now_status = db.get(reference)["status"]
+        if now_status == db.EXPIRED:
+            return EXPIRED_REQUEST.format(reference=reference, hours=config.PASS_HOURS)
+        return f"{reference} was already {now_status}."
     return f"{reference} is now {status}.\n\n{whatsapp.brief(visit)}"
 
 
@@ -837,6 +849,8 @@ def escalate_due():
     """
     table = db.approver_table()
     for visit in db.due_for_escalation():
+        if visit["status"] != db.PENDING:
+            continue  # expired: nobody needs to be asked any more
         try:
             approvers = db.approvers_for(table, visit["reason"])
             log_template_problem(whatsapp.notify_backup(visit, approvers))
@@ -865,7 +879,8 @@ stopping = threading.Event()
 
 
 def background_loop():
-    """Auto-approve and escalate requests nobody answered, then delete old records.
+    """Auto-approve and escalate requests nobody answered, expire old passes,
+    then delete old records.
 
     The first round runs at once, so requests due while the server slept are handled on wake.
     """
@@ -873,6 +888,9 @@ def background_loop():
         try:
             auto_approve_due()
             escalate_due()
+            expired = db.expire_old()
+            if expired:
+                app.logger.info("Marked %s passes expired", expired)
             removed = db.purge_old()
             if removed:
                 app.logger.info("Deleted %s visit records past retention", removed)

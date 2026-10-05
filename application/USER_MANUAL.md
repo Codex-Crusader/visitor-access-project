@@ -159,6 +159,10 @@ After the exit, the pass closes and both codes stop working. If the page
 says the request was declined, do not go to the gate. Use the Call gate desk
 button for help.
 
+A pass works for 48 hours after you send the request. The pass shows the
+time it ends. After that time, the code does not open the gate, and you must
+send a new request. If you are already inside, you can still leave.
+
 Your phone keeps a copy of your pass. If the signal at the gate is weak or
 gone, open the page anyway: it shows the pass from the copy and says when it
 was last updated. It updates by itself when the signal comes back.
@@ -208,7 +212,7 @@ You can work from the gate page or from WhatsApp. Both record the same thing.
 
 The page also shows two lists. Inside now lists everyone who is on campus. A
 yellow row means the visitor has been inside for more than 8 hours. Expected
-lists the passes approved in the last 24 hours that nobody has used yet. A tap
+lists the approved passes that nobody has used yet and that have not expired. A tap
 on a name only shows details. It records nothing.
 
 Download log saves every visit as a CSV file.
@@ -230,6 +234,7 @@ reference.
 |------------------------|---------------------------------------------|
 | Not approved yet       | Do not let the visitor in. Ask them to wait |
 | Declined               | Do not let the visitor in                   |
+| Pass expired           | Do not let them in. Ask for a new request   |
 | ... is the exit code   | Ask for the entry code                      |
 | This pass is closed    | The visit is over. The code is dead         |
 | Wrong gate key         | Tap "Forgot gate key?", then type the key   |

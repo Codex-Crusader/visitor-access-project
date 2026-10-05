@@ -13,12 +13,14 @@ const when = t => t ? new Date(t).toLocaleString([], {day:"numeric", month:"shor
 const FILTERS = [
   ["all", "All"], ["waiting", "Waiting"], ["approved", "Approved"],
   ["inside", "Inside"], ["closed", "Closed"], ["declined", "Declined"],
+  ["expired", "Expired"],
 ];
 // Each status as [the pill's data-tone, the word on the pill].
 const STATUS = {
   pending: ["wait", "Waiting"], escalated: ["wait", "With backup"],
   approved: ["go", "Approved"], inside: ["go", "Inside"],
   declined: ["stop", "Declined"], closed: ["done", "Closed"],
+  expired: ["done", "Expired"],
 };
 
 let section = "visits"; // the open tab: "visits" or "numbers"
@@ -128,6 +130,7 @@ function item(v) {
       <dt>With</dt><dd>${v.guests.length ? x(v.guests.join(", ")) : "No one"}</dd>
       <dt>Approvers now</dt><dd>${x(main1)}${backup && backup !== main1 ? `, backup ${x(backup)}` : " (also the backup)"}</dd>
       <dt>Requested</dt><dd>${when(v.created_at)}</dd>
+      <dt>Pass valid until</dt><dd>${when(v.expires_at)}</dd>
       <dt>Sent to backup</dt><dd>${when(v.escalated_at)}</dd>
       <dt>Decided</dt><dd>${when(v.decided_at)}</dd>
       <dt>Decision</dt><dd>${x(byLine || "Not decided yet")}</dd>
@@ -330,7 +333,8 @@ async function loadSummary() {
           + ` is approved automatically after ${s.auto_approve_minutes} minutes with no answer.`
         : "";
       el("rules").textContent = `A request goes to the backup approver after ${s.escalate_minutes} minutes`
-        + ` with no answer.${auto} Records are deleted after ${s.retain_days} days.`;
+        + ` with no answer.${auto} A pass works for ${s.pass_hours} hours after the request.`
+        + ` Records are deleted after ${s.retain_days} days.`;
     }
   } catch (err) {
     if (err instanceof WrongKey) return forgetKey(err.message);

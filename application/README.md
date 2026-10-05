@@ -17,8 +17,7 @@ The gate page at `/gate` asks for the gate key once. After that it shows:
 2. **Inside now**: everyone who entered and has not left, longest first. A
    visitor inside for more than 8 hours has a yellow row, so a visitor who
    never checked out is easy to see.
-3. **Expected**: every pass approved in the last 24 hours and not used yet.
-   An older pass still works. It only leaves this list.
+3. **Expected**: every approved pass that is not used and not expired.
 4. **Refresh the lists**, **Download log** and **Change gate key**.
 
 Tap a name to see who it is. A tap records nothing. To record an entry or an
@@ -29,8 +28,8 @@ named as the reason.
 
 The lists come from `GET /api/gate/board` with the `X-Gate-Key` header. It
 returns only open visits, and for each one only the reference, name, person
-visited, guests, status and the approval and entry times. `BOARD_HOURS` and
-`LONG_HOURS` set the 24 and 8 hours, in `app.py` and `static/gate.js`.
+visited, guests, status, the request, approval and entry times, and when the
+pass expires. `LONG_HOURS` in `static/gate.js` sets the 8 hours.
 
 The badge in the top corner says Live while the lists are fresh and Offline
 after a refresh fails. If the saved gate key is wrong, the page forgets it and
@@ -285,6 +284,14 @@ Excel and Sheets run such a cell as a formula, so a visitor who types
 `=HYPERLINK(...)` as their name would otherwise have it executed on whoever
 opens the log. The text is kept, only disarmed.
 
+A pass works for `PASS_HOURS` after the request, 48 hours by default. After
+that time, the request cannot be approved and the entry code opens nothing,
+on the gate page and on WhatsApp. The check is part of the same SQL UPDATE
+that approves or lets the visitor in, so a pass cannot expire halfway through.
+A visitor already inside can always leave. The visitor's page stops showing
+the code at that time, also offline. The background round saves the status
+`expired`, so the admin counts and the Expired tile match.
+
 Records are deleted `RETAIN_DAYS` after they are created, 90 days by default.
 The privacy screen in the visitor app states that same number, so the promise and
 the code agree. Change one and change the other.
@@ -301,7 +308,8 @@ that Postgres can search without reading every row.
 | Look up a pass by its code          | O(log n)        | One query: the code key, visit joined        |
 | Decide, enter, exit                 | O(log n)        | One UPDATE that returns the new row          |
 | Escalation check, every 30 seconds  | O(log n + k)    | Index on status and created time             |
-| Gate board, every 30 seconds        | O(log n + k)    | Index on status and decision time            |
+| Gate board, every 30 seconds        | O(log n + k)    | Index on status and created time             |
+| Expire old passes, every 30 seconds | O(log n + k)    | Index on status and created time             |
 | Purge, every 30 seconds             | O(log n + k)    | Reads only expired visits and their photos   |
 | One admin page, first or fiftieth   | O(log n + 50)   | Starts after the last row of the page before |
 | Admin counts by status              | O(n)            | One pass over an index, not the table        |
@@ -398,6 +406,7 @@ and 8 seconds, because Neon takes a moment to wake.
 | `WORK_DAYS`            | Working days. Default `Mon,Tue,Wed,Thu,Fri,Sat`          |
 | `WORK_TIMEZONE`        | Clock for working hours. Default `Asia/Kolkata`          |
 | `RETAIN_DAYS`          | Days a record is kept before deletion. Default 90        |
+| `PASS_HOURS`           | Hours a pass works after the request. Default 48         |
 | `REQUESTS_PER_HOUR`    | New requests allowed per address per hour. Default 60    |
 | `BEHIND_PROXY`         | Set to `true` on Render. Leave unset on your own machine |
 | `REQUEST_TEMPLATE`     | Approval request template. Default `visit_request`       |

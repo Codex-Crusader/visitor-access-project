@@ -6,7 +6,7 @@ const SEND_TIMEOUT = 75000;   // a sleeping free server can take ~50s to wake
 const LIVE_VIEWS = ["status", "home", "inout"];
 const MAX_GUESTS = 10;        // the server keeps no more than this
 const S = {s:"home", f:{name:"",phone:"",address:"",reason:"",other:"",visiting:"",guest:""}, g:[], e:{}, adding:0,
-  visit:null, cfg:{gate_desk_phone:"",escalate_minutes:15,retain_days:90}, err:"", hist:[], sheet:0,
+  visit:null, cfg:{gate_desk_phone:"",escalate_minutes:15,retain_days:90,pass_hours:48}, err:"", hist:[], sheet:0,
   wait:POLL_EVERY, down:0, seen:"", timer:0, busy:0};
 
 const el = i=>document.getElementById(i);
@@ -14,11 +14,18 @@ const el = i=>document.getElementById(i);
 const ESC={"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"};
 const x=s=>String(s).replace(/[&<>"']/g,c=>ESC[c]);
 const set=(k,v)=>{S.f[k]=v;if(S.e[k]){delete S.e[k];unmark(k)}};
-const st=()=>S.visit?S.visit.status:"none";
+// A pass past its expiry time reads as expired at once, even offline.
+const EXPIRING=["pending","escalated","approved"];
+const st=()=>{
+  const v=S.visit;
+  if(!v)return "none";
+  return EXPIRING.includes(v.status)&&v.expires_at&&Date.now()>=Date.parse(v.expires_at)?"expired":v.status;
+};
 const waiting=()=>st()==="pending"||st()==="escalated";
 const live=()=>waiting()||st()==="approved"||st()==="inside";
 const hasPass=()=>st()==="approved"||st()==="inside";
 const hm=t=>t?new Date(t).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"}):"—";
+const dayHm=t=>t?new Date(t).toLocaleString([],{weekday:"short",day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"}):"—";
 const plus=(t,m)=>hm(new Date(new Date(t).getTime()+m*60000).toISOString());
 
 function go(s,keep=1){if(keep)S.hist.push(S.s);S.s=s;S.sheet=0;render();el("view").scrollTop=0}
@@ -26,7 +33,7 @@ function back(){S.s=S.hist.pop()||"home";S.sheet=0;render()}
 
 const T={home:["",0],step1:["Request a Visit",1],step2:["Request a Visit",1],review:["Review",1],sending:["",0],
   status:["Checking on My Request",1],inout:["Getting In and Out",1],privacy:["My Information and Privacy",1],help:["Getting Help",1]};
-const word=()=>({pending:"Not approved yet",escalated:"Not approved yet",approved:"Approved",
+const word=()=>({pending:"Not approved yet",escalated:"Not approved yet",approved:"Approved",expired:"Pass expired",
   declined:"Declined",inside:"Inside campus",closed:"Visit complete"}[st()]||"");
 const reasonText=()=>S.f.reason==="Other"?(S.f.other.trim()||"Other"):S.f.reason;
 const ICONS={
@@ -76,7 +83,7 @@ function tracker(){
 function view(){
   switch(S.s){
   case "home": return `<div class="hero"><h2>Campus Visitor Access</h2><p class="heroP">Ask to visit, then watch the decision happen.</p></div>
-    ${S.visit&&st()!=="closed"?`<button class="live" data-tone="${["approved","inside"].includes(st())?"go":st()==="declined"?"stop":""}" onclick="go('status')">
+    ${S.visit&&st()!=="closed"?`<button class="live" data-tone="${["approved","inside"].includes(st())?"go":["declined","expired"].includes(st())?"stop":""}" onclick="go('status')">
       <b>${word()}</b><span>${x(S.visit.reference)}</span></button>`:""}
     <div class="menu">
       <button onclick="go('step1')">Request a Visit<i>&rsaquo;</i></button>
@@ -136,6 +143,9 @@ function view(){
     if(st()==="declined") return `<div class="state bad">${ico("cross")}<div><h3>Declined</h3><p>The approver turned down this visit.</p></div></div>
       <div class="facts">${fact("Reference",v.reference)}${fact("Decided",hm(v.decided_at))}</div>
       <button class="btn" onclick="again()">New request</button>${gate()}`;
+    if(st()==="expired") return `<div class="state bad">${ico("cross")}<div><h3>Pass expired</h3><p>A request works for ${S.cfg.pass_hours} hours. This one ended at ${dayHm(v.expires_at)}. Send a new request to visit.</p></div></div>
+      <div class="facts">${fact("Reference",v.reference)}</div>
+      <button class="btn" onclick="again()">New request</button>${gate()}`;
     if(st()==="closed") return `<div class="state good">${ico("check")}<div><h3>Visit complete</h3><p>You checked out at ${hm(v.exited_at)}. This pass is closed and will not open again.</p></div></div>
       <div class="facts">${fact("Entered",hm(v.entered_at))}${fact("Exited",hm(v.exited_at))}</div>
       <button class="btn" onclick="again()">New request</button>`;
@@ -144,7 +154,8 @@ function view(){
       <button class="btn" onclick="go('inout')">Open pass</button>${gate()}
       <button class="btn plain" onclick="home()">Go to home</button>`;
     if(st()==="approved") return `<div class="state good">${ico("check")}<div><h3>Approved</h3><p>Show your pass at the gate.</p></div></div>
-      ${tracker()}<button class="btn" onclick="go('inout')">Open pass</button>${gate()}
+      ${tracker()}<div class="facts">${fact("Valid until",dayHm(v.expires_at))}</div>
+      <button class="btn" onclick="go('inout')">Open pass</button>${gate()}
       <button class="btn plain" onclick="home()">Go to home</button>`;
     return `<div class="state wait">${ico("clock")}<div><h3>Not approved yet</h3><p>Do not enter until this says Approved.</p></div></div>
       ${offlineNote()}
@@ -156,6 +167,8 @@ function view(){
       ${gate()}`;}
 
   case "inout":{
+    if(st()==="expired") return `<h2>Pass expired</h2><p>This pass ended at ${dayHm(S.visit.expires_at)}. The code no longer works.</p>
+      <button class="btn" onclick="again()">New request</button>`;
     if(st()==="closed") return `<h2>Pass closed</h2><p>You checked out at ${hm(S.visit.exited_at)}. This code no longer works.</p>
       <button class="btn" onclick="again()">New request</button>`;
     if(!hasPass()) return `<h2>No pass yet</h2><p>Your pass appears here once a request is approved.</p>
@@ -166,7 +179,7 @@ function view(){
       <span class="ptop"><span class="pass-arrow">${out?"&uarr;":"&darr;"}</span>${out?"Exit pass":"Entry pass"}</span>
       <b>${x((out?S.visit.exit_code:S.visit.entry_code)||"—")}</b>
       <span class="pass-cut"></span>
-      <span class="pass-foot">${x(S.visit.name||"Visitor")}${S.visit.guests.length?" +"+S.visit.guests.length:""} &middot; today</span>
+      <span class="pass-foot">${x(S.visit.name||"Visitor")}${S.visit.guests.length?" +"+S.visit.guests.length:""} &middot; ${out?"inside now":"until "+x(dayHm(S.visit.expires_at))}</span>
       <span class="pass-way">${out?"On your way out":"Coming in"}</span></div>
       <p class="sm">${out?"Show this exit code on the way out. It is new: the code you came in with no longer opens the gate.":"Show this at the gate. The guard looks it up and takes your photo, then lets you in."}</p>
       ${gate()}
@@ -345,11 +358,12 @@ function again(){forget();S.g=[];closeAdd();S.e={};S.err="";go("step1",0)}
 // The phone keeps the last pass it saw, so the pass opens with a weak signal
 // or none. Only what the pass and status screens draw is kept: no phone
 // number and no address. A closed or unknown pass is forgotten.
-const PASS_FIELDS=["token","reference","status","name","guests","created_at","decided_at",
+const PASS_FIELDS=["token","reference","status","name","guests","created_at","decided_at","expires_at",
   "entered_at","exited_at","entry_code","exit_code"];
 function keep(v){
   S.visit=v;S.seen=new Date().toISOString();
-  if(v.status==="closed"){forget(v);return}
+  // A finished pass is not kept: the phone must never show a dead code offline.
+  if(v.status==="closed"||v.status==="expired"){forget(v);return}
   try{
     localStorage.setItem("tok",v.token);
     localStorage.setItem("pass",JSON.stringify({seen:S.seen,
@@ -457,6 +471,7 @@ async function start(){
     // the saved pass, and the poll below tries again.
     if(visit.status==="fulfilled"){
       if(visit.value.status==="closed")forget();
+      else if(visit.value.status==="expired")forget(visit.value);
       else keep(visit.value);
     }
     else if(unknown(visit.reason))forget();

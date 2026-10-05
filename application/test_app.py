@@ -174,16 +174,18 @@ try:
 
     # The backup approver's round fails the same way, and one failure stops
     # neither the other escalations nor the purge after them.
+    # An hour old: due for the backup, and not yet expired.
+    hour_ago = db.ago(1 / 24)
     with db.connect() as conn:
         conn.execute("UPDATE visits SET created_at = %s WHERE status = 'pending'",
-                     ("2020-06-01T00:00:00+00:00",))
+                     (hour_ago,))
     caught.clear()
     application.escalate_due()
     assert any("backup approver" in line for line in caught), caught
     assert db.due_for_escalation(), "a failed escalation must stay due and be tried again"
     with db.connect() as conn:
         conn.execute("UPDATE visits SET created_at = %s WHERE created_at = %s",
-                     (db.now(), "2020-06-01T00:00:00+00:00"))
+                     (db.now(), hour_ago))
 
     # While Meta reviews the template, TEMPLATE_FALLBACK sends plain text
     # instead, and the log says so, because plain text alone can be lost.
@@ -527,7 +529,7 @@ assert waiting_one["reference"] not in expected_refs + inside_refs  # pending
 # The board carries what the list shows, and nothing it does not.
 shown = board["expected"][0]
 assert set(shown) == {"reference", "name", "visiting", "guests", "status",
-                    "decided_at", "entered_at"}, set(shown)
+                    "created_at", "decided_at", "entered_at", "expires_at"}, set(shown)
 # The board is the one list every guard sees. It must hold no gate code.
 board_text = client.get("/api/gate/board", headers=KEY).get_data(as_text=True)
 assert not any(c in board_text for c in (entry_of(live), exit_of(live),
@@ -535,13 +537,20 @@ assert not any(c in board_text for c in (entry_of(live), exit_of(live),
 # Inside is ordered longest first, so whoever never left is at the top.
 entered = [v["entered_at"] for v in board["inside"]]
 assert entered == sorted(entered), entered
-# A pass approved more than BOARD_HOURS ago leaves the list but still works.
+# A pass approved long ago stays on the list while it is valid, and leaves it once it expires.
+stale = new_request()
+say(APPROVER, f"YES {stale['reference']}")
 with db.connect() as conn:
-    conn.execute("UPDATE visits SET decided_at = %s WHERE reference = %s",
-                 ("2020-01-01T00:00:00+00:00", live["reference"]))
+    conn.execute("UPDATE visits SET decided_at = %s, created_at = %s WHERE reference = %s",
+                 (db.ago(1.9), db.ago(1.9), stale["reference"]))
 board = client.get("/api/gate/board", headers=KEY).get_json()
-assert live["reference"] not in [v["reference"] for v in board["expected"]]
-assert client.get(f"/api/pass/{live['reference']}", headers=KEY).get_json()["status"] == "approved"
+assert stale["reference"] in [v["reference"] for v in board["expected"]], "valid for 48 hours"
+with db.connect() as conn:
+    conn.execute("UPDATE visits SET created_at = %s WHERE reference = %s",
+                 (db.ago(2.1), stale["reference"]))
+board = client.get("/api/gate/board", headers=KEY).get_json()
+assert stale["reference"] not in [v["reference"] for v in board["expected"]]
+assert client.get(f"/api/pass/{stale['reference']}", headers=KEY).get_json()["status"] == "expired"
 print(f"  {len(board['inside'])} inside, {len(board['expected'])} expected")
 
 print("a declined pass never opens the gate")
@@ -570,7 +579,7 @@ assert whatsapp.read_reply("YES") == ("decide", db.APPROVED, None)
 print("escalation never decides, it only asks again")
 with db.connect() as conn:
     conn.execute("UPDATE visits SET created_at = %s WHERE reference = %s",
-                 ("2020-01-01T00:00:00+00:00", b["reference"]))
+                 (db.ago(1 / 24), b["reference"]))
 due = db.due_for_escalation()
 assert [v["reference"] for v in due] == [b["reference"]], due
 whatsapp.notify_backup(due[0], db.approvers_for(db.approver_table(), due[0]["reason"]))
@@ -1056,6 +1065,83 @@ assert view["status"] == "approved" and view["entry_code"]
 private = {"decided_by", "decided_phone", "auto_approve_at"}
 assert not private & view.keys(), "the visitor must not see it"
 print("  10:00 to 16:59 Monday to Saturday only, a NO first wins, approvers told once")
+
+print("a pass works for PASS_HOURS after the request, then never again")
+assert config.PASS_HOURS == 48
+assert client.get("/api/config").get_json()["pass_hours"] == 48
+
+
+def made_hours_ago(made, hours):
+    with db.connect() as conn:
+        conn.execute("UPDATE visits SET created_at = %s WHERE reference = %s",
+                     (db.ago(hours / 24), made["reference"]))
+
+
+# 47 hours old: approval and entry still work, and the pass names its end.
+young = new_request()
+made_hours_ago(young, 47)
+assert "is now approved" in say(APPROVER, f"YES {young['reference']}")
+view = client.get(f"/api/visit/{young['token']}").get_json()
+assert view["status"] == "approved" and view["entry_code"] and view["expires_at"], view
+assert client.post(f"/api/pass/{entry_of(young)}/entry", headers=KEY).status_code == 200
+
+# 49 hours old and approved: nothing lets this visitor in.
+late_pass = new_request()
+say(APPROVER, f"YES {late_pass['reference']}")
+made_hours_ago(late_pass, 49)
+view = client.get(f"/api/visit/{late_pass['token']}").get_json()
+assert view["status"] == "expired" and "entry_code" not in view, view
+gate_try = client.post(f"/api/pass/{entry_of(late_pass)}/entry", headers=KEY)
+refusal = gate_try.get_json()
+assert gate_try.status_code == 409 and "expired" in refusal["error"], refusal
+assert client.get(f"/api/pass/{entry_of(late_pass)}", headers=KEY).get_json()["status"] == "expired"
+assert "expired" in say(APPROVER, f"IN {entry_of(late_pass)}").lower()
+assert db.check_in(late_pass["reference"]) is None, "the UPDATE itself checks the time"
+assert "Expired" in say(APPROVER, late_pass["reference"])
+
+# The race: IN is accepted, then the pass expires before the photo arrives.
+racing = new_request()
+say(APPROVER, f"YES {racing['reference']}")
+assert "Take a photo" in say(APPROVER, f"IN {entry_of(racing)}")
+made_hours_ago(racing, 49)
+assert "expired" in snap(APPROVER).lower()
+assert db.get(racing["reference"])["status"] == "expired"
+
+# 49 hours old and never answered: it cannot be approved, escalated or picked by YES alone.
+unanswered = new_request()
+made_hours_ago(unanswered, 49)
+reply = say(APPROVER, f"YES {unanswered['reference']}")
+assert "expired" in reply and "new request" in reply, reply
+table = db.approver_table()
+waiting_refs = [v["reference"] for v in application.waiting_for(APPROVER, table)]
+assert unanswered["reference"] not in waiting_refs
+before = len(templates)
+application.escalate_due()
+assert unanswered["reference"] not in [t[1][0] for t in templates[before:]], "no backup for it"
+assert db.decide(unanswered["reference"], db.APPROVED, db.BY_AUTO) is None
+
+# A visitor already inside can always leave, however old the request.
+staying = new_request()
+say(APPROVER, f"YES {staying['reference']}")
+client.post(f"/api/pass/{entry_of(staying)}/entry", headers=KEY)
+made_hours_ago(staying, 72)
+assert client.get(f"/api/visit/{staying['token']}").get_json()["status"] == "inside"
+assert client.post(f"/api/pass/{exit_of(staying)}/exit", headers=KEY).status_code == 200
+
+# The background round saves the status, so the admin counts and filter match.
+assert db.expire_old() >= 2
+assert db.expire_old() == 0, "a second round changes nothing"
+for gone_pass in (late_pass, unanswered):
+    with db.connect() as conn:
+        stored = conn.execute("SELECT status FROM visits WHERE reference = %s",
+                              (gone_pass["reference"],)).fetchone()["status"]
+    assert stored == "expired", stored
+expired_rows = client.get("/api/admin/visits?status=expired", headers=ADMIN).get_json()["visits"]
+assert {late_pass["reference"], unanswered["reference"]} <= {v["reference"] for v in expired_rows}
+assert client.get("/api/admin/summary", headers=ADMIN).get_json()["counts"]["expired"] >= 2
+# A late reply to a pass already saved as expired gets the same answer.
+assert "expired" in say(APPROVER, f"NO {late_pass['reference']}")
+print("  47 hours works, 49 hours refused everywhere, exit always works, status saved")
 
 print("a forgotten key goes to its own number, never to the page")
 application.forget_hits()
