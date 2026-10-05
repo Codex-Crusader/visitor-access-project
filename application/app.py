@@ -205,6 +205,11 @@ def too_many(bucket, limit, seconds, who=None):
     return False
 
 
+def same_secret(given, kept):
+    """Constant-time comparison, as bytes, so a letter such as é is a wrong key, not a crash."""
+    return hmac.compare_digest(given.encode(), kept.encode())
+
+
 # Who recorded an entry or exit with the shared GATE_KEY.
 DESK_KEY = "Gate desk (shared key)"
 
@@ -226,7 +231,7 @@ def gate_guard():
     guard who is holding up a queue cannot tell a refusal from a wrong key.
     """
     key = request.headers.get("X-Gate-Key", "")
-    if hmac.compare_digest(key, config.GATE_KEY):
+    if same_secret(key, config.GATE_KEY):
         return DESK_KEY
     if not key:
         return None
@@ -242,7 +247,7 @@ def admin_refusal():
     """
     if config.ADMIN_LOCKED:
         return jsonify(error=config.ADMIN_LOCKED), 503
-    if not hmac.compare_digest(request.headers.get("X-Admin-Key", ""), config.ADMIN_KEY):
+    if not same_secret(request.headers.get("X-Admin-Key", ""), config.ADMIN_KEY):
         return jsonify(error="Wrong admin key"), 403
     return None
 

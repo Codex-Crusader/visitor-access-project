@@ -21,9 +21,11 @@ message template.
 2. Open WhatsApp, then API Setup. Copy the Phone number ID. This is
    `META_PHONE_NUMBER_ID`.
 3. On the same page, add each approver and guard phone number to the
-   recipient list. A Meta test number sends only to numbers on that list.
+   recipient list. A Meta test number sends only to numbers on that list,
+   and the list holds 5 numbers at most. If more people must get messages,
+   add the campus's own WhatsApp number first, see step 7.
 4. Open App settings, then Basic. Copy the App secret. This is
-   `META_APP_SECRET`.
+   `META_APP_SECRET`. The app does not start without it.
 5. Make a permanent access token. In Meta Business settings, open Users, then
    System users. Add a system user, give it your app with full control, and
    click Generate token. Pick the permissions `whatsapp_business_messaging`
@@ -54,15 +56,21 @@ of the repository.
 
 ## Step 4: The app on Render
 
-1. On https://render.com, click New, then Web Service, and pick the
-   repository. If the app is in a subfolder of the repository, type that
-   folder in Root Directory. Pick the same region as the database.
-2. Type the commands from `render.yaml`. The build command is
-   `pip install -r requirements.txt`. The start command is
-   `gunicorn app:app --workers 1 --threads 4 --timeout 60`.
-3. In Environment, set each required value from "Settings" below.
-4. Click Deploy. When Render says Live, it shows the app's address at the top
-   of the page. This is `<address>`.
+The file `render.yaml`, at the top of the repository, describes the service:
+its region, its commands, and the settings that have a fixed value. Render
+reads it as a Blueprint, so you type only the values that are yours.
+
+1. On https://render.com, click New, then Blueprint, and pick the repository.
+2. Render shows the service from `render.yaml` and asks for each value that
+   the file leaves empty. Type them. "Settings" below says what each one is.
+3. Click Apply. When Render says Live, it shows the app's address at the top
+   of the service's page. This is `<address>`.
+
+To make the service by hand instead, click New, then Web Service. Type the
+values from `render.yaml`: the Root Directory, the build command
+`pip install -r requirements.txt`, the start command
+`gunicorn app:app --workers 1 --threads 4 --timeout 60`, and every setting,
+also `BEHIND_PROXY` and `PYTHON_VERSION`.
 
 The app builds its database tables by itself the first time it starts.
 
@@ -87,8 +95,8 @@ replies. People often miss this step.
 1. Open `<address>` on a phone, and send a request as a visitor.
 2. The approver gets a WhatsApp message. Reply `YES` and the reference.
 3. Within a few seconds, the visitor's page shows Approved.
-4. Open `<address>/gate`, type the gate key and the entry code, and record
-   the entry.
+4. Open `<address>/gate`, type the gate key and the entry code, take a photo
+   of the visitor, and record the entry.
 5. Open `<address>/api/health`. It must show `"database":true` and
    `"whatsapp":true`.
 
@@ -102,8 +110,10 @@ does not have them.
 
 1. Run the app on the campus's own accounts: Meta, Neon, Render and GitHub.
    Steps 1 to 6 make a new copy there.
-2. Set `GATE_KEY` and `ADMIN_KEY` to long random keys that are different from
-   each other. See "Change a key" in [maintenance.md](maintenance.md).
+2. Set `GATE_KEY` and `ADMIN_KEY` to random keys of 20 characters or more,
+   different from each other. To make one, run
+   `python -c "import secrets; print(secrets.token_urlsafe(24))"`.
+   See "Change a key" in [maintenance.md](maintenance.md).
 3. Use a permanent `META_TOKEN`, as step 1 tells you.
 4. Move from Meta's test number to the campus's own WhatsApp number. In the
    Meta app, open WhatsApp, then API Setup, and add your phone number. Put its
@@ -111,7 +121,7 @@ does not have them.
    template again for that WhatsApp account, and wait until Meta approves it.
    Meta can ask the business to prove its identity first.
 5. Set `ADMIN_PHONE` to the admin's WhatsApp number. It must not be the gate
-   desk number, or "Forgot admin key?" stays off.
+   desk number or a guard's number, or "Forgot admin key?" stays off.
 6. Set the approver numbers for each reason, on the admin page or with
    `APPROVERS`.
 7. Turn on the uptime check. See "The uptime check" in
@@ -130,37 +140,48 @@ The first group is required.
 | `META_TOKEN`           | The permanent token from step 1                       |
 | `META_PHONE_NUMBER_ID` | The Phone number ID from step 1                       |
 | `META_VERIFY_TOKEN`    | Any word. Type the same word on the Meta webhook page |
+| `META_APP_SECRET`      | The App secret from step 1                            |
 | `MAIN_APPROVER`        | The approver's number, like `+911234567890`           |
-| `GATE_KEY`             | The password for the gate page                        |
+| `GATE_KEY`             | The gate page password. 20 characters or more         |
 | `GATE_DESK_PHONE`      | The number on the Call gate desk button               |
 | `DATABASE_URL`         | The connection string from step 2                     |
 
 These have a default. Set the ones that apply to you.
 
-| Name                   | Value                                                     |
-|------------------------|-----------------------------------------------------------|
-| `META_APP_SECRET`      | The App secret. Empty turns the signature check off       |
-| `BACKUP_APPROVER`      | The backup approver. Default: `MAIN_APPROVER`             |
-| `APPROVERS`            | JSON: other approvers for some reasons. See below         |
-| `GUARD`                | The gate desk's WhatsApp number. Default: `MAIN_APPROVER` |
-| `ADMIN_PHONE`          | Gets the admin key on request. Default: `MAIN_APPROVER`   |
-| `ADMIN_KEY`            | The admin page password. Without it, the page is locked   |
-| `BEHIND_PROXY`         | `true` on Render. Leave it unset on your own machine      |
-| `ESCALATE_MINUTES`     | Minutes before the backup approver is asked. Default 15   |
-| `AUTO_APPROVE_MINUTES` | Minutes before automatic approval. 0 is off. Default 30   |
-| `WORK_HOURS`           | Working hours, in whole hours. Default `10-17`            |
-| `WORK_DAYS`            | Working days. Default `Mon,Tue,Wed,Thu,Fri,Sat`           |
-| `WORK_TIMEZONE`        | The clock for working hours. Default `Asia/Kolkata`       |
-| `PASS_HOURS`           | Hours a pass works after the request. Default 48          |
-| `RETAIN_DAYS`          | Days a record is kept before deletion. Default 90         |
-| `REQUESTS_PER_HOUR`    | New requests from one address in one hour. Default 60     |
-| `REQUEST_TEMPLATE`     | The approval template. Default `visit_request`            |
-| `TEMPLATE_LANGUAGE`    | The language code of that template. Default `en`          |
-| `TEMPLATE_FALLBACK`    | `true` sends plain text when the template fails. Off      |
+| Name                     | Value                                                        |
+|--------------------------|--------------------------------------------------------------|
+| `BACKUP_APPROVER`        | The backup approver. Default: `MAIN_APPROVER`                |
+| `APPROVERS`              | JSON: other approvers for some reasons. See below            |
+| `GUARD`                  | The gate desk's WhatsApp number. Default: `MAIN_APPROVER`    |
+| `ADMIN_PHONE`            | Gets the admin key on request. Default: `MAIN_APPROVER`      |
+| `ADMIN_KEY`              | The admin page password, 20 characters or more               |
+| `BEHIND_PROXY`           | `true` on Render. Leave it unset on your own machine         |
+| `ESCALATE_MINUTES`       | Minutes before the backup approver is asked. Default 15      |
+| `AUTO_APPROVE_MINUTES`   | Minutes before automatic approval. 0 is off. Default 30      |
+| `WORK_HOURS`             | Working hours, in whole hours. Default `10-17`               |
+| `WORK_DAYS`              | Working days. Default `Mon,Tue,Wed,Thu,Fri,Sat`              |
+| `WORK_TIMEZONE`          | The clock for working hours. Default `Asia/Kolkata`          |
+| `PASS_HOURS`             | Hours a pass works after the request. Default 48             |
+| `RETAIN_DAYS`            | Days a record is kept before deletion. Default 90            |
+| `REQUESTS_PER_HOUR`      | New requests from one address in one hour. Default 60        |
+| `REQUEST_TEMPLATE`       | The approval template. Default `visit_request`               |
+| `TEMPLATE_LANGUAGE`      | The language code of that template. Default `en`             |
+| `TEMPLATE_FALLBACK`      | `true` sends plain text when the template fails. Off         |
+| `PYTHON_VERSION`         | The Python that Render uses. `render.yaml` sets `3.14.3`     |
+| `ALLOW_UNSIGNED_WEBHOOK` | `true` runs without `META_APP_SECRET`. Your own machine only |
 
 Write every phone number in E.164 form: a plus sign, the country code, then
-the number. `ADMIN_KEY` must be different from `GATE_KEY`. If the two are the
-same, the admin page stays locked, because every guard has the gate key.
+the number.
+
+The app checks the unsafe settings when it starts, and the Render log says
+what to fix:
+
+1. Without `META_APP_SECRET`, the app does not start. Without the secret,
+   anyone who finds the webhook address can send a false YES or IN.
+2. With a `GATE_KEY` shorter than 20 characters, or the example from
+   `.env.example`, the app does not start.
+3. Without `ADMIN_KEY`, with one shorter than 20 characters, or with the same
+   value as `GATE_KEY`, the admin page stays locked. The rest of the app runs.
 
 `BEHIND_PROXY` must be `true` on Render. If it is not set, the app counts
 every visitor as the same caller, and 60 requests in one hour stop the whole
@@ -257,9 +278,11 @@ Use a separate Neon branch for your own machine, so a test visit never
 appears in the live list. A branch is a copy of the database that you can
 change on its own. Make one in the Neon console under Branches.
 
-1. Install the packages, and copy the example settings.
+1. Make a Python environment in the app's folder, install the packages, and
+   copy the example settings.
 
    ```
+   python -m venv .venv
    .venv\Scripts\python.exe -m pip install -r requirements.txt
    copy .env.example .env
    ```

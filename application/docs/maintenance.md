@@ -249,7 +249,9 @@ for each key.
 
 ## Change a key
 
-Use long random keys. A short key is easy to guess.
+Use random keys of 20 characters or more. The app refuses a shorter gate key
+at start, and keeps the admin page locked with a shorter admin key. To make
+a key, run `python -c "import secrets; print(secrets.token_urlsafe(24))"`.
 
 1. Open the service on Render, then Environment.
 2. Change `GATE_KEY`, `ADMIN_KEY`, or both. The two keys must be different.
@@ -505,20 +507,21 @@ once an hour.
 
 ## When something fails
 
-| You see                               | Do this                                                  |
-|---------------------------------------|----------------------------------------------------------|
-| Error 190 in the log                  | The Meta token expired. Make a new permanent token       |
-| Error 131030                          | The number is not on the Meta recipient list. Add it     |
-| Error 132001                          | The template does not exist or is not approved yet       |
-| `could not deliver` with error 131047 | The 24-hour window. Make sure the template is in use     |
-| `Approval template refused`           | The template is missing or waits for Meta's review       |
-| The reply never changes the page      | Check the Callback URL and the `messages` subscription   |
-| The webhook answers 403               | `META_APP_SECRET` does not match the Meta app            |
-| The gate page says "Wrong gate key"   | Tap "Forgot gate key?", or send `KEY` from the gate desk |
-| The admin page says it is locked      | Set `ADMIN_KEY`, different from `GATE_KEY`               |
-| All visitors get "Too many requests"  | Set `BEHIND_PROXY=true` on Render                        |
-| The Tests workflow is red             | Do not deploy. Read the failed check in the run          |
-| The Uptime workflow is red            | Read "The uptime check" above                            |
+| You see                                             | Do this                                                  |
+|-----------------------------------------------------|----------------------------------------------------------|
+| The app does not start, and the log names a setting | Set that setting on Render, as the log says              |
+| Error 190 in the log                                | The Meta token expired. Make a new permanent token       |
+| Error 131030                                        | The number is not on the Meta recipient list. Add it     |
+| Error 132001                                        | The template does not exist or is not approved yet       |
+| `could not deliver` with error 131047               | The 24-hour window. Make sure the template is in use     |
+| `Approval template refused`                         | The template is missing or waits for Meta's review       |
+| The reply never changes the page                    | Check the Callback URL and the `messages` subscription   |
+| The webhook answers 403                             | `META_APP_SECRET` does not match the Meta app            |
+| The gate page says "Wrong gate key"                 | Tap "Forgot gate key?", or send `KEY` from the gate desk |
+| The admin page says it is locked                    | Set `ADMIN_KEY`, different from `GATE_KEY`               |
+| All visitors get "Too many requests"                | Set `BEHIND_PROXY=true` on Render                        |
+| The Tests workflow is red                           | Do not deploy. Read the failed check in the run          |
+| The Uptime workflow is red                          | Read "The uptime check" above                            |
 
 Meta reports a lost message later, through the webhook. The app writes each
 one to the log as `WhatsApp could not deliver to <number>: error <code>`.

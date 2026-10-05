@@ -20,10 +20,26 @@ def _int(name, default):
     return int(os.getenv(name, default))
 
 
+def _flag(name):
+    return os.getenv(name, "").strip().lower() in ("1", "true", "yes")
+
+
 META_TOKEN = _required("META_TOKEN")
 META_PHONE_NUMBER_ID = _required("META_PHONE_NUMBER_ID")
 META_VERIFY_TOKEN = _required("META_VERIFY_TOKEN")
+
+# Without the App secret, anyone who finds the webhook address can send a
+# message that looks like an approver's YES or a guard's IN. So the app does
+# not start without it. ALLOW_UNSIGNED_WEBHOOK=true allows that, for a test
+# on your own machine only.
+ALLOW_UNSIGNED_WEBHOOK = _flag("ALLOW_UNSIGNED_WEBHOOK")
 META_APP_SECRET = os.getenv("META_APP_SECRET", "").strip()
+if not META_APP_SECRET and not ALLOW_UNSIGNED_WEBHOOK:
+    raise RuntimeError(
+        "META_APP_SECRET is missing from the environment. Copy the App secret from"
+        " the Meta app, under App settings, then Basic. For a test on your own"
+        " machine only, set ALLOW_UNSIGNED_WEBHOOK=true instead."
+    )
 
 MAIN_APPROVER = _required("MAIN_APPROVER")
 BACKUP_APPROVER = os.getenv("BACKUP_APPROVER", "").strip() or MAIN_APPROVER
@@ -64,8 +80,23 @@ def _approvers():
 # Defaults. The admin page can replace them, see db.approver_table.
 APPROVERS = _approvers()
 
+KEY_LENGTH = 20
+MAKE_KEY = 'python -c "import secrets; print(secrets.token_urlsafe(24))"'
+
+
+def key_problem(name, key):
+    """Why a key is not safe to use, or "" when it is."""
+    if len(key) < KEY_LENGTH:
+        return f"{name} must be {KEY_LENGTH} characters or more. Make one with: {MAKE_KEY}"
+    if "change-me" in key.lower():
+        return f"{name} is still the example from .env.example. Make one with: {MAKE_KEY}"
+    return ""
+
+
 # The guard types this on the gate page. Entry and exit need it.
 GATE_KEY = _required("GATE_KEY")
+if key_problem("GATE_KEY", GATE_KEY):
+    raise RuntimeError(key_problem("GATE_KEY", GATE_KEY))
 
 
 def read_admin_key():
@@ -81,6 +112,9 @@ def read_admin_key():
     if key == GATE_KEY:
         return "", ("The admin page is locked: ADMIN_KEY must differ from GATE_KEY,"
                     " because every guard holds the gate key.")
+    problem = key_problem("ADMIN_KEY", key)
+    if problem:
+        return "", f"The admin page is locked: {problem}"
     return key, ""
 
 
@@ -98,7 +132,7 @@ TEMPLATE_LANGUAGE = os.getenv("TEMPLATE_LANGUAGE", "en").strip()
 # while Meta reviews a new template. In production, it hides a paused or
 # disabled template: plain text is lost for a quiet approver, and the visitor
 # is told the request went out. Off, the visitor is told it failed.
-TEMPLATE_FALLBACK = os.getenv("TEMPLATE_FALLBACK", "").strip().lower() in ("1", "true", "yes")
+TEMPLATE_FALLBACK = _flag("TEMPLATE_FALLBACK")
 ESCALATE_MINUTES = _int("ESCALATE_MINUTES", 15)
 
 # Auto-approve a working-hours request after this many minutes. 0 = off.
@@ -148,7 +182,7 @@ REQUESTS_PER_HOUR = _int("REQUESTS_PER_HOUR", 60)
 # True when a proxy such as Render sits in front and sets X-Forwarded-For.
 # Leave it false on your own machine, where nothing sets that header and
 # trusting it would let anyone fake their address.
-BEHIND_PROXY = os.getenv("BEHIND_PROXY", "").strip().lower() in ("1", "true", "yes")
+BEHIND_PROXY = _flag("BEHIND_PROXY")
 
 # The Postgres connection string, such as Neon's. Visits live there, so they
 # stay when Render deploys a new version. It holds the database password: keep it out of git.

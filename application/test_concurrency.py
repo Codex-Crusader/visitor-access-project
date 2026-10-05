@@ -10,9 +10,10 @@ import testdb
 
 os.environ.update(
     META_TOKEN="t", META_PHONE_NUMBER_ID="1", META_VERIFY_TOKEN="v",
-    META_APP_SECRET="", MAIN_APPROVER="+911234567890",
+    META_APP_SECRET="", ALLOW_UNSIGNED_WEBHOOK="true", MAIN_APPROVER="+911234567890",
     BACKUP_APPROVER="+911234567890", GUARD="+911234567890",
-    GATE_KEY="k", ADMIN_KEY="a", GATE_DESK_PHONE="+912200000000",
+    GATE_KEY="test-gate-key-long-enough", ADMIN_KEY="test-admin-key-long-enough",
+    GATE_DESK_PHONE="+912200000000",
     ESCALATE_MINUTES="30", RETAIN_DAYS="1",
     # This suite tests database contention, not the rate limit.
     REQUESTS_PER_HOUR="100000", GATE_TRIES_PER_HOUR="100000",
@@ -35,7 +36,7 @@ db.init()
 # The cache works from the first call, so every race below runs through it.
 db.CACHE_AFTER_SECONDS = 0
 client =application.app.test_client()
-KEY = {"X-Gate-Key": "k"}
+KEY = {"X-Gate-Key": "test-gate-key-long-enough"}
 
 
 def photo(tag):
@@ -146,7 +147,7 @@ print(f"  same message delivered 15x -> {len(sent)} replies sent")
 assert len(sent) <= 1, f"duplicate message must act at most once, sent {len(sent)}"
 
 # --- Twenty guards with their own keys, added at once ---
-ADMIN = {"X-Admin-Key": "a"}
+ADMIN = {"X-Admin-Key": "test-admin-key-long-enough"}
 guard_phones = [f"+9198000{n:05d}" for n in range(20)]
 added = []
 def add_guard(n):

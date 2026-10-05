@@ -1,6 +1,7 @@
-# The live service, visitor-access-sg, has these settings. It was made by hand
-# in the Render dashboard, and no Blueprint is connected, so Render does not
-# read this file. Use it as the record of the settings, or to make a Blueprint.
+# Render reads this file when you make the service as a Blueprint: New, then
+# Blueprint, see docs/setup.md, step 4. It then asks for each value marked
+# sync: false. The live demo service was made by hand, so Render does not read
+# this file for it, and the file is the record of its settings.
 services:
   - type: web
     name: visitor-access-sg
@@ -12,9 +13,14 @@ services:
     rootDir: application
     buildCommand: pip install -r requirements.txt
     # One worker only. The escalation timer is a thread inside the process,
-    # so a second worker would send every backup message twice.
+    # so a second worker would send every backup message twice. The worker
+    # also keeps the gate board and visitors' status in memory, which only its
+    # own writes keep correct.
     startCommand: gunicorn app:app --workers 1 --threads 4 --timeout 60
     envVars:
+      # The Python the pinned packages in requirements.txt were tested on.
+      - key: PYTHON_VERSION
+        value: "3.14.3"
       - key: META_TOKEN
         sync: false
       - key: META_PHONE_NUMBER_ID

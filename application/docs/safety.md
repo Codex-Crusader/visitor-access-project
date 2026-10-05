@@ -27,8 +27,8 @@ and address. Give it only to the people at the gate.
    once. `KEY` from a guard's phone makes a new key and stops the old one.
    Remove on the admin page stops the guard's key at once.
 2. The admin key opens the admin page. It must be different from the gate
-   key. If it is not set, or if it is the same, the admin page stays locked,
-   because every guard has the gate key.
+   key. If it is not set, is shorter than 20 characters, or is the same, the
+   admin page stays locked, because every guard has the gate key.
 3. Each page keeps its key in the browser's storage on that device. On a
    shared device, tap Change key when you finish. That removes the key.
 4. "Forgot key?" sends the key only to its fixed number: the gate key to
@@ -39,8 +39,9 @@ and address. Give it only to the people at the gate.
 
 There is no lockout after wrong keys. Everyone at one gate shares one
 internet address, so a lockout after one person's typing mistakes shuts out
-the whole gate. Long random keys make guessing useless instead. Use a key
-of 20 random characters or more.
+the whole gate. Long random keys make guessing useless instead. The app
+refuses a gate key shorter than 20 characters, or the example key from
+`.env.example`, and does not start.
 
 ## Codes and links
 
@@ -78,9 +79,10 @@ on the gate page and on WhatsApp.
 
 ## WhatsApp
 
-1. When `META_APP_SECRET` is set, the app checks Meta's signature on each
-   webhook call and refuses an unsigned or changed call with 403. Keep it set
-   in production.
+1. The app checks Meta's signature on each webhook call with
+   `META_APP_SECRET`, and refuses an unsigned or changed call with 403. The
+   app does not start without the secret. Only `ALLOW_UNSIGNED_WEBHOOK=true`
+   lets it start without one, for a test on your own machine.
 2. The app ignores every number that is not an approver, a guard or
    `ADMIN_PHONE`. The app refuses `ADMIN_PHONE` as a guard, so `KEY` never
    sends the admin key to a guard.

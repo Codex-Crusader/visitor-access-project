@@ -4,11 +4,14 @@ Run it with: .venv\\Scripts\\python.exe test_app.py
 It sends no WhatsApp messages and uses a throwaway database.
 """
 
+import ast
 import base64
 import contextlib
 import logging
 import os
 import re
+import subprocess
+import sys
 import time
 from datetime import datetime, timedelta, timezone
 
@@ -22,12 +25,13 @@ os.environ.update(
     META_PHONE_NUMBER_ID="100000000000000",
     META_VERIFY_TOKEN="visitor-access-verify",
     META_APP_SECRET="",
+    ALLOW_UNSIGNED_WEBHOOK="true",
     MAIN_APPROVER="+911234567890",
     BACKUP_APPROVER="+911234567890",
     GUARD="+911234567890",
     ADMIN_PHONE="+911234567899",
-    GATE_KEY="test-gate-key",
-    ADMIN_KEY="test-admin-key",
+    GATE_KEY="test-gate-key-long-enough",
+    ADMIN_KEY="test-admin-key-long-enough",
     GATE_DESK_PHONE="+912200000000",
     ESCALATE_MINUTES="30",
     RETAIN_DAYS="1",
@@ -56,8 +60,9 @@ db.init()
 # The cache works from the first call, so every check below runs through it.
 db.CACHE_AFTER_SECONDS = 0
 client =application.app.test_client()
-KEY = {"X-Gate-Key": "test-gate-key"}
-ADMIN = {"X-Admin-Key": "test-admin-key"}
+GATE_KEY_TEXT, ADMIN_KEY_TEXT = "test-gate-key-long-enough", "test-admin-key-long-enough"
+KEY = {"X-Gate-Key": GATE_KEY_TEXT}
+ADMIN = {"X-Admin-Key": "test-admin-key-long-enough"}
 # The gate page sends a JPEG of the visitor with each entry. The server checks
 # only that it is a JPEG, so a few bytes after the JPEG start do.
 JPEG = b"\xff\xd8\xff\xe0" + b"visitor-photo" * 8
@@ -722,16 +727,43 @@ print("the admin list")
 for path in ("/api/admin/visits", "/api/admin/summary", "/api/admin/export.csv"):
     assert client.get(path).status_code == 403, path
     assert client.get(path, headers={"X-Admin-Key": "guess"}).status_code == 403, path
-    assert client.get(path, headers={"X-Admin-Key": "test-gate-key"}).status_code == 403, path
+    assert client.get(path, headers={"X-Admin-Key": GATE_KEY_TEXT}).status_code == 403, path
 assert client.get("/admin").status_code == 200
 # With no ADMIN_KEY, or the gate key as ADMIN_KEY, the admin page is locked.
 # Either one would otherwise let the guards in. The rest of the app runs.
-for bad_key in ("", "test-gate-key", " test-gate-key "):
+for bad_key in ("", "test-gate-key-long-enough", " test-gate-key-long-enough "):
     os.environ["ADMIN_KEY"] = bad_key
     locked_key, why = config.read_admin_key()
     assert locked_key == "" and "ADMIN_KEY" in why, (bad_key, why)
-os.environ["ADMIN_KEY"] = "test-admin-key"
-assert config.read_admin_key() == ("test-admin-key", "")
+os.environ["ADMIN_KEY"] = "test-admin-key-long-enough"
+assert config.read_admin_key() == ("test-admin-key-long-enough", "")
+# A short key, or the example from .env.example, locks the admin page too.
+for weak_key in ("short-admin-key", "change-me-to-something-else-random"):
+    os.environ["ADMIN_KEY"] = weak_key
+    locked_key, why = config.read_admin_key()
+    assert locked_key == "" and "ADMIN_KEY" in why and config.MAKE_KEY in why, (weak_key, why)
+os.environ["ADMIN_KEY"] = "test-admin-key-long-enough"
+
+
+def starts_with(**settings):
+    """(started, error text) with these settings changed, in a new process."""
+    env = {**os.environ, **settings}
+    run = subprocess.run([sys.executable, "-c", "import config"], env=env,
+                         capture_output=True, text=True, cwd=os.path.dirname(__file__) or ".")
+    return run.returncode == 0, run.stderr
+
+
+# Unsafe settings stop the start, with a sentence that says what to set.
+assert starts_with()[0], "the test settings start"
+for changes, says in (({"ALLOW_UNSIGNED_WEBHOOK": ""}, "META_APP_SECRET"),
+                      ({"GATE_KEY": "short"}, "20 characters"),
+                      ({"GATE_KEY": "change-me-to-something-random"}, ".env.example")):
+    started, error = starts_with(**changes)
+    assert not started and says in error, (changes, error[-300:])
+assert starts_with(ALLOW_UNSIGNED_WEBHOOK="", META_APP_SECRET="a-real-secret")[0]
+# A key with a letter outside ASCII is a wrong key, not a server error.
+assert client.get("/api/gate/board", headers={"X-Gate-Key": "clé"}).status_code == 403
+assert client.get("/api/admin/summary", headers={"X-Admin-Key": "clé"}).status_code == 403
 # Locked, every admin call is refused, even an empty key that would match an
 # empty ADMIN_KEY, and even the right key from before.
 real_admin = config.ADMIN_KEY, config.ADMIN_LOCKED
@@ -739,14 +771,14 @@ os.environ["ADMIN_KEY"] = ""
 config.ADMIN_KEY, config.ADMIN_LOCKED = config.read_admin_key()
 try:
     for path in ("/api/admin/visits", "/api/admin/summary", "/api/admin/export.csv"):
-        for headers in ({}, {"X-Admin-Key": ""}, {"X-Admin-Key": "test-gate-key"}, ADMIN):
+        for headers in ({}, {"X-Admin-Key": ""}, {"X-Admin-Key": GATE_KEY_TEXT}, ADMIN):
             locked = client.get(path, headers=headers)
             assert locked.status_code == 503, (path, headers, locked.status_code)
             assert "ADMIN_KEY" in locked.get_json()["error"], path
     # The gate and the visitor form do not depend on the admin key.
     assert client.get("/api/gate/board", headers=KEY).status_code == 200
 finally:
-    os.environ["ADMIN_KEY"] = "test-admin-key"
+    os.environ["ADMIN_KEY"] = "test-admin-key-long-enough"
     config.ADMIN_KEY, config.ADMIN_LOCKED = real_admin
 
 # More than one page of visits. The rate limit would refuse some of them.
@@ -1083,6 +1115,24 @@ finally:
     db.connect = real_connect
 print("  status check 1, pass lookup 1, entry 2; a repeated poll 0 until the next write")
 
+print("every write to a cached table clears the cache")
+# The cache is right only while each change to these tables goes through @writes.
+# A new database function that forgets it fails here, not as stale pages later.
+CACHED_TABLES = re.compile(
+    r"\b(INSERT INTO|UPDATE|DELETE FROM)\s+(visits|guards|photos|gate_codes)\b")
+with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "db.py"),
+          encoding="utf-8") as db_file:
+    db_source = db_file.read()
+forgot = []
+for node in ast.parse(db_source).body:
+    if isinstance(node, ast.FunctionDef) and node.name != "migrate":
+        names = [getattr(d, "id", "") for d in node.decorator_list]
+        body = ast.get_source_segment(db_source, node) or ""
+        if CACHED_TABLES.search(body) and "writes" not in names:
+            forgot.append(node.name)
+assert not forgot, f"these change cached tables without @writes: {forgot}"
+print("  every function that changes visits, guards, photos or codes has @writes")
+
 print("a dropped connection is retried for reads, never for writes")
 tries = []
 
@@ -1319,12 +1369,12 @@ application.forget_hits()
 sent.clear()
 gate_reply = client.post("/api/forgot-key/gate")
 assert gate_reply.get_json() == {"sent_to": whatsapp.digits(config.GUARD)[-4:]}
-assert sent[-1][0] == config.GUARD and "test-gate-key" in sent[-1][1]
-assert "test-gate-key" not in gate_reply.get_data(as_text=True)
+assert sent[-1][0] == config.GUARD and "test-gate-key-long-enough" in sent[-1][1]
+assert "test-gate-key-long-enough" not in gate_reply.get_data(as_text=True)
 admin_reply = client.post("/api/forgot-key/admin")
 assert admin_reply.status_code == 200
-assert sent[-1][0] == config.ADMIN_PHONE and "test-admin-key" in sent[-1][1]
-assert "test-admin-key" not in admin_reply.get_data(as_text=True)
+assert sent[-1][0] == config.ADMIN_PHONE and "test-admin-key-long-enough" in sent[-1][1]
+assert "test-admin-key-long-enough" not in admin_reply.get_data(as_text=True)
 assert client.post("/api/forgot-key/wifi").status_code == 404
 client.post("/api/forgot-key/gate")
 client.post("/api/forgot-key/gate")
@@ -1342,15 +1392,15 @@ finally:
 assert codes == [200] * 10 + [429], codes
 # KEY on WhatsApp answers only the numbers that hold a key.
 gate_only = say(APPROVER, "KEY")
-assert "test-gate-key" in gate_only and "test-admin-key" not in gate_only
-assert "test-admin-key" in say(config.ADMIN_PHONE[1:], "KEY")
+assert "test-gate-key-long-enough" in gate_only and "test-admin-key-long-enough" not in gate_only
+assert "test-admin-key-long-enough" in say(config.ADMIN_PHONE[1:], "KEY")
 # A guard never gets the admin key, even when ADMIN_PHONE is the gate desk.
 real_admin_phone = config.ADMIN_PHONE
 config.ADMIN_PHONE = config.GUARD
 try:
     application.forget_hits()
     assert client.post("/api/forgot-key/admin").status_code == 503
-    assert "test-admin-key" not in say(APPROVER, "KEY")
+    assert "test-admin-key-long-enough" not in say(APPROVER, "KEY")
 finally:
     config.ADMIN_PHONE = real_admin_phone
     application.forget_hits()
@@ -1493,7 +1543,7 @@ print("  told once on approval and automatic approval, not on a decline, no code
 
 print("a guard's key is renewed by KEY or by the admin, and removal stops everything")
 fresh_reply = say(RAVI, "KEY")
-assert "test-gate-key" not in fresh_reply and "test-admin-key" not in fresh_reply
+assert GATE_KEY_TEXT not in fresh_reply and ADMIN_KEY_TEXT not in fresh_reply
 ravi_key2 = fresh_reply.split("\n")[1]
 assert client.get("/api/gate/board", headers=RAVI_KEY).status_code == 403, "the old key stops"
 assert client.get("/api/gate/board", headers={"X-Gate-Key": ravi_key2}).status_code == 200

@@ -32,7 +32,9 @@ print(f"Admin phone     {config.ADMIN_PHONE}")
 if whatsapp.same_number(config.ADMIN_PHONE, config.GUARD):
     print("WARNING: ADMIN_PHONE is the gate desk number. Forgot admin key stays off"
           " until ADMIN_PHONE is a different number.")
-print(f"Signature check {'on' if config.META_APP_SECRET else 'off (META_APP_SECRET empty)'}")
+print(f"Signature check {'on' if config.META_APP_SECRET else 'OFF: ALLOW_UNSIGNED_WEBHOOK is on.'}")
+if not config.META_APP_SECRET:
+    print("WARNING: never use ALLOW_UNSIGNED_WEBHOOK in production. Set META_APP_SECRET.")
 
 # The app runs the migrations when it starts, so this runs them too, and a
 # wrong DATABASE_URL shows up here rather than at the first visit.
