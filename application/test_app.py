@@ -427,7 +427,7 @@ assert status_of(third) == "approved"
 real_guard = application.config.GUARD
 application.config.GUARD = "+919999999999"
 try:
-    assert "Only the gate desk" in snap(APPROVER)
+    assert "Only a guard" in snap(APPROVER)
 finally:
     application.config.GUARD = real_guard
 
@@ -1188,7 +1188,7 @@ refusal = gate_try.get_json()
 assert gate_try.status_code == 409 and "expired" in refusal["error"], refusal
 assert client.get(f"/api/pass/{entry_of(late_pass)}", headers=KEY).get_json()["status"] == "expired"
 assert "expired" in say(APPROVER, f"IN {entry_of(late_pass)}").lower()
-assert db.check_in(late_pass["reference"]) is None, "the UPDATE itself checks the time"
+assert db.check_in(late_pass["reference"], "test") is None, "the UPDATE itself checks the time"
 assert "Expired" in say(APPROVER, late_pass["reference"])
 
 # The race: IN is accepted, then the pass expires before the photo arrives.
@@ -1279,6 +1279,109 @@ sent_before = len(sent)
 client.post("/webhook/whatsapp", json=inbound(STRANGER, "KEY"))
 assert len(sent) == sent_before, "a stranger must get no reply"
 print("  sent to the fixed number, 3 tries per caller and 10 in all each hour, KEY works")
+
+print("guards added on the admin page have their own key, and the log names them")
+application.forget_hits()
+RAVI_PHONE = "+919800000001"
+RAVI = RAVI_PHONE[1:]
+RAVI_LABEL = f"Ravi {RAVI_PHONE}"
+
+
+def add(name, phone, headers=ADMIN):
+    return client.post("/api/admin/guards", json={"name": name, "phone": phone}, headers=headers)
+
+
+bad = add("", "123")
+assert bad.status_code == 400 and set(bad.get_json()["fields"]) == {"name", "phone"}, bad.get_json()
+assert add("Desk", config.GUARD).status_code == 400, "the gate desk is a guard already"
+assert add("Admin", config.ADMIN_PHONE).status_code == 400, "a guard must not get the admin key"
+assert add("Long" * 20, RAVI_PHONE).status_code == 400
+assert add("Ravi", RAVI_PHONE, headers=KEY).status_code == 403, "the gate key adds no guard"
+added = add("Ravi", RAVI_PHONE)
+assert added.status_code == 200, added.get_json()
+ravi_key = added.get_json()["key"]
+assert len(ravi_key) >= 20 and "key_hash" not in added.get_data(as_text=True)
+assert add("Ravi again", RAVI_PHONE).status_code == 400, "one number, one guard"
+summary = client.get("/api/admin/summary", headers=ADMIN).get_json()
+assert summary["gate_desk"] == config.GUARD
+assert [g["phone"] for g in summary["guards"]] == [RAVI_PHONE], summary["guards"]
+assert "key_hash" not in str(summary)
+with db.connect() as conn:
+    stored = conn.execute("SELECT key_hash FROM guards").fetchone()["key_hash"]
+assert stored == db.key_hash(ravi_key) and ravi_key not in stored, "only the hash is kept"
+
+# The gate page knows the guard by their key, and records who let the visitor in.
+RAVI_KEY = {"X-Gate-Key": ravi_key}
+assert client.get("/api/gate/board", headers=RAVI_KEY).get_json()["you"] == RAVI_LABEL
+assert client.get("/api/gate/board", headers=KEY).get_json()["you"] == application.DESK_KEY
+by_page = approved()
+let_in = client.post(f"/api/pass/{entry_of(by_page)}/entry", headers=RAVI_KEY)
+assert let_in.status_code == 200, let_in.get_json()
+assert RAVI_PHONE not in let_in.get_data(as_text=True), "a guard never sees a guard's number"
+assert db.get(by_page["reference"])["entered_by"] == RAVI_LABEL
+assert RAVI_PHONE not in client.get(f"/api/visit/{by_page['token']}").get_data(as_text=True)
+assert client.post(f"/api/pass/{exit_of(by_page)}/exit", headers=KEY).status_code == 200
+assert db.get(by_page["reference"])["exited_by"] == application.DESK_KEY
+listed = client.get(f"/api/admin/visits?q={by_page['reference']}", headers=ADMIN).get_json()
+assert listed["visits"][0]["entered_by"] == RAVI_LABEL
+assert listed["visits"][0]["exited_by"] == application.DESK_KEY
+assert RAVI_PHONE in client.get("/api/admin/export.csv", headers=ADMIN).get_data(as_text=True)
+assert RAVI_PHONE not in client.get("/api/export.csv", headers=KEY).get_data(as_text=True)
+
+# On WhatsApp the guard's own number lets visitors in and out.
+by_phone = approved()
+say(RAVI, f"IN {entry_of(by_phone)}")
+assert "Inside now" in snap(RAVI)
+assert db.get(by_phone["reference"])["entered_by"] == RAVI_LABEL
+assert "Closed" in say(RAVI, f"OUT {exit_of(by_phone)}")
+assert db.get(by_phone["reference"])["exited_by"] == RAVI_LABEL
+print("  own key works, only its hash kept, entry and exit name the guard, visitor sees nothing")
+
+print("every guard hears about an approval, never with a gate code")
+sent.clear()
+told = new_request()
+assert "is now approved" in say(APPROVER, f"YES {told['reference']}"), "the reply stays last"
+to_ravi = [body for to, body in sent if whatsapp.same_number(to, RAVI)]
+assert len(to_ravi) == 1 and told["reference"] in to_ravi[0], to_ravi
+assert not any(code in to_ravi[0] for code in db.codes_of(told["reference"]).values())
+to_approver = [body for to, body in sent if whatsapp.same_number(to, APPROVER)]
+assert not any("Approved visitor" in body for body in to_approver), "the approver is not told again"
+sent.clear()
+say(APPROVER, f"NO {new_request()['reference']}")
+assert not any(whatsapp.same_number(to, RAVI) for to, _ in sent), "a decline tells no guard"
+sent.clear()
+auto = new_request()
+with db.connect() as conn:
+    conn.execute("UPDATE visits SET auto_approve_at = %s WHERE reference = %s",
+                 ("2020-01-01T00:00:00+00:00", auto["reference"]))
+application.auto_approve_due()
+assert [to for to, body in sent if auto["reference"] in body and "Approved visitor" in body] \
+    == [RAVI_PHONE], sent
+print("  told once on approval and automatic approval, not on a decline, no code")
+
+print("a guard's key is renewed by KEY or by the admin, and removal stops everything")
+fresh_reply = say(RAVI, "KEY")
+assert "test-gate-key" not in fresh_reply and "test-admin-key" not in fresh_reply
+ravi_key2 = fresh_reply.split("\n")[1]
+assert client.get("/api/gate/board", headers=RAVI_KEY).status_code == 403, "the old key stops"
+assert client.get("/api/gate/board", headers={"X-Gate-Key": ravi_key2}).status_code == 200
+renewed = client.post("/api/admin/guards/new-key", json={"phone": RAVI_PHONE}, headers=ADMIN)
+ravi_key3 = renewed.get_json()["key"]
+assert client.get("/api/gate/board", headers={"X-Gate-Key": ravi_key2}).status_code == 403
+assert client.get("/api/gate/board", headers={"X-Gate-Key": ravi_key3}).status_code == 200
+assert client.post("/api/admin/guards/new-key", json={"phone": "+919800000999"},
+                   headers=ADMIN).status_code == 404
+removed = client.post("/api/admin/guards/remove", json={"phone": RAVI_PHONE}, headers=ADMIN)
+assert removed.get_json()["guards"] == []
+assert client.get("/api/gate/board", headers={"X-Gate-Key": ravi_key3}).status_code == 403
+sent_before = len(sent)
+client.post("/webhook/whatsapp", json=inbound(RAVI, f"IN {entry_of(approved())}"))
+assert not any(whatsapp.same_number(to, RAVI) for to, _ in sent[sent_before:]), \
+    "a removed guard gets no reply and no update"
+assert db.get(by_page["reference"])["entered_by"] == RAVI_LABEL, "the log keeps the name"
+assert client.post("/api/admin/guards/remove", json={"phone": RAVI_PHONE},
+                   headers=ADMIN).status_code == 404
+print("  KEY and the admin each make a new key, the old one stops, removal ends access")
 
 # Last, because it closes the database for the rest of this process.
 print("on exit, the timer stops and the database closes before Python shuts down")

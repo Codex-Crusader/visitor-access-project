@@ -11,8 +11,8 @@ the people who decide about the campus. To set up the app, read
 |--------------------------|-----------------------------|------------------------------------------------------|
 | A visitor                | Their own private link      | Their own request, its status and its current code   |
 | An approver              | WhatsApp, from their number | The requests of their own reasons, and any pass they look up |
-| A guard                  | The gate key                | Open passes, the gate lists, and the full CSV log    |
-| The admin                | The admin key               | Every request, who decided it, and the approver numbers |
+| A guard                  | Their own key, or the shared gate key | Open passes, the gate lists, the gate's CSV log, and a WhatsApp message for each approval |
+| The admin                | The admin key               | Every request, who decided it, which guard let the visitor in and out, the approver numbers and the guards |
 | Anybody on the internet  | The public pages            | The forms, the gate desk number, and the health result |
 
 The gate key opens the full CSV log, with every visitor's name, phone number
@@ -20,8 +20,12 @@ and address. Give it only to the people at the gate.
 
 ## Keys
 
-1. The gate key opens the gate page, the pass lookups and the CSV log. Every
-   guard uses the same key.
+1. A gate key opens the gate page, the pass lookups and the gate's CSV log.
+   The shared `GATE_KEY` is for the gate desk. Each guard on the admin page
+   has a key of their own, so the log names the guard. The database keeps
+   only the SHA-256 hash of a guard's key. The admin page shows a new key
+   once. `KEY` from a guard's phone makes a new key and stops the old one.
+   Remove on the admin page stops the guard's key at once.
 2. The admin key opens the admin page. It must be different from the gate
    key. If it is not set, or if it is the same, the admin page stays locked,
    because every guard has the gate key.
@@ -77,15 +81,19 @@ on the gate page and on WhatsApp.
 1. When `META_APP_SECRET` is set, the app checks Meta's signature on each
    webhook call and refuses an unsigned or changed call with 403. Keep it set
    in production.
-2. The app ignores every number that is not an approver, `GUARD` or
-   `ADMIN_PHONE`.
-3. The app records each message id, so a message that Meta delivers twice
+2. The app ignores every number that is not an approver, a guard or
+   `ADMIN_PHONE`. The app refuses `ADMIN_PHONE` as a guard, so `KEY` never
+   sends the admin key to a guard.
+3. When a request is approved, each guard gets a message with the reference,
+   the visitor's name, the guests, the reason and the person visited. It has
+   no gate code, no phone number and no address.
+4. The app records each message id, so a message that Meta delivers twice
    runs once.
-4. Each reason has its own two approvers. An approver cannot decide the
+5. Each reason has its own two approvers. An approver cannot decide the
    request of another reason.
-5. A `YES` or `NO` with a reference that does not read correctly decides
+6. A `YES` or `NO` with a reference that does not read correctly decides
    nothing. It never falls back to the request that waits.
-6. A field on the form is one line of plain text. The server refuses line
+7. A field on the form is one line of plain text. The server refuses line
    breaks, control codes and invisible marks, so a visitor cannot add false
    lines to the approver's message.
 
@@ -132,19 +140,25 @@ proxy.
 
 1. The form asks for a name, a phone number, an address, the reason, and the
    person visited. The guard also takes one photo on WhatsApp.
-2. The photo stays in the gate desk's WhatsApp chat. The app keeps only
-   WhatsApp's id for the photo and the time.
-3. The app deletes each visit `RETAIN_DAYS` after the request, 90 days by
+2. The photo stays in the WhatsApp chat of the guard who took it. The app
+   keeps only WhatsApp's id for the photo and the time.
+3. The approval message to each guard stays in that guard's WhatsApp chat.
+   The app cannot delete it after `RETAIN_DAYS`. The visitor's privacy screen
+   says so.
+4. The app deletes each visit `RETAIN_DAYS` after the request, 90 days by
    default. The privacy screen states the same number, because it reads it
    from the server.
-4. The gate sees the visitor's details while the visit is open. After the
+5. The gate sees the visitor's details while the visit is open. After the
    exit, the gate sees only the times.
-5. The phone's copy of the pass holds no phone number and no address. The
+6. The phone's copy of the pass holds no phone number and no address. The
    phone deletes the copy when the pass closes or expires.
-6. The visitor never sees who approved the request, or that it was approved
+7. The visitor never sees who approved the request, or that it was approved
    automatically. The number that decided is in the column `decided_phone`.
    Only the admin list sends it. The CSV log does not have it.
-7. The health address shows only `true` or `false` for the database and for
+8. The guard who let a visitor in or out is in the columns `entered_by` and
+   `exited_by`, as a name and a number. Only the admin list and the admin's
+   CSV have them. The visitor and the gate never see them.
+9. The health address shows only `true` or `false` for the database and for
    WhatsApp. It never shows a reason or a token.
 
 The CSV log holds every personal detail. Keep downloaded copies on a
@@ -166,8 +180,9 @@ Never put a secret in git, in a chat or in a screenshot. `.gitignore` keeps
 
 Tell the people who decide about the campus about these limits.
 
-1. All guards share one gate key. The log does not say which guard recorded
-   an entry.
+1. The log names a guard only when that guard uses their own key. Anyone
+   with the shared `GATE_KEY` records as "Gate desk (shared key)". A removed
+   guard who knows `GATE_KEY` can still use it until you change it.
 2. The gate key also opens the full CSV log with personal details.
 3. The Record entry button on the gate page lets a visitor in without a
    photo. Only the WhatsApp route asks for one.
@@ -187,3 +202,5 @@ Tell the people who decide about the campus about these limits.
 11. On the free Neon plan, the database can be restored only to a time in the
     last 6 hours. The weekly CSV is the longer backup, see
     [maintenance.md](maintenance.md).
+12. The approval message to the guards is plain text. WhatsApp delivers it
+    only to a guard who wrote to the app's number in the last 24 hours.

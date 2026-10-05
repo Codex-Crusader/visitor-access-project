@@ -134,5 +134,88 @@ for t in threads:
 print(f"  same message delivered 15x -> {len(sent)} replies sent")
 assert len(sent) <= 1, f"duplicate message must act at most once, sent {len(sent)}"
 
+# --- Twenty guards with their own keys, added at once ---
+ADMIN = {"X-Admin-Key": "a"}
+guard_phones = [f"+9198000{n:05d}" for n in range(20)]
+added = []
+def add_guard(n):
+    r = client.post("/api/admin/guards", json={"name": f"Guard {n}", "phone": guard_phones[n]},
+                    headers=ADMIN)
+    with lock:
+        added.append(r)
+threads = [threading.Thread(target=add_guard, args=(n,)) for n in range(20)]
+for t in threads:
+    t.start()
+for t in threads:
+    t.join()
+assert all(r.status_code == 200 for r in added), [r.status_code for r in added]
+guard_keys = {r.get_json()["name"]: r.get_json()["key"] for r in added}
+assert len(set(guard_keys.values())) == 20, "every guard key unique"
+assert len(db.guards()) == 20
+print("  20 guards added at once -> 20 unique keys")
+
+# --- The same twenty race one entry, each with their own key ---
+def fresh_approved(count):
+    made = [client.post("/api/requests", json=payload) for _ in range(count)]
+    refs = [r.get_json()["reference"] for r in made]
+    for ref in refs:
+        db.decide(ref, db.APPROVED, db.BY_MAIN)
+    return refs
+
+target = fresh_approved(1)[0]
+entry = db.codes_of(target)["entry"]
+winners = []
+def own_press(name):
+    r = client.post(f"/api/pass/{entry}/entry", headers={"X-Gate-Key": guard_keys[name]})
+    with lock:
+        winners.append((r.status_code, name))
+threads = [threading.Thread(target=own_press, args=(name,)) for name in guard_keys]
+for t in threads:
+    t.start()
+for t in threads:
+    t.join()
+won = [name for status, name in winners if status == 200]
+print(f"  20 own keys raced one entry -> {len(won)} accepted")
+assert len(won) == 1, won
+phone = guard_phones[int(won[0].split()[1])]
+assert db.get(target)["entered_by"] == f"{won[0]} {phone}", "the winner is the guard on record"
+
+# --- Each guard lets a different visitor in and out at once ---
+refs = fresh_approved(20)
+def own_cycle(n):
+    pass_codes = db.codes_of(refs[n])
+    headers = {"X-Gate-Key": guard_keys[f"Guard {n}"]}
+    client.post(f"/api/pass/{pass_codes['entry']}/entry", headers=headers)
+    client.post(f"/api/pass/{pass_codes['exit']}/exit", headers=headers)
+threads = [threading.Thread(target=own_cycle, args=(n,)) for n in range(20)]
+for t in threads:
+    t.start()
+for t in threads:
+    t.join()
+for n, ref in enumerate(refs):
+    visit = db.get(ref)
+    label = f"Guard {n} {guard_phones[n]}"
+    assert visit["status"] == "closed", visit["status"]
+    assert visit["entered_by"] == label and visit["exited_by"] == label, visit
+print("  20 guards, 20 visitors in and out at once -> each visit names its own guard")
+
+# --- Ten approvals at once, each told to every guard ---
+sent.clear()
+pending = [client.post("/api/requests", json=payload).get_json()["reference"] for _ in range(10)]
+sent.clear()
+threads = [threading.Thread(target=lambda ref=ref: client.post(
+               "/webhook/whatsapp", json=inbound(f"wamid.{ref}", f"YES {ref}")))
+           for ref in pending]
+for t in threads:
+    t.start()
+for t in threads:
+    t.join()
+assert all(db.get(ref)["status"] == "approved" for ref in pending)
+for guard_phone in guard_phones:
+    told = [body for to, body in sent if to == guard_phone]
+    assert len(told) == 10, (guard_phone, len(told))
+    assert {ref for ref in pending if any(ref in body for body in told)} == set(pending)
+print("  10 approvals at once -> each of 20 guards told about each one exactly once")
+
 print()
 print("concurrency checks passed")

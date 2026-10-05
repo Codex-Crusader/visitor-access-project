@@ -40,7 +40,7 @@ button{cursor:pointer;border:0;background:none}
 .top nav button:hover{background:rgba(255,255,255,.22)}
 .main{padding:20px 22px 40px}
 
-.tabs{display:grid;grid-template-columns:1fr 1fr;gap:6px;padding:5px;margin-bottom:18px;
+.tabs{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;padding:5px;margin-bottom:18px;
  background:var(--mute);border:1px solid var(--line);border-radius:var(--r)}
 .tabs button{padding:11px 8px;border-radius:10px;font-weight:650;color:var(--soft)}
 .tabs button[aria-selected=true]{background:var(--paper);color:var(--brand);box-shadow:var(--sh)}
@@ -109,6 +109,12 @@ td .small{padding:6px 12px;border:1px solid var(--line);border-radius:999px;font
 @media(max-width:620px){.pair{grid-template-columns:1fr}}
 .pair .btn{margin-top:0}
 .err{color:var(--stop);font-size:.82rem;margin:5px 0 0}
+.err:empty{display:none}
+h2.gap{margin-top:22px}
+td.acts{white-space:nowrap;text-align:right}
+td.acts .small+.small{margin-left:6px}
+code.key{display:block;margin:8px 0;padding:8px 10px;background:var(--paper);border-radius:8px;
+ user-select:all;overflow-wrap:anywhere}
 </style>
 </head>
 <body>

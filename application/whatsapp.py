@@ -349,6 +349,21 @@ def auto_approved_body(visit, minutes):
             f" {minutes} minutes of the request, made in working hours.\n\n{brief(visit)}")
 
 
+def guard_update_body(visit):
+    """What each guard reads when a visitor is approved. Never a gate code."""
+    lines = [f"Approved visitor on the way. {brief(visit)}"]
+    if visit["guests"]:
+        lines.append(f"With: {', '.join(visit['guests'])}")
+    lines += ["", "When they arrive, send IN and the entry code on their pass,"
+                  " then a photo of the visitor."]
+    return "\n".join(lines)
+
+
 def key_body(name, key):
     return (f"The {name} key for the visitor access app is:\n{key}\n\n"
             "Do not share it outside the people who need it.")
+
+
+def own_key_body(key):
+    return (f"Your own gate key for the visitor access app is:\n{key}\n\n"
+            "Your old key no longer works. Do not share this one.")

@@ -649,6 +649,82 @@ async function approverChecks() {
   ok("it says the change is saved", byId("approver-note").textContent.includes("Saved"));
 }
 
+async function guardChecks() {
+  console.log("admin page: add, renew and remove guards");
+  let list = [];
+  const posts = [];
+  const answer = (status, body) => Promise.resolve({status, ok: status < 300, json: () => Promise.resolve(body)});
+  const admin = boot("admin.html", "admin.js", {
+    fetch: (url, options = {}) => {
+      if (options.method === "POST") {
+        const sent = JSON.parse(options.body);
+        posts.push([url, sent]);
+        if (url.endsWith("/remove")) {
+          list = list.filter(g => g.phone !== sent.phone);
+          return answer(200, {gate_desk: "+911", guards: list});
+        }
+        if (url.endsWith("/new-key")) return answer(200, {gate_desk: "+911", guards: list, key: "k2", name: "Ravi"});
+        if (sent.phone === "+911") {
+          return answer(400, {error: "Check the guard's details.",
+                              fields: {phone: "This is the gate desk number. It is a guard already."}});
+        }
+        list = [{name: sent.name, phone: sent.phone, added_at: "2026-10-05T05:00:00+00:00"}];
+        return answer(200, {gate_desk: "+911", guards: list, key: "k1", name: sent.name});
+      }
+      return answer(200, url.includes("/summary")
+        ? {counts: {}, escalate_minutes: 15, retain_days: 90, approvers: [], gate_desk: "+911", guards: list}
+        : {visits: [{reference: "VR-1", name: "A", phone: "1", address: "x", reason: "Delivery",
+                     visiting: "y", guests: [], status: "closed", created_at: "2026-10-05T05:00:00+00:00",
+                     entered_at: "2026-10-05T06:00:00+00:00", entered_by: "Ravi +919800000001",
+                     exited_at: "2026-10-05T07:00:00+00:00", exited_by: "Gate desk (shared key)",
+                     approvers: ["+911", "+912"]}], next: null});
+    },
+  });
+  const byId = id => admin.document.getElementById(id);
+  admin.eval('localStorage.setItem("adminkey","k")');
+  admin.eval("render(); refresh()");
+  await tick(); await tick();
+  const more = byId("list").querySelector(".more").textContent;
+  ok("a visit names the guard who let them in and out",
+     more.includes("by Ravi +919800000001") && more.includes("by Gate desk (shared key)"));
+  byId("tabs").querySelector('[data-section="guards"]').click();
+  ok("the guards tab opens", !byId("guards").hidden && byId("visits").hidden);
+  ok("the gate desk row shows", byId("guard-table").textContent.includes("+911"));
+
+  byId("g-add").click();
+  await tick();
+  ok("an empty form is refused on the page", posts.length === 0
+     && byId("g-name-err").textContent.includes("name"));
+  byId("g-name").value = "Desk";
+  byId("g-phone").value = "+911";
+  byId("g-add").click();
+  await tick(); await tick();
+  ok("the server's reason shows under the number", byId("g-phone-err").textContent.includes("gate desk"));
+  byId("g-name").value = "Ravi <b>";
+  byId("g-phone").value = "+919800000001";
+  byId("g-add").click();
+  await tick(); await tick();
+  ok("the new guard is listed, escaped", byId("guard-table").innerHTML.includes("Ravi &lt;b&gt;"));
+  ok("the new key shows once", byId("guard-note").textContent.includes("k1"));
+  ok("the form empties", byId("g-name").value === "" && byId("g-phone").value === "");
+
+  byId("guard-table").querySelector("[data-newkey]").click();
+  await tick(); await tick();
+  ok("New key shows the new key", byId("guard-note").textContent.includes("k2")
+     && !byId("guard-note").textContent.includes("k1"));
+  byId("guard-table").querySelector("[data-remove]").click();
+  ok("Remove asks once more", !!byId("guard-table").querySelector("[data-remove-now]")
+     && byId("guard-note").textContent === "");
+  byId("guard-table").querySelector("[data-keep]").click();
+  ok("Keep cancels", !byId("guard-table").querySelector("[data-remove-now]"));
+  byId("guard-table").querySelector("[data-remove]").click();
+  byId("guard-table").querySelector("[data-remove-now]").click();
+  await tick(); await tick();
+  ok("Remove sends the number", posts.at(-1)[0] === "/api/admin/guards/remove"
+     && posts.at(-1)[1].phone === "+919800000001");
+  ok("the guard is gone", !byId("guard-table").textContent.includes("Ravi"));
+}
+
 async function forgotChecks() {
   console.log("both pages: Forgot key sends the key, and never shows it");
   for (const [page, script, store, which] of [["gate.html", "gate.js", "gatekey", "gate"],
@@ -684,7 +760,7 @@ async function visitorAutoChecks() {
   ok("the waiting screen shows no automatic approval", !/automatic|by itself/i.test(text));
 }
 
-void boardChecks().then(offlinePassChecks).then(approverChecks).then(forgotChecks).then(visitorAutoChecks).then(wrongKeyChecks).then(adminChecks).then(downloadChecks).then(() => {
+void boardChecks().then(offlinePassChecks).then(approverChecks).then(guardChecks).then(forgotChecks).then(visitorAutoChecks).then(wrongKeyChecks).then(adminChecks).then(downloadChecks).then(() => {
   console.log();
   console.log(failures ? `${failures} check(s) FAILED` : "all form checks passed");
   process.exit(failures ? 1 : 0);

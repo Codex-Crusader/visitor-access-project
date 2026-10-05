@@ -7,6 +7,7 @@ the query itself.
 
 import atexit
 import functools
+import hashlib
 import json
 import logging
 import random
@@ -119,6 +120,20 @@ CREATE INDEX visits_status_auto ON visits (status, auto_approve_at);
 -- The approver's number as set when they decided. Empty for an automatic
 -- approval and for decisions made before this step.
 ALTER TABLE visits ADD COLUMN decided_phone TEXT;
+""",
+    # 4: guards added on the admin page, and who let each visitor in and out.
+    """
+-- Each guard has their own gate key. Only its SHA-256 hash is kept.
+CREATE TABLE guards (
+  phone    TEXT PRIMARY KEY,
+  name     TEXT NOT NULL,
+  key_hash TEXT NOT NULL UNIQUE,
+  added_at TEXT NOT NULL
+);
+
+-- The guard's name and number as they were at the gate. Empty before this step.
+ALTER TABLE visits ADD COLUMN entered_by TEXT;
+ALTER TABLE visits ADD COLUMN exited_by TEXT;
 """,
 ]
 
@@ -468,7 +483,7 @@ def at_gate():
 ADMIN_FIELDS = (
     "visits.reference, name, phone, address, reason, visiting, guests, status,"
     " created_at, escalated_at, decided_at, decided_by, decided_phone, auto_approve_at,"
-    " entered_at, exited_at"
+    " entered_at, entered_by, exited_at, exited_by"
 )
 
 
@@ -636,6 +651,71 @@ def approvers_for(table, reason):
     return table.get(reason, table["Other"])
 
 
+def key_hash(key):
+    return hashlib.sha256(key.encode()).hexdigest()
+
+
+@read
+def guards():
+    """The guards added on the admin page, by name. Never their key hash."""
+    with connect() as conn:
+        rows = conn.execute("SELECT name, phone, added_at FROM guards ORDER BY name").fetchall()
+    return [dict(row) for row in rows]
+
+
+@read
+def guard_by_phone(phone):
+    """The guard with this +number, or None."""
+    with connect() as conn:
+        row = conn.execute(
+            "SELECT name, phone FROM guards WHERE phone = %s", (phone,)
+        ).fetchone()
+    return dict(row) if row else None
+
+
+@read
+def guard_by_key(key):
+    """The guard whose own gate key this is, or None."""
+    with connect() as conn:
+        row = conn.execute(
+            "SELECT name, phone FROM guards WHERE key_hash = %s", (key_hash(key),)
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def new_key():
+    return secrets.token_urlsafe(18)
+
+
+def add_guard(name, phone):
+    """Add a guard. Returns their new gate key, or None when the number is already a guard."""
+    key = new_key()
+    with connect() as conn:
+        added = conn.execute(
+            "INSERT INTO guards (phone, name, key_hash, added_at) VALUES (%s, %s, %s, %s)"
+            " ON CONFLICT (phone) DO NOTHING",
+            (phone, name, key_hash(key), now()),
+        ).rowcount
+    return key if added == 1 else None
+
+
+def renew_guard_key(phone):
+    """Give a guard a new gate key. The old one stops at once. None when no such guard."""
+    key = new_key()
+    with connect() as conn:
+        changed = conn.execute(
+            "UPDATE guards SET key_hash = %s WHERE phone = %s", (key_hash(key), phone)
+        ).rowcount
+    return key if changed == 1 else None
+
+
+def remove_guard(phone):
+    """Remove a guard. Their key and their WhatsApp commands stop at once."""
+    with connect() as conn:
+        conn.execute("DELETE FROM guards WHERE phone = %s", (phone,))
+        conn.execute("DELETE FROM photo_waits WHERE guard = %s", (phone.lstrip("+"),))
+
+
 def save_approvers(reason, main, backup):
     """Set a reason's two approvers, in place of the settings."""
     with connect() as conn:
@@ -647,36 +727,28 @@ def save_approvers(reason, main, backup):
         )
 
 
-def _stamp(reference, status, column, required):
-    """Move a visit on, if it is in the required status. Returns it as it is now, or None.
-
-    The condition sits in the UPDATE itself, so of two guards at the same
-    moment exactly one gets the visit back.
-    """
-    with connect() as conn:
-        row = conn.execute(
-            f"UPDATE visits SET status = %s, {column} = %s WHERE reference = %s"
-            " AND status = %s RETURNING *",
-            (status, now(), reference, required),
-        ).fetchone()
-    return to_dict(row) if row is not None else None
-
-
-def check_in(reference):
+def check_in(reference, by):
     """Let an approved visitor in. Returns the visit, or None unless the pass is approved
-    and not expired. The time check is in the UPDATE, so a pass cannot expire halfway."""
+    and not expired. The time check is in the UPDATE, so a pass cannot expire halfway.
+    by names the guard. The condition sits in the UPDATE, so of two guards one wins."""
     with connect() as conn:
         row = conn.execute(
-            "UPDATE visits SET status = %s, entered_at = %s WHERE reference = %s"
+            "UPDATE visits SET status = %s, entered_at = %s, entered_by = %s WHERE reference = %s"
             " AND status = %s AND created_at >= %s RETURNING *",
-            (INSIDE, now(), reference, APPROVED, pass_cutoff()),
+            (INSIDE, now(), by, reference, APPROVED, pass_cutoff()),
         ).fetchone()
     return to_dict(row) if row is not None else None
 
 
-def check_out(reference):
+def check_out(reference, by):
     """Close the pass on the way out. Returns the visit, or None unless the visitor is inside."""
-    return _stamp(reference, CLOSED, "exited_at", INSIDE)
+    with connect() as conn:
+        row = conn.execute(
+            "UPDATE visits SET status = %s, exited_at = %s, exited_by = %s WHERE reference = %s"
+            " AND status = %s RETURNING *",
+            (CLOSED, now(), by, reference, INSIDE),
+        ).fetchone()
+    return to_dict(row) if row is not None else None
 
 
 def wait_for_photo(guard, reference):
@@ -690,7 +762,7 @@ def wait_for_photo(guard, reference):
         )
 
 
-def enter_with_photo(guard, minutes, media_id):
+def enter_with_photo(guard, minutes, media_id, by):
     """Let in the visitor this guard's photo is for. Returns (reference, entered).
 
     reference is None when no IN from this guard is waiting, or when the IN is
@@ -711,9 +783,9 @@ def enter_with_photo(guard, minutes, media_id):
 
         reference, stamp = wait["reference"], now()
         changed = conn.execute(
-            "UPDATE visits SET status = %s, entered_at = %s WHERE reference = %s"
+            "UPDATE visits SET status = %s, entered_at = %s, entered_by = %s WHERE reference = %s"
             " AND status = %s AND created_at >= %s",
-            (INSIDE, stamp, reference, APPROVED, pass_cutoff()),
+            (INSIDE, stamp, by, reference, APPROVED, pass_cutoff()),
         ).rowcount
         if changed == 1:
             conn.execute(

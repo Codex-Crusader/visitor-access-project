@@ -167,7 +167,8 @@ function renderBoard() {
       v => row(v, `Approved ${hm(v.decided_at)}`, false)) +
     `<p class="updated">${boardError
       ? `Could not refresh. These lists are from ${hm(boardAt)}. ${x(boardError)}`
-      : `Updated ${hm(boardAt)}. Tap a name to see who it is.`}</p>`;
+      : `Updated ${hm(boardAt)}. Tap a name to see who it is.`}</p>
+    ${board.you ? `<p class="updated">This page uses the key of ${x(board.you)}.</p>` : ""}`;
 }
 
 function render() {
@@ -188,7 +189,8 @@ function render() {
       <label for="k">Gate key</label>
       <input id="k" class="key" type="password" autocomplete="current-password" enterkeyhint="go">
       <button class="btn" onclick="saveKey()">Save key</button>
-      <button class="btn plain" id="forgot" onclick="sendKey()">Forgot gate key?</button>`;
+      <button class="btn plain" id="forgot" onclick="sendKey()">Forgot gate key?</button>
+      <p class="sub">Lost the key the admin made for you alone? Send KEY from your phone to the app's WhatsApp number. You get a new key.</p>`;
     const box = el("k");
     box.onkeydown = e => { if (e.key === "Enter") saveKey(); };
     box.focus();

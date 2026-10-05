@@ -114,8 +114,9 @@ does not have them.
    `APPROVERS`.
 7. Turn on the uptime check. See "The uptime check" in
    [maintenance.md](maintenance.md).
-8. Give `<address>` to visitors, the gate key to the guards, and the admin
-   key to the admin.
+8. Add the guards on the admin page's Guards tab, and give each guard the
+   key that shows. Give `<address>` to visitors, the gate key to the gate
+   desk, and the admin key to the admin.
 
 ## Settings
 
@@ -228,8 +229,9 @@ Reply YES or NO followed by the reference to decide this request.
 
 `{{1}}` is the reference. `{{2}}` says if this is a new request or a request
 for the backup approver. The rest are the visitor's details. Replies to the
-approvers' and the guard's own commands stay plain text, because that person
-just wrote to the number.
+approvers' and the guards' own commands stay plain text, because that person
+just wrote to the number. The message to the guards about an approval is
+plain text too, so it reaches only a guard who wrote in the last 24 hours.
 
 `TEMPLATE_FALLBACK` controls what happens when Meta refuses the template:
 

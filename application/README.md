@@ -15,8 +15,10 @@ on the visitor's pass, takes a photo and records the entry. On the way out,
 the pass shows a different code, the exit code, and the guard uses it to
 record the exit. After that, neither code works.
 
-The guard works from a web page or from WhatsApp. The admin reads every
-request on an admin page.
+The guard works from a web page or from WhatsApp, and gets a WhatsApp message
+when a request is approved. The admin reads every request on an admin page,
+and adds the guards there. Each guard has a key of their own, so the log
+names who let each visitor in and out.
 
 ## How it works
 

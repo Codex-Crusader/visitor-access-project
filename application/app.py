@@ -195,15 +195,31 @@ def too_many(bucket, limit, seconds, who=None):
     return False
 
 
-def gate_key_ok():
-    """A correct key always works.
+# Who recorded an entry or exit with the shared GATE_KEY.
+DESK_KEY = "Gate desk (shared key)"
+
+
+def guard_label(guard):
+    """A guard as stored on a visit: name and number, kept after the guard is removed."""
+    return f"{guard['name']} {guard['phone']}"
+
+
+def gate_guard():
+    """Who holds the gate key that came with the call, as a label, or None for a wrong key.
+
+    The shared GATE_KEY is the gate desk's. Each guard added on the admin page
+    has a key of their own, so the log names who let each visitor in.
 
     There is deliberately no lockout. The key is long random text, so guessing
     it is not a real threat, while a lockout is: people at one gate share one
     address, so one person mistyping would shut out everybody else, and the
     guard who is holding up a queue cannot tell a refusal from a wrong key.
     """
-    return hmac.compare_digest(request.headers.get("X-Gate-Key", ""), config.GATE_KEY)
+    key = request.headers.get("X-Gate-Key", "")
+    if hmac.compare_digest(key, config.GATE_KEY):
+        return DESK_KEY
+    guard = db.guard_by_key(key) if key else None
+    return guard_label(guard) if guard else None
 
 
 def admin_refusal():
@@ -252,8 +268,35 @@ def waiting_for(phone, table):
             if visit["status"] in db.OPEN_STATUSES and role(phone, visit, table)]
 
 
-def is_guard(phone):
-    return whatsapp.same_number(phone, config.GUARD)
+def guard_at(phone):
+    """The label of the guard with this WhatsApp number, or None.
+
+    GUARD, the gate desk, is always a guard. The others are added on the admin page.
+    """
+    if whatsapp.same_number(phone, config.GUARD):
+        return f"Gate desk {config.GUARD}"
+    guard = db.guard_by_phone("+" + whatsapp.digits(phone))
+    return guard_label(guard) if guard else None
+
+
+def tell_guards(visit, skip=()):
+    """Tell every guard that a visitor is approved, except the numbers in skip.
+
+    Plain text, so a guard who has not written to the app for 24 hours does
+    not get it. The approval stands either way.
+    """
+    try:
+        phones = [config.GUARD] + [guard["phone"] for guard in db.guards()]
+    except Exception as failure:
+        app.logger.error("Could not read the guards to tell them about %s: %s",
+                         visit["reference"], failure)
+        return
+    done = {whatsapp.digits(phone) for phone in skip}
+    body = whatsapp.guard_update_body(visit)
+    for phone in phones:
+        if whatsapp.digits(phone) not in done:
+            done.add(whatsapp.digits(phone))
+            reply_to(phone, body)
 
 
 def is_admin_phone(phone):
@@ -420,7 +463,7 @@ def read_config():
 
 
 # The visitor does not see how or when a request is approved, or by whom.
-VISITOR_PRIVATE = ("auto_approve_at", "decided_by", "decided_phone")
+VISITOR_PRIVATE = ("auto_approve_at", "decided_by", "decided_phone", "entered_by", "exited_by")
 
 
 def visitor_view(visit):
@@ -476,8 +519,8 @@ CLOSED_PASS = ("reference", "status", "created_at", "decided_at",
 
 # Never sent to the gate. The token is the visitor's private link, and it
 # opens their page, which shows the gate code. The approver's number is for
-# the admin page only.
-GATE_PRIVATE = ("token", "decided_phone")
+# the admin page only, and so are the guards' numbers.
+GATE_PRIVATE = ("token", "decided_phone", "entered_by", "exited_by")
 
 
 def gate_view(visit):
@@ -499,7 +542,7 @@ def read_pass(key):
     A reference shows the visitor and records nothing, so the page offers a
     button only when the guard typed the code from the visitor's pass.
     """
-    if not gate_key_ok():
+    if not gate_guard():
         return jsonify(error="Wrong gate key"), 403
     code = whatsapp.normalize_gate_code(key)
     if code:
@@ -519,10 +562,11 @@ def gate_board():
 
     Only open visits appear, so this shows nothing the pass lookup would not.
     """
-    if not gate_key_ok():
+    guard = gate_guard()
+    if not guard:
         return jsonify(error="Wrong gate key"), 403
     expected, inside = db.at_gate()
-    return jsonify(expected=expected, inside=inside)
+    return jsonify(expected=expected, inside=inside, you=guard)
 
 
 @app.post("/api/pass/<key>/<action>")
@@ -532,7 +576,8 @@ def gate_action(key, action):
     The reference never records anything. It is on the approver's messages
     and the gate board, so it proves nothing about who holds the pass.
     """
-    if not gate_key_ok():
+    guard = gate_guard()
+    if not guard:
         return jsonify(error="Wrong gate key"), 403
     if action not in GATE_ACTIONS:
         return jsonify(error="Unknown action"), 404
@@ -551,7 +596,7 @@ def gate_action(key, action):
                        visit=typed_pass(visit, code, kind)), 409
 
     # The update itself decides. Two guards pressing at once must not both win.
-    done = apply_action(visit["reference"])
+    done = apply_action(visit["reference"], guard)
     if done is None:
         fresh = db.get(visit["reference"])
         return jsonify(error=REFUSALS[action][fresh["status"]],
@@ -564,6 +609,8 @@ EXPORT_COLUMNS = (
     "status", "created_at", "escalated_at", "decided_at", "decided_by",
     "entered_at", "exited_at", "photo_at",
 )
+# The guards' numbers are for the admin only, so the gate's log leaves them out.
+ADMIN_EXPORT_COLUMNS = (*EXPORT_COLUMNS, "entered_by", "exited_by")
 
 
 # Excel and Sheets run a cell that opens with one of these as a formula, so a
@@ -580,19 +627,19 @@ def safe_cell(value):
 @app.get("/api/export.csv")
 def export_csv():
     """The whole visit log, including every entry and exit time."""
-    if not gate_key_ok():
+    if not gate_guard():
         return jsonify(error="Wrong gate key"), 403
-    return visit_log()
+    return visit_log(EXPORT_COLUMNS)
 
 
-def visit_log():
+def visit_log(columns):
     buffer = io.StringIO()
     writer = csv.writer(buffer)
-    writer.writerow(EXPORT_COLUMNS)
+    writer.writerow(columns)
     for visit in db.all_visits():
         row = dict(visit)
         row["guests"] = ", ".join(row["guests"])
-        writer.writerow([safe_cell(row.get(c)) for c in EXPORT_COLUMNS])
+        writer.writerow([safe_cell(row.get(c)) for c in columns])
 
     stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     return Response(
@@ -652,6 +699,7 @@ def admin_summary():
     return jsonify(
         counts=db.status_counts(),
         approvers=approver_rows(db.approver_table()),
+        **guard_list(),
         escalate_minutes=config.ESCALATE_MINUTES,
         auto_approve_minutes=config.AUTO_APPROVE_MINUTES,
         work_hours=[config.WORK_START, config.WORK_END],
@@ -693,20 +741,92 @@ def set_approvers():
     return jsonify(approvers=approver_rows(db.approver_table()))
 
 
+GUARD_NAME_LENGTH = 60
+
+
+def guard_list():
+    """The gate desk number, set on the server, and the guards added here."""
+    return {"gate_desk": config.GUARD, "guards": db.guards()}
+
+
+@app.post("/api/admin/guards")
+def add_guard():
+    """Add a guard. The answer holds their new gate key, which is shown only this once."""
+    refused = admin_refusal()
+    if refused:
+        return refused
+    payload = request.get_json(silent=True) or {}
+    raw_name = str(payload.get("name") or "")
+    name = clean_text(raw_name) if len(raw_name) <= GUARD_NAME_LENGTH else None
+    phone = clean_phone(payload.get("phone"))
+    problems = {}
+    if not name:
+        problems["name"] = f"Type the guard's name, {GUARD_NAME_LENGTH} letters at most."
+    if not phone:
+        problems["phone"] = PHONE_HINT.format(who="guard")
+    elif whatsapp.same_number(phone, config.GUARD):
+        problems["phone"] = "This is the gate desk number. It is a guard already."
+    elif whatsapp.same_number(phone, config.ADMIN_PHONE):
+        problems["phone"] = "This is the admin number. A guard must not get the admin key."
+    if problems:
+        return jsonify(error="Check the guard's details.", fields=problems), 400
+    key = db.add_guard(name, phone)
+    if key is None:
+        return jsonify(error="Check the guard's details.",
+                       fields={"phone": "This number is a guard already."}), 400
+    return jsonify(key=key, name=name, **guard_list())
+
+
+def guard_from_payload():
+    """The +number of an existing guard from the call's JSON, or None."""
+    phone = clean_phone((request.get_json(silent=True) or {}).get("phone"))
+    return phone if phone and db.guard_by_phone(phone) else None
+
+
+@app.post("/api/admin/guards/new-key")
+def renew_guard_key():
+    """Give a guard a new gate key. Their old key stops at once."""
+    refused = admin_refusal()
+    if refused:
+        return refused
+    phone = guard_from_payload()
+    key = db.renew_guard_key(phone) if phone else None
+    if key is None:
+        return jsonify(error="No guard has that number."), 404
+    return jsonify(key=key, name=db.guard_by_phone(phone)["name"], **guard_list())
+
+
+@app.post("/api/admin/guards/remove")
+def remove_guard():
+    """Remove a guard. Their key and their WhatsApp commands stop at once."""
+    refused = admin_refusal()
+    if refused:
+        return refused
+    phone = guard_from_payload()
+    if phone is None:
+        return jsonify(error="No guard has that number."), 404
+    db.remove_guard(phone)
+    return jsonify(**guard_list())
+
+
 FORGOT_KEYS = ("gate", "admin")
 FORGOT_PER_HOUR = 3
 FORGOT_ALL_PER_HOUR = 10
 
 
-ADMIN_PHONE_IS_GUARD = ("Set ADMIN_PHONE on the server to a number that is not the gate desk."
+ADMIN_PHONE_IS_GUARD = ("Set ADMIN_PHONE on the server to a number that is not a guard's."
                         " Guards must not get the admin key.")
+
+
+def admin_phone_is_guard():
+    return guard_at(config.ADMIN_PHONE) is not None
 
 
 def key_and_phone(which):
     """(key, phone that receives it), or ("", phone) when that phone must not get the key."""
     if which == "gate":
         return config.GATE_KEY, config.GUARD
-    if whatsapp.same_number(config.ADMIN_PHONE, config.GUARD):
+    if admin_phone_is_guard():
         return "", config.ADMIN_PHONE
     return config.ADMIN_KEY, config.ADMIN_PHONE
 
@@ -718,7 +838,7 @@ def forgot_key(which):
         return jsonify(error="Unknown key"), 404
     if which == "admin" and config.ADMIN_LOCKED:
         return jsonify(error=config.ADMIN_LOCKED), 503
-    if which == "admin" and whatsapp.same_number(config.ADMIN_PHONE, config.GUARD):
+    if which == "admin" and admin_phone_is_guard():
         return jsonify(error=ADMIN_PHONE_IS_GUARD), 503
     if (too_many(f"forgot-{which}", FORGOT_PER_HOUR, 3600)
             or too_many(f"forgot-{which}", FORGOT_ALL_PER_HOUR, 3600, who="everyone")):
@@ -734,11 +854,11 @@ def forgot_key(which):
 
 @app.get("/api/admin/export.csv")
 def admin_export_csv():
-    """The same log as the gate desk export, for the admin key."""
+    """The gate desk's log, plus which guard let each visitor in and out."""
     refused = admin_refusal()
     if refused:
         return refused
-    return visit_log()
+    return visit_log(ADMIN_EXPORT_COLUMNS)
 
 
 @app.get("/webhook/whatsapp")
@@ -777,18 +897,25 @@ def handle_decide(sender, status, reference, table):
         return f"{reference} goes to another approver. You cannot decide it."
     main, backup = db.approvers_for(table, visit["reason"])
     phone = main if by == db.BY_MAIN else backup
-    if not db.decide(reference, status, by, phone):
+    decided = db.decide(reference, status, by, phone)
+    if not decided:
         now_status = db.get(reference)["status"]
         if now_status == db.EXPIRED:
             return EXPIRED_REQUEST.format(reference=reference, hours=config.PASS_HOURS)
         return f"{reference} was already {now_status}."
+    # Before the reply to the approver, so the reply is the last message sent.
+    if status == db.APPROVED:
+        tell_guards(decided, skip=(sender,))
     return f"{reference} is now {status}.\n\n{whatsapp.brief(visit)}"
 
 
-def handle_gate(sender, action, code):
-    """IN takes the entry code and OUT the exit code, both from the visitor's pass."""
-    if not is_guard(sender):
-        return "Only the gate desk can record entry and exit."
+def handle_gate(guard, sender, action, code):
+    """IN takes the entry code and OUT the exit code, both from the visitor's pass.
+
+    guard is the sender's label from guard_at(), or None.
+    """
+    if not guard:
+        return "Only a guard can record entry and exit."
     if code is None:
         return (f"Add the {action} code from the visitor's pass."
                 f" For example: {whatsapp.EXAMPLES[action]}.\n\n{whatsapp.HELP}")
@@ -810,19 +937,19 @@ def handle_gate(sender, action, code):
         db.wait_for_photo(whatsapp.digits(sender), reference)
         return whatsapp.photo_request(visit, code)
 
-    done = apply_action(reference)
+    done = apply_action(reference, guard)
     if done is None:
         return REFUSALS[action][db.get(reference)["status"]]
     return whatsapp.pass_body(done)
 
 
-def handle_photo(sender, media_id):
+def handle_photo(guard, sender, media_id):
     """The guard sent a picture. It lets in the visitor named by the last IN."""
-    if not is_guard(sender):
-        return "Only the gate desk can record entry and exit."
+    if not guard:
+        return "Only a guard can record entry and exit."
 
     reference, entered = db.enter_with_photo(
-        whatsapp.digits(sender), PHOTO_MINUTES, media_id
+        whatsapp.digits(sender), PHOTO_MINUTES, media_id, guard
     )
     if reference is None:
         return (
@@ -838,9 +965,9 @@ def handle_photo(sender, media_id):
     return whatsapp.pass_body(visit)
 
 
-def handle_lookup(sender, key, table):
+def handle_lookup(guard, sender, key, table):
     """A reference or a pass code. The reply repeats only the code that was sent."""
-    if not is_guard(sender) and not is_approver(sender, table):
+    if not guard and not is_approver(sender, table):
         return None
     visit, kind = db.by_code(key)
     if visit is not None:
@@ -867,7 +994,8 @@ def whatsapp_reply():
     if sender is None:
         return "", 200
     table = db.approver_table()
-    if not (is_approver(sender, table) or is_guard(sender) or is_admin_phone(sender)):
+    guard = guard_at(sender)
+    if not (is_approver(sender, table) or guard or is_admin_phone(sender)):
         return "", 200
     if not db.is_new_message(message_id):
         return "", 200
@@ -875,7 +1003,7 @@ def whatsapp_reply():
     # The message id is spent from here on, so Meta's retry would be ignored.
     # A failure must therefore end in a reply that asks for the message again.
     try:
-        answer = answer_message(sender, text, photo, table)
+        answer = answer_message(sender, text, photo, table, guard)
     except Exception as failure:
         app.logger.error("Could not handle a WhatsApp message: %s", failure)
         answer = "Something went wrong on the server. Send that again."
@@ -885,31 +1013,39 @@ def whatsapp_reply():
     return "", 200
 
 
-def answer_message(sender, text, photo, table):
+def answer_message(sender, text, photo, table, guard):
     if photo:
-        return handle_photo(sender, photo)
+        return handle_photo(guard, sender, photo)
 
     kind, value, key = whatsapp.read_reply(text)
     if kind == "key":
-        return handle_key(sender)
+        return handle_key(sender, guard)
     if kind == "decide":
         return handle_decide(sender, value, key, table)
     if kind == "gate":
-        return handle_gate(sender, value, key)
+        return handle_gate(guard, sender, value, key)
     if kind == "lookup":
-        return handle_lookup(sender, key, table)
+        return handle_lookup(guard, sender, key, table)
     if is_approver(sender, table):
         return whatsapp.waiting_body(waiting_for(sender, table))
     return whatsapp.HELP
 
 
-def handle_key(sender):
-    """KEY from the gate desk or the admin number gets that number's key."""
+def handle_key(sender, guard):
+    """KEY from the gate desk or the admin number gets that number's key.
+
+    A guard added on the admin page gets a new key of their own. Only its hash
+    is stored, so the old one cannot be sent again.
+    """
     answers = []
     for which in FORGOT_KEYS:
         key, phone = key_and_phone(which)
         if key and whatsapp.same_number(sender, phone):
             answers.append(whatsapp.key_body(which, key))
+    if guard and not whatsapp.same_number(sender, config.GUARD):
+        own = db.renew_guard_key("+" + whatsapp.digits(sender))
+        if own:
+            answers.append(whatsapp.own_key_body(own))
     return "\n\n".join(answers) or whatsapp.HELP
 
 
@@ -942,8 +1078,10 @@ def auto_approve_due():
             continue
         body = whatsapp.auto_approved_body(done, config.AUTO_APPROVE_MINUTES)
         # Plain text: lost to an approver quiet for 24 hours. The approval stands.
-        for phone in dict.fromkeys(db.approvers_for(table, done["reason"])):
+        approvers = db.approvers_for(table, done["reason"])
+        for phone in dict.fromkeys(approvers):
             reply_to(phone, body)
+        tell_guards(done, skip=approvers)
 
 
 # Set when the process is about to exit. The timer stops at its next wait.

@@ -23,7 +23,7 @@ const STATUS = {
   expired: ["done", "Expired"],
 };
 
-let section = "visits"; // the open tab: "visits" or "numbers"
+let section = "visits"; // the open tab: "visits", "numbers" or "guards"
 let rows = [];
 let next = null;
 let filter = "all";
@@ -36,6 +36,11 @@ let editing = null;     // the reason whose approvers are being changed
 let fieldErrors = {};
 let draft = null;       // the numbers typed in the open editor
 let approverNote = "";
+let guards = [];
+let gateDesk = "";
+let guardErrors = {};
+let shownKey = null;    // {name, key}: a guard's new key, shown once
+let removing = null;    // the number of the guard whose removal waits for a second tap
 let loading = false;
 // Each list request gets a number. An answer to an older request, for example
 // a search the admin has since changed, is thrown away.
@@ -54,7 +59,7 @@ function setKey(value) {
 
 function forgetKey(why = "") {
   try { localStorage.removeItem("adminkey"); } catch { /* it was never stored */ }
-  rows = []; next = null; counts = {}; approvers = []; notice = why;
+  rows = []; next = null; counts = {}; approvers = []; guards = []; shownKey = null; notice = why;
   render();
 }
 
@@ -134,9 +139,9 @@ function item(v) {
       <dt>Sent to backup</dt><dd>${when(v.escalated_at)}</dd>
       <dt>Decided</dt><dd>${when(v.decided_at)}</dd>
       <dt>Decision</dt><dd>${x(byLine || "Not decided yet")}</dd>
-      <dt>Entered</dt><dd>${when(v.entered_at)}</dd>
+      <dt>Entered</dt><dd>${when(v.entered_at)}${v.entered_by ? ` by ${x(v.entered_by)}` : ""}</dd>
       <dt>Gate photo</dt><dd>${when(v.photo_at)}</dd>
-      <dt>Exited</dt><dd>${when(v.exited_at)}</dd>
+      <dt>Exited</dt><dd>${when(v.exited_at)}${v.exited_by ? ` by ${x(v.exited_by)}` : ""}</dd>
     </dl></div></details>`;
 }
 
@@ -202,6 +207,64 @@ async function saveApprovers() {
   renderApprovers();
 }
 
+function guardRow(g) {
+  const added = new Date(g.added_at).toLocaleDateString([], {day: "numeric", month: "short", year: "numeric"});
+  const actions = removing === g.phone
+    ? `<b>Remove ${x(g.name)}?</b>
+       <button class="small" data-remove-now="${x(g.phone)}">Remove</button>
+       <button class="small" data-keep>Keep</button>`
+    : `<button class="small" data-newkey="${x(g.phone)}">New key</button>
+       <button class="small" data-remove="${x(g.phone)}">Remove</button>`;
+  return `<tr><td>${x(g.name)}</td><td>${x(g.phone)}</td><td>${added}</td><td class="acts">${actions}</td></tr>`;
+}
+
+function renderGuards() {
+  el("guard-table").innerHTML = `<table><thead><tr><th>Name</th><th>WhatsApp number</th><th>Added</th><th></th></tr></thead>
+    <tbody><tr><td>Gate desk</td><td>${x(gateDesk)}</td><td colspan="2">Set as GUARD on the server. Uses the shared gate key.</td></tr>
+    ${guards.map(guardRow).join("")}</tbody></table>`;
+  el("guard-note").innerHTML = shownKey
+    ? `<div class="note good">The gate key for ${x(shownKey.name)} is <code class="key">${x(shownKey.key)}</code>
+       Give it to ${x(shownKey.name)} now. This page shows it only once. ${x(shownKey.name)} types it on the gate page.</div>`
+    : "";
+  for (const name of ["name", "phone"]) {
+    el(`g-${name}-err`).textContent = guardErrors[name] || "";
+  }
+}
+
+// A guard call answers with the new list, and a new key when one was made.
+async function guardCall(url, body) {
+  guardErrors = {};
+  shownKey = null;
+  try {
+    const answer = await call(url, body);
+    guards = answer.guards;
+    gateDesk = answer.gate_desk;
+    if (answer.key) shownKey = {name: answer.name, key: answer.key};
+    return true;
+  } catch (err) {
+    if (err instanceof WrongKey) { forgetKey(err.message); return false; }
+    guardErrors = Object.keys(err.fields || {}).length ? err.fields : {phone: err.message};
+    return false;
+  } finally {
+    removing = null;
+    if (key()) renderGuards();
+  }
+}
+
+async function addGuard() {
+  const name = el("g-name").value.trim(), phone = el("g-phone").value.trim();
+  guardErrors = {};
+  if (!name) guardErrors.name = "Type the guard's name.";
+  if (!phone) guardErrors.phone = "Type the guard's WhatsApp number.";
+  if (guardErrors.name || guardErrors.phone) { shownKey = null; return renderGuards(); }
+  el("g-add").disabled = true;
+  if (await guardCall("/api/admin/guards", {name, phone})) {
+    el("g-name").value = "";
+    el("g-phone").value = "";
+  }
+  if (el("g-add")) el("g-add").disabled = false;
+}
+
 function renderTabs() {
   for (const tab of el("tabs").children) {
     const open = tab.dataset.section === section;
@@ -253,6 +316,7 @@ function render() {
       <div class="tabs" id="tabs" role="tablist">
         <button role="tab" data-section="visits" aria-controls="visits">Visits</button>
         <button role="tab" data-section="numbers" aria-controls="numbers">Approver numbers</button>
+        <button role="tab" data-section="guards" aria-controls="guards">Guards</button>
       </div>
       <section id="visits" role="tabpanel">
       <div class="tiles" id="tiles"></div>
@@ -271,6 +335,27 @@ function render() {
         including requests already sent to them. While the app uses Meta's test number, also
         add each new number to the recipient list in Meta's API Setup page.</p>
       <p class="hint" id="rules"></p>
+      </section>
+      <section id="guards" role="tabpanel" hidden>
+      <h2>Who can record entry and exit</h2>
+      <div id="guard-note"></div>
+      <div class="wrap" id="guard-table"></div>
+      <h2 class="gap">Add a guard</h2>
+      <div class="pair">
+        <div><label for="g-name">Name</label>
+          <input id="g-name" autocomplete="off" maxlength="60"><p class="err" id="g-name-err"></p></div>
+        <div><label for="g-phone">WhatsApp number</label>
+          <input id="g-phone" type="tel" inputmode="tel" autocomplete="off" placeholder="+919876543210">
+          <p class="err" id="g-phone-err"></p></div>
+      </div>
+      <button class="btn" id="g-add">Add guard and make a key</button>
+      <p class="hint">Each guard gets a gate key of their own, so the log names who let each visitor
+        in and out. A guard can also use IN and OUT from their WhatsApp number, and gets a message when
+        a request is approved. WhatsApp delivers that message only if the guard wrote to the app's
+        number in the last 24 hours. A guard who loses their key sends KEY from their phone to the
+        app's WhatsApp number, or you tap New key. Remove stops the key and the WhatsApp commands at once.
+        While the app uses Meta's test number, also add each guard's number to the recipient list
+        in Meta's API Setup page.</p>
       </section>`;
     el("tabs").onclick = e => {
       const hit = e.target.closest("[data-section]");
@@ -285,6 +370,15 @@ function render() {
       searchTimer = setTimeout(() => { query = e.target.value.trim(); void load(); }, SEARCH_WAIT);
     };
     el("more").onclick = () => void load(true);
+    el("g-add").onclick = () => void addGuard();
+    el("guard-table").onclick = e => {
+      const hit = e.target.closest("button");
+      if (!hit) return;
+      const d = hit.dataset;
+      if (d.newkey) void guardCall("/api/admin/guards/new-key", {phone: d.newkey});
+      else if (d.removeNow) void guardCall("/api/admin/guards/remove", {phone: d.removeNow});
+      else { removing = d.remove || null; shownKey = null; renderGuards(); }
+    };
     el("approvers").onclick = e => {
       const hit = e.target.closest("[data-edit]");
       if (hit) { editing = hit.dataset.edit; draft = null; fieldErrors = {}; approverNote = ""; renderApprovers(); }
@@ -295,6 +389,7 @@ function render() {
   renderTiles();
   renderList();
   renderApprovers();
+  renderGuards();
 }
 
 // Loads the first page again, or with more=true the page after the last one.
@@ -327,6 +422,8 @@ async function loadSummary() {
     const s = await call("/api/admin/summary");
     counts = s.counts;
     approvers = s.approvers;
+    guards = s.guards || [];
+    gateDesk = s.gate_desk || "";
     if (el("rules")) {
       const auto = s.auto_approve_minutes
         ? ` A request made ${s.work_days.join(", ")}, ${s.work_hours[0]}:00 to ${s.work_hours[1]}:00,`

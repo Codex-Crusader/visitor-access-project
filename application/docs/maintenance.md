@@ -65,15 +65,26 @@ A request that nobody approves in 48 hours expires. A reply after that gets
 
 ## Guard
 
-You can work from the gate page or from WhatsApp. Both record the same thing.
+You can work from the gate page or from WhatsApp. Both record the same thing,
+and the admin page shows which guard recorded each entry and exit.
+
+When a request is approved, every guard gets a WhatsApp message with the
+reference, the name, the reason and the person visited. The message has no gate code.
+WhatsApp delivers it only if the guard wrote to the app's number in the last
+24 hours. The approver who decided gets no copy.
 
 ### On the gate page
 
 1. Open `<address>/gate`.
-2. Type the gate key. The page asks for it once on each phone. If you do not
-   know it, tap "Forgot gate key?". The app sends the key to the gate desk
-   WhatsApp. If it does not arrive, send `KEY` from the gate desk phone to the
-   app's WhatsApp number.
+2. Type your gate key. The page asks for it once on each phone. Under the
+   lists, the page names the guard whose key it uses.
+   - If the admin made a key for you alone and you lost it, send `KEY` from
+     your phone to the app's WhatsApp number. You get a new key, and the old
+     one stops.
+   - If you use the shared gate desk key and do not know it, tap "Forgot gate
+     key?". The app sends the key to the gate desk WhatsApp. If it does not
+     arrive, send `KEY` from the gate desk phone to the app's WhatsApp
+     number.
 3. Type the code on the visitor's pass, and tap Check pass. Small letters and
    spaces are correct, for example `kt 4821`.
 4. If the pass is approved, tap Record entry.
@@ -109,7 +120,8 @@ The rules for the photo:
 2. Each `IN` replaces the one before it. The photo lets in the visitor of the
    last `IN`, and the reply names that visitor.
 3. One photo lets in one person. A second photo on the same `IN` does nothing.
-4. Only the `GUARD` number can send the photo.
+4. Only a guard can send the photo: the `GUARD` number, or a guard on the
+   admin page's Guards tab.
 
 Only WhatsApp asks for a photo. The Record entry button on the gate page lets
 a visitor in without one. If every entry must have a photo, use WhatsApp.
@@ -123,7 +135,7 @@ a visitor in without one. If every entry must have a photo, use WhatsApp.
 | Pass expired           | Do not let them in. Ask for a new request   |
 | ... is the exit code   | Ask for the entry code                      |
 | This pass is closed    | The visit is over. The code is dead         |
-| Wrong gate key         | Tap "Forgot gate key?", then type the key   |
+| Wrong gate key         | With your own key: send `KEY` from your phone. With the shared key: tap "Forgot gate key?" |
 
 ## Admin
 
@@ -132,7 +144,8 @@ a visitor in without one. If every entry must have a photo, use WhatsApp.
    it, tap "Forgot admin key?". The app sends the key to `ADMIN_PHONE` on
    WhatsApp. If it does not arrive, send `KEY` from that phone to the app's
    WhatsApp number.
-3. The page has two tabs: Visits and Approver numbers. Visits opens first.
+3. The page has three tabs: Visits, Approver numbers and Guards. Visits
+   opens first.
 4. On the Visits tab, tap a tile to show only the requests with that status.
    Waiting means pending or with the backup approver.
 5. Use the search box to find a name, phone number, reference or the person
@@ -142,8 +155,11 @@ a visitor in without one. If every entry must have a photo, use WhatsApp.
    before 5 October 2026 shows no number, and the oldest show no role,
    because the app did not keep them then.
 7. Tap a request to see all its details and times, and when its pass ends.
+   Entered and Exited name the guard who recorded them. "Gate desk (shared
+   key)" means that someone used the shared `GATE_KEY`.
 8. Show more loads the next 50 requests.
-9. Use Download CSV to save the whole log.
+9. Use Download CSV to save the whole log. The admin's CSV has two more
+   columns than the gate's CSV: `entered_by` and `exited_by`.
 
 ### Change the approvers
 
@@ -159,9 +175,38 @@ can no longer decide that reason's requests, also the requests already sent
 to them. While the app uses Meta's test number, also add each new number to
 the recipient list in Meta's API Setup page.
 
+### Manage the guards
+
+The `GUARD` number is the gate desk. It is always a guard and uses the shared
+`GATE_KEY`. You add the other guards on the admin page.
+
+1. Tap the Guards tab.
+2. Type the guard's name and WhatsApp number. Write the number with `+` and
+   the country code, like `+919876543210`.
+3. Tap Add guard and make a key.
+4. Give the key that shows to that guard. The page shows it only once,
+   because the app keeps only a hash (a one-way scramble) of the key.
+
+A guard can then use the gate page with their own key, and `IN`, `OUT` and
+the photo from their own WhatsApp number.
+
+1. To give a guard a new key, tap New key. The old key stops at once.
+2. To take a guard off, tap Remove, then Remove again. Their key and their
+   WhatsApp commands stop at once. The log keeps their name on the visits
+   that they recorded.
+
+The app refuses the gate desk number and `ADMIN_PHONE` as a guard. While the
+app uses Meta's test number, also add each guard's number to the recipient
+list in Meta's API Setup page.
+
+The log names a guard only when that guard uses their own key. Anyone who
+knows the shared `GATE_KEY` records as "Gate desk (shared key)". After you
+give each guard their own key, change `GATE_KEY` and give the new one only to
+the gate desk. A removed guard who knows the shared key can still use it.
+
 ## WhatsApp commands
 
-One phone number can be an approver and the guard at the same time, so each
+One phone number can be an approver and a guard at the same time, so each
 job has its own word.
 
 | You send      | What happens                                                |
@@ -173,11 +218,11 @@ job has its own word.
 | `IN KT-4821`  | With the entry code: asks for a photo of the visitor        |
 | a photo       | Records the entry for the last `IN`                         |
 | `OUT RM-0937` | With the exit code: records the exit                        |
-| `KEY`         | From `GUARD` or `ADMIN_PHONE`: sends back that number's key |
+| `KEY`         | From `GUARD` or `ADMIN_PHONE`: sends back that number's key. From another guard: makes a new key for that guard |
 | anything else | Sends back the requests that wait for you                   |
 
 A reference can also be typed as `VR4022`, `VR 4022` or `4022`. The app
-ignores every number that is not an approver, `GUARD` or `ADMIN_PHONE`.
+ignores every number that is not an approver, a guard or `ADMIN_PHONE`.
 
 ## Forgotten keys
 
@@ -200,7 +245,8 @@ Use long random keys. A short key is easy to guess.
 1. Open the service on Render, then Environment.
 2. Change `GATE_KEY`, `ADMIN_KEY`, or both. The two keys must be different.
 3. Click Save, rebuild, and deploy.
-4. Give the new gate key to each guard. Each gate page asks for it once.
+4. Give the new gate key to the gate desk. Each gate page asks for it once.
+   Guards with their own key do not need it.
 
 ## Change the address
 

@@ -187,10 +187,13 @@ function view(){
 
   case "privacy": return `<h2>What we ask for</h2>
     <div class="facts">${["Name","Phone","Address","Reason","Who you are visiting","A photo at the gate"].map(i=>`<div><span>${i}</span></div>`).join("")}</div>
-    <p class="sm">At the gate, the guard takes one photo of you on the gate desk's
-    WhatsApp before letting you in. The photo stays in that WhatsApp chat. This
+    <p class="sm">At the gate, the guard takes one photo of you on the campus
+    guards' WhatsApp before letting you in. The photo stays in that WhatsApp chat. This
     app keeps the time it was taken and WhatsApp's id for it, not the photo
     itself. No ID number, no vehicle number.</p>
+    <p class="sm">When your visit is approved, the campus guards get a WhatsApp
+    message with your name, your guests, the reason and who you are visiting.
+    Not your phone number or address. That message stays in their WhatsApp chats.</p>
     <p class="sm">The campus keeps your request, and the times you entered and left,
     for ${S.cfg.retain_days===1?"one day":S.cfg.retain_days+" days"}. After that it is
     deleted automatically.
