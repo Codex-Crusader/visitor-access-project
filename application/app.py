@@ -419,6 +419,14 @@ def read_config():
     )
 
 
+# The visitor does not see how or when a request is approved, or by whom.
+VISITOR_PRIVATE = ("auto_approve_at", "decided_by", "decided_phone")
+
+
+def visitor_view(visit):
+    return {key: value for key, value in visit.items() if key not in VISITOR_PRIVATE}
+
+
 @app.post("/api/requests")
 def create_request():
     # The address is public, so cap how often one caller can make the phone buzz.
@@ -439,7 +447,7 @@ def create_request():
         return jsonify(error="Could not reach the approver. Try again."), 502
     # The new request brings new deadlines, so the timer works out its next round again.
     wake.set()
-    return jsonify(visit), 201
+    return jsonify(visitor_view(visit)), 201
 
 
 @app.get("/api/visit/<token>")
@@ -451,9 +459,7 @@ def read_visit(token):
     # The pass shows one code at a time: the entry code until the guard lets
     # the visitor in, then the exit code. Before approval and after the exit,
     # neither.
-    # The visitor does not see how or when a request is approved.
-    for private in ("auto_approve_at", "decided_by", "decided_phone"):
-        visit.pop(private, None)
+    visit = visitor_view(visit)
     showing = {db.APPROVED: db.ENTRY, db.INSIDE: db.EXIT}.get(visit["status"])
     if showing:
         visit[f"{showing}_code"] = codes[showing]

@@ -1148,6 +1148,14 @@ view = client.get(f"/api/visit/{due['token']}").get_json()
 assert view["status"] == "approved" and view["entry_code"]
 private = {"decided_by", "decided_phone", "auto_approve_at"}
 assert not private & view.keys(), "the visitor must not see it"
+# The answer to a new request is the visitor's too, also in working hours.
+real_auto_time = application.auto_approve_time
+application.auto_approve_time = lambda moment: "2999-01-01T00:00:00+00:00"
+in_hours = client.post("/api/requests", json=payload)
+application.auto_approve_time = real_auto_time
+assert in_hours.status_code == 201
+assert db.get(in_hours.get_json()["reference"])["auto_approve_at"], "the server keeps the time"
+assert not private & in_hours.get_json().keys(), "the new request must not tell the visitor"
 print("  10:00 to 16:59 Monday to Saturday only, a NO first wins, approvers told once")
 
 print("a pass works for PASS_HOURS after the request, then never again")

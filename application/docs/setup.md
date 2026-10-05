@@ -42,7 +42,7 @@ Do not use the temporary token from API Setup. It stops working after about
    campus, and use the same region on Render in step 4. For a campus in
    India, pick AWS Asia Pacific 1 (Singapore).
 2. Click Connect, and copy the connection string. This is `DATABASE_URL`.
-   Use the pooled string, the one whose host name ends in `-pooler`.
+   Use the pooled string, the one whose host name contains `-pooler`.
 
 The connection string holds the database password. Paste it only into Render
 and into a `.env` file on your own machine. Never put it in git or in a chat.

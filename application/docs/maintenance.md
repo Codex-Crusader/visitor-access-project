@@ -259,7 +259,8 @@ never touch Neon. Install it once.
 .venv\Scripts\python.exe -m pip install pgserver
 ```
 
-Then run each check. Each one must end with "passed" or "All checks passed".
+Then run each check. Each one must finish with no error. The tests and
+ruff end with "passed", and eslint prints nothing when the code is clean.
 
 ```
 .venv\Scripts\python.exe test_app.py
