@@ -123,15 +123,15 @@ does not have them.
 Set these in the Render Environment page, or in `.env` on your own machine.
 The first group is required.
 
-| Name                   | Value                                                     |
-|------------------------|-----------------------------------------------------------|
-| `META_TOKEN`           | The permanent token from step 1                           |
-| `META_PHONE_NUMBER_ID` | The Phone number ID from step 1                           |
-| `META_VERIFY_TOKEN`    | Any word. Type the same word on the Meta webhook page     |
-| `MAIN_APPROVER`        | The approver's number, like `+911234567890`               |
-| `GATE_KEY`             | The password for the gate page                            |
-| `GATE_DESK_PHONE`      | The number on the Call gate desk button                   |
-| `DATABASE_URL`         | The connection string from step 2                         |
+| Name                   | Value                                                 |
+|------------------------|-------------------------------------------------------|
+| `META_TOKEN`           | The permanent token from step 1                       |
+| `META_PHONE_NUMBER_ID` | The Phone number ID from step 1                       |
+| `META_VERIFY_TOKEN`    | Any word. Type the same word on the Meta webhook page |
+| `MAIN_APPROVER`        | The approver's number, like `+911234567890`           |
+| `GATE_KEY`             | The password for the gate page                        |
+| `GATE_DESK_PHONE`      | The number on the Call gate desk button               |
+| `DATABASE_URL`         | The connection string from step 2                     |
 
 These have a default. Set the ones that apply to you.
 

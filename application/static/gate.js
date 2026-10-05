@@ -92,7 +92,8 @@ function entryStep() {
   return `<label class="btn plain" for="cam">${photo ? "Take the photo again" : "Take a photo of the visitor"}</label>
     <input id="cam" type="file" accept="image/*" capture="environment" hidden>
     ${photo ? `<img class="shot" src="${x(photo)}" alt="The photo of the visitor">` : ""}
-    <button class="btn go" id="enter" onclick="act('entry')"${photo ? "" : " disabled"}>Record entry</button>
+    ${photo ? `<button class="btn go" id="enter" onclick="act('entry')">Record entry</button>`
+            : `<button class="btn go" id="enter" disabled>Record entry</button>`}
     ${photo ? "" : `<p class="sub">The entry needs a photo of the visitor.</p>`}`;
 }
 

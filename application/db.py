@@ -140,7 +140,7 @@ ALTER TABLE visits ADD COLUMN exited_by TEXT;
 -- A photo taken on the gate page. A WhatsApp photo keeps only media_id.
 ALTER TABLE photos ADD COLUMN image BYTEA;
 -- A gate page photo has no WhatsApp id. This only relaxes a rule, so the old
--- version, which always writes media_id, keeps working during the deploy.
+-- version, which always writes media_id, keeps working while Render deploys.
 ALTER TABLE photos ALTER COLUMN media_id DROP NOT NULL;
 """,
 ]
@@ -318,7 +318,7 @@ def to_dict(row):
     before the background round saves that status."""
     visit = dict(row)
     visit["guests"] = json.loads(visit["guests"])
-    created = visit.get("created_at")
+    created = str(visit.get("created_at") or "")
     if created:
         expires = datetime.fromisoformat(created) + timedelta(hours=config.PASS_HOURS)
         visit["expires_at"] = expires.isoformat(timespec="seconds")
@@ -558,7 +558,8 @@ def ping():
         with connect() as conn:
             conn.execute("SELECT 1")
         return True
-    except Exception:  # any failure means the check failed
+    except Exception as failure:  # any failure means the check failed
+        log.warning("Health check: the database did not answer: %s", failure)
         return False
 
 

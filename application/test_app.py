@@ -64,13 +64,13 @@ PHOTO = {"photo": application.PHOTO_PREFIX + base64.b64encode(JPEG).decode()}
 GATE_CODE = re.compile(r"^[A-HJ-NP-Z]{2}-\d{4}$")
 
 
-def entry_of(made):
+def entry_of(ticket):
     """The entry code. The server and the visitor's pass are the only holders."""
-    return db.codes_of(made["reference"])["entry"]
+    return db.codes_of(ticket["reference"])["entry"]
 
 
-def exit_of(made):
-    return db.codes_of(made["reference"])["exit"]
+def exit_of(ticket):
+    return db.codes_of(ticket["reference"])["exit"]
 
 
 counter = [0]
@@ -126,9 +126,9 @@ STRANGER = "910000000000"
 
 
 def new_request():
-    made = client.post("/api/requests", json=payload)
-    assert made.status_code == 201, made.get_data(as_text=True)
-    return made.get_json()
+    created = client.post("/api/requests", json=payload)
+    assert created.status_code == 201, created.get_data(as_text=True)
+    return created.get_json()
 
 
 print("visitor flow")
@@ -391,13 +391,13 @@ print("the gate photo")
 
 
 def approved():
-    made = new_request()
-    say(APPROVER, f"YES {made['reference']}")
-    return made
+    ticket = new_request()
+    say(APPROVER, f"YES {ticket['reference']}")
+    return ticket
 
 
-def status_of(made):
-    return client.get(f"/api/visit/{made['token']}").get_json()["status"]
+def status_of(ticket):
+    return client.get(f"/api/visit/{ticket['token']}").get_json()["status"]
 
 
 # Two INs in a row: the photo goes to the second, and the reply says which.
@@ -775,7 +775,9 @@ print("every answer carries the security headers")
 page_answer = client.get("/admin")
 not_changed = client.get("/admin", headers={"If-None-Match": page_answer.headers["ETag"]})
 assert not_changed.status_code == 304
-script_path = re.search(r'src="(admin\.js\?v=\w+)"', page_answer.get_data(as_text=True))[1]
+script_tag = re.search(r'src="(admin\.js\?v=\w+)"', page_answer.get_data(as_text=True))
+assert script_tag, "the admin page loads its script by version"
+script_path = script_tag[1]
 for answer in (page_answer, not_changed, client.get("/" + script_path),
                client.get("/api/config"), client.get("/api/visit/nope"),
                client.get("/api/admin/visits")):
@@ -790,19 +792,19 @@ print("the health check names what failed and never why")
 meta_calls = []
 real_token_works = whatsapp.token_works
 whatsapp.token_works = lambda: meta_calls.append(1) or True
-application._meta_check.update(at=0.0, ok=False)
+application.forget_meta_check()
 healthy = client.get("/api/health")
 assert healthy.status_code == 200 and healthy.get_json() == {"database": True, "whatsapp": True}
 assert client.get("/api/health").status_code == 200
 assert len(meta_calls) == 1, "Meta is asked at most once an hour"
 whatsapp.token_works = lambda: meta_calls.append(1) or False
-application._meta_check.update(at=0.0, ok=False)
+application.forget_meta_check()
 expired_token = client.get("/api/health")
 assert expired_token.status_code == 503
 assert expired_token.get_json() == {"database": True, "whatsapp": False}, "no reason, no token"
 client.get("/api/health")
 assert len(meta_calls) == 2, "a failure is asked again after 5 minutes, not at once"
-application._meta_check.update(at=0.0, ok=False)
+application.forget_meta_check()
 real_ping = db.ping
 db.ping = lambda: False
 whatsapp.token_works = lambda: True
@@ -812,7 +814,7 @@ whatsapp.token_works = real_token_works
 assert db.ping() is True
 # The real check, with Meta's answers stubbed: an expired token and a lost connection.
 real_get = whatsapp.requests.get
-whatsapp.requests.get = lambda *a, **k: type("R", (), {"ok": False, "status_code": 401})()
+whatsapp.requests.get = lambda *_a, **_k: type("R", (), {"ok": False, "status_code": 401})()
 assert whatsapp.token_works() is False
 
 
@@ -822,7 +824,7 @@ def no_network(*_args, **_kwargs):
 
 whatsapp.requests.get = no_network
 assert whatsapp.token_works() is False
-whatsapp.requests.get = lambda *a, **k: type("R", (), {"ok": True, "status_code": 200})()
+whatsapp.requests.get = lambda *_a, **_k: type("R", (), {"ok": True, "status_code": 200})()
 assert whatsapp.token_works() is True
 whatsapp.requests.get = real_get
 application.forget_hits()
@@ -835,7 +837,7 @@ for due, low, high in ((None, 3600, 3600),
                        (moment + timedelta(minutes=10), 590, 602),
                        (moment - timedelta(minutes=5), 30, 30),
                        (moment + timedelta(hours=5), 3600, 3600)):
-    db.next_due = lambda due=due: due
+    db.next_due = lambda when=due: when
     wait = application.seconds_to_next_round()
     assert low <= wait <= high, (due, wait)
 db.next_due = real_next_due
@@ -1157,7 +1159,7 @@ private = {"decided_by", "decided_phone", "auto_approve_at"}
 assert not private & view.keys(), "the visitor must not see it"
 # The answer to a new request is the visitor's too, also in working hours.
 real_auto_time = application.auto_approve_time
-application.auto_approve_time = lambda moment: "2999-01-01T00:00:00+00:00"
+application.auto_approve_time = lambda _moment: "2999-01-01T00:00:00+00:00"
 in_hours = client.post("/api/requests", json=payload)
 application.auto_approve_time = real_auto_time
 assert in_hours.status_code == 201
@@ -1170,10 +1172,10 @@ assert config.PASS_HOURS == 48
 assert client.get("/api/config").get_json()["pass_hours"] == 48
 
 
-def made_hours_ago(made, hours):
-    with db.connect() as conn:
-        conn.execute("UPDATE visits SET created_at = %s WHERE reference = %s",
-                     (db.ago(hours / 24), made["reference"]))
+def made_hours_ago(ticket, hours):
+    with db.connect() as db_conn:
+        db_conn.execute("UPDATE visits SET created_at = %s WHERE reference = %s",
+                        (db.ago(hours / 24), ticket["reference"]))
 
 
 # 47 hours old: approval and entry still work, and the pass names its end.
@@ -1345,8 +1347,9 @@ RAVI = RAVI_PHONE[1:]
 RAVI_LABEL = f"Ravi {RAVI_PHONE}"
 
 
-def add(name, phone, headers=ADMIN):
-    return client.post("/api/admin/guards", json={"name": name, "phone": phone}, headers=headers)
+def add(guard_name, guard_phone, with_key=None):
+    return client.post("/api/admin/guards", json={"name": guard_name, "phone": guard_phone},
+                       headers=with_key or ADMIN)
 
 
 bad = add("", "123")
@@ -1354,7 +1357,7 @@ assert bad.status_code == 400 and set(bad.get_json()["fields"]) == {"name", "pho
 assert add("Desk", config.GUARD).status_code == 400, "the gate desk is a guard already"
 assert add("Admin", config.ADMIN_PHONE).status_code == 400, "a guard must not get the admin key"
 assert add("Long" * 20, RAVI_PHONE).status_code == 400
-assert add("Ravi", RAVI_PHONE, headers=KEY).status_code == 403, "the gate key adds no guard"
+assert add("Ravi", RAVI_PHONE, with_key=KEY).status_code == 403, "the gate key adds no guard"
 added = add("Ravi", RAVI_PHONE)
 assert added.status_code == 200, added.get_json()
 ravi_key = added.get_json()["key"]

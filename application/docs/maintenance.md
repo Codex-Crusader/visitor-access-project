@@ -78,7 +78,7 @@ WhatsApp delivers it only if the guard wrote to the app's number in the last
 1. Open `<address>/gate`.
 2. Type your gate key. The page asks for it once on each phone. Under the
    lists, the page names the guard whose key it uses.
-   - If the admin made a key for you alone and you lost it, send `KEY` from
+   - If you lost the key that the admin made for you alone, send `KEY` from
      your phone to the app's WhatsApp number. You get a new key, and the old
      one stops.
    - If you use the shared gate desk key and do not know it, tap "Forgot gate
@@ -133,15 +133,15 @@ WhatsApp stays in the guard's chat.
 
 ### When the gate says no
 
-| The gate says          | Do this                                     |
-|------------------------|---------------------------------------------|
-| Not approved yet       | Do not let the visitor in. Ask them to wait |
-| Declined               | Do not let the visitor in                   |
-| Pass expired           | Do not let them in. Ask for a new request   |
-| ... is the exit code   | Ask for the entry code                      |
-| This pass is closed    | The visit is over. The code is dead         |
-| Take a photo of the visitor first | Tap "Take a photo of the visitor". If the page has no photo button, reload the page |
-| Wrong gate key         | With your own key: send `KEY` from your phone. With the shared key: tap "Forgot gate key?" |
+| The gate says                     | Do this                                                                                    |
+|-----------------------------------|--------------------------------------------------------------------------------------------|
+| Not approved yet                  | Do not let the visitor in. Ask them to wait                                                |
+| Declined                          | Do not let the visitor in                                                                  |
+| Pass expired                      | Do not let them in. Ask for a new request                                                  |
+| ... is the exit code              | Ask for the entry code                                                                     |
+| This pass is closed               | The visit is over. The code is dead                                                        |
+| Take a photo of the visitor first | Tap "Take a photo of the visitor". If the page has no photo button, reload the page        |
+| Wrong gate key                    | With your own key: send `KEY` from your phone. With the shared key: tap "Forgot gate key?" |
 
 ## Admin
 
@@ -216,17 +216,17 @@ the gate desk. A removed guard who knows the shared key can still use it.
 One phone number can be an approver and a guard at the same time, so each
 job has its own word.
 
-| You send      | What happens                                                |
-|---------------|-------------------------------------------------------------|
-| `VR-4022`     | Shows the pass by its reference                             |
-| `KT-4821`     | Shows the pass and the next step for that code              |
-| `YES VR-4022` | Approves the request                                        |
-| `NO VR-4022`  | Declines the request                                        |
-| `IN KT-4821`  | With the entry code: asks for a photo of the visitor        |
-| a photo       | Records the entry for the last `IN`                         |
-| `OUT RM-0937` | With the exit code: records the exit                        |
+| You send      | What happens                                                                                                    |
+|---------------|-----------------------------------------------------------------------------------------------------------------|
+| `VR-4022`     | Shows the pass by its reference                                                                                 |
+| `KT-4821`     | Shows the pass and the next step for that code                                                                  |
+| `YES VR-4022` | Approves the request                                                                                            |
+| `NO VR-4022`  | Declines the request                                                                                            |
+| `IN KT-4821`  | With the entry code: asks for a photo of the visitor                                                            |
+| a photo       | Records the entry for the last `IN`                                                                             |
+| `OUT RM-0937` | With the exit code: records the exit                                                                            |
 | `KEY`         | From `GUARD` or `ADMIN_PHONE`: sends back that number's key. From another guard: makes a new key for that guard |
-| anything else | Sends back the requests that wait for you                   |
+| anything else | Sends back the requests that wait for you                                                                       |
 
 A reference can also be typed as `VR4022`, `VR 4022` or `4022`. The app
 ignores every number that is not an approver, a guard or `ADMIN_PHONE`.
@@ -298,7 +298,7 @@ step.
 
 ### Roll back
 
-Render can deploy an older version from the Deploys page with Rollback. Do
+To put back an older version, click Rollback next to it on Render. Do
 not roll back to a version from before 5 October 2026 (commit `ecf09e0`).
 Those versions do not know the status `expired`. The gate and WhatsApp then
 fail on every expired pass.
@@ -332,8 +332,8 @@ npx eslint static test_form.js
    different key, each visit names the guard who let the visitor in, and
    each guard gets one message for each approval.
 3. `test_form.js` loads the three pages in a real DOM with jsdom.
-4. `ruff` and `eslint` are the linters. Their settings files say why each
-   rule that is off is off. The important one is `no-implicit-globals`. The
+4. `ruff` and `eslint` are the linters. Their settings files give the reason
+   for each rule that they turn off. The important one is `no-implicit-globals`. The
    pages have no build step, so each button calls a global function from an
    `onclick` attribute.
 
@@ -451,34 +451,35 @@ so work that became due while the server slept is done on wake.
 
 ### Fixed times in the code
 
-| Name            | File             | Value | What it sets                               |
-|-----------------|------------------|-------|--------------------------------------------|
-| `PHOTO_MINUTES` | `app.py`         | 10    | Minutes the guard has to send the photo    |
-| `LONG_HOURS`    | `static/gate.js` | 8     | Hours inside before the row turns yellow   |
-| `IDLE_SECONDS`  | `app.py`         | 3600  | The longest sleep of the background timer  |
+| Name            | File             | Value | What it sets                              |
+|-----------------|------------------|-------|-------------------------------------------|
+| `PHOTO_MINUTES` | `app.py`         | 10    | Minutes the guard has to send the photo   |
+| `LONG_HOURS`    | `static/gate.js` | 8     | Hours inside before the row turns yellow  |
+| `IDLE_SECONDS`  | `app.py`         | 3600  | The longest sleep of the background timer |
 
 ### The database connections
 
 On the server, two database connections stay open. A request waits 5 seconds
 at most for a connection. A read whose connection breaks runs once more. A
-write never runs twice, because its COMMIT can land when the reply is lost.
+change to the database never runs twice, because its COMMIT can land when
+the reply is lost.
 
 ### How the work grows
 
 In this table, n is the number of stored visits. k is the number of rows
 that an operation returns or changes.
 
-| Work                              | Cost            | How                                         |
-|-----------------------------------|-----------------|---------------------------------------------|
-| Visitor status check, every 3 s   | O(log n)        | One query on the token index                |
-| Look up a pass by its code        | O(log n)        | One query on the code key                   |
-| Decide, enter, exit               | O(log n)        | One UPDATE that returns the new row         |
-| Background round, when work is due| O(log n + k)    | Indexes on status and time                  |
-| Gate board, every 30 s            | O(log n + k)    | Index on status and request time            |
-| One admin page, first or fiftieth | O(log n + 50)   | Starts after the last row of the last page  |
-| Admin counts by status            | O(n)            | One pass over an index                      |
-| Admin search                      | O(n) at worst   | Reads rows until the page is full           |
-| CSV export                        | O(n)            | It returns every row                        |
+| Work                               | Cost          | How                                        |
+|------------------------------------|---------------|--------------------------------------------|
+| Visitor status check, every 3 s    | O(log n)      | One query on the token index               |
+| Look up a pass by its code         | O(log n)      | One query on the code key                  |
+| Decide, enter, exit                | O(log n)      | One UPDATE that returns the new row        |
+| Background round, when work is due | O(log n + k)  | Indexes on status and time                 |
+| Gate board, every 30 s             | O(log n + k)  | Index on status and request time           |
+| One admin page, first or fiftieth  | O(log n + 50) | Starts after the last row of the last page |
+| Admin counts by status             | O(n)          | One pass over an index                     |
+| Admin search                       | O(n) at worst | Reads rows until the page is full          |
+| CSV export                         | O(n)          | It returns every row                       |
 
 A reference has four digits, so there are 9,000 references. Keep
 `RETAIN_DAYS` multiplied by the visits in one day well under 9,000, or a new
@@ -489,20 +490,20 @@ production. The retention period keeps n small, so the search stays fast.
 
 ## When something fails
 
-| You see                                             | Do this                                                 |
-|-----------------------------------------------------|---------------------------------------------------------|
-| Error 190 in the log                                | The Meta token expired. Make a new permanent token      |
-| Error 131030                                        | The number is not on the Meta recipient list. Add it    |
-| Error 132001                                        | The template does not exist or is not approved yet      |
-| `could not deliver` with error 131047               | The 24-hour window. Make sure the template is in use    |
-| `Approval template refused`                         | The template is missing or waits for Meta's review      |
-| The reply never changes the page                    | Check the Callback URL and the `messages` subscription |
-| The webhook answers 403                             | `META_APP_SECRET` does not match the Meta app           |
-| The gate page says "Wrong gate key"                 | Tap "Forgot gate key?", or send `KEY` from the gate desk |
-| The admin page says it is locked                    | Set `ADMIN_KEY`, different from `GATE_KEY`              |
-| All visitors get "Too many requests"                | Set `BEHIND_PROXY=true` on Render                       |
-| The Tests workflow is red                           | Do not deploy. Read the failed check in the run         |
-| The Uptime workflow is red                          | Read "The uptime check" above                           |
+| You see                               | Do this                                                  |
+|---------------------------------------|----------------------------------------------------------|
+| Error 190 in the log                  | The Meta token expired. Make a new permanent token       |
+| Error 131030                          | The number is not on the Meta recipient list. Add it     |
+| Error 132001                          | The template does not exist or is not approved yet       |
+| `could not deliver` with error 131047 | The 24-hour window. Make sure the template is in use     |
+| `Approval template refused`           | The template is missing or waits for Meta's review       |
+| The reply never changes the page      | Check the Callback URL and the `messages` subscription   |
+| The webhook answers 403               | `META_APP_SECRET` does not match the Meta app            |
+| The gate page says "Wrong gate key"   | Tap "Forgot gate key?", or send `KEY` from the gate desk |
+| The admin page says it is locked      | Set `ADMIN_KEY`, different from `GATE_KEY`               |
+| All visitors get "Too many requests"  | Set `BEHIND_PROXY=true` on Render                        |
+| The Tests workflow is red             | Do not deploy. Read the failed check in the run          |
+| The Uptime workflow is red            | Read "The uptime check" above                            |
 
 Meta reports a lost message later, through the webhook. The app writes each
 one to the log as `WhatsApp could not deliver to <number>: error <code>`.

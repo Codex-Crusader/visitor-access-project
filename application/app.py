@@ -225,7 +225,9 @@ def gate_guard():
     key = request.headers.get("X-Gate-Key", "")
     if hmac.compare_digest(key, config.GATE_KEY):
         return DESK_KEY
-    guard = db.guard_by_key(key) if key else None
+    if not key:
+        return None
+    guard = db.guard_by_key(key)
     return guard_label(guard) if guard else None
 
 
@@ -456,6 +458,12 @@ _meta_check = {"at": 0.0, "ok": False}
 _meta_lock = threading.Lock()
 
 
+def forget_meta_check():
+    """Make the next health check ask Meta again. The tests call this."""
+    with _meta_lock:
+        _meta_check.update(at=0.0, ok=False)
+
+
 def whatsapp_ok():
     """True when Meta accepts the token. Asked at most once an hour, because the
     health address is public and must not send a call to Meta on every hit."""
@@ -514,7 +522,7 @@ def create_request():
         db.delete(visit["reference"])
         app.logger.error("WhatsApp send failed: %s", sending_failed)
         return jsonify(error="Could not reach the approver. Try again."), 502
-    # The new request brings new deadlines, so the timer works out its next round again.
+    # The new request brings new deadlines, so the timer works out when to run next.
     wake.set()
     return jsonify(visitor_view(visit)), 201
 
@@ -1105,7 +1113,7 @@ def escalate_due():
     table = db.approver_table()
     for visit in db.due_for_escalation():
         if visit["status"] != db.PENDING:
-            continue  # expired: nobody needs to be asked any more
+            continue  # expired: nobody needs to be asked now
         try:
             approvers = db.approvers_for(table, visit["reason"])
             log_template_problem(whatsapp.notify_backup(visit, approvers))

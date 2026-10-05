@@ -164,11 +164,11 @@ print("  20 guards added at once -> 20 unique keys")
 
 # --- The same twenty race one entry, each with their own key ---
 def fresh_approved(count):
-    made = [client.post("/api/requests", json=payload) for _ in range(count)]
-    refs = [r.get_json()["reference"] for r in made]
-    for ref in refs:
+    answers = [client.post("/api/requests", json=payload) for _ in range(count)]
+    new_refs = [r.get_json()["reference"] for r in answers]
+    for ref in new_refs:
         db.decide(ref, db.APPROVED, db.BY_MAIN)
-    return refs
+    return new_refs
 
 target = fresh_approved(1)[0]
 entry = db.codes_of(target)["entry"]

@@ -7,13 +7,13 @@ the people who decide about the campus. To set up the app, read
 
 ## Who can see what
 
-| Who                      | How                         | Sees                                                 |
-|--------------------------|-----------------------------|------------------------------------------------------|
-| A visitor                | Their own private link      | Their own request, its status and its current code   |
-| An approver              | WhatsApp, from their number | The requests of their own reasons, and any pass they look up |
-| A guard                  | Their own key, or the shared gate key | Open passes, the gate lists, the gate's CSV log, and a WhatsApp message for each approval |
-| The admin                | The admin key               | Every request, who decided it, which guard let the visitor in and out, the gate page photos, the approver numbers and the guards |
-| Anybody on the internet  | The public pages            | The forms, the gate desk number, and the health result |
+| Who                     | How                                   | Sees                                                                                                                             |
+|-------------------------|---------------------------------------|----------------------------------------------------------------------------------------------------------------------------------|
+| A visitor               | Their own private link                | Their own request, its status and its current code                                                                               |
+| An approver             | WhatsApp, from their number           | The requests of their own reasons, and any pass they look up                                                                     |
+| A guard                 | Their own key, or the shared gate key | Open passes, the gate lists, the gate's CSV log, and a WhatsApp message for each approval                                        |
+| The admin               | The admin key                         | Every request, who decided it, which guard let the visitor in and out, the gate page photos, the approver numbers and the guards |
+| Anybody on the internet | The public pages                      | The forms, the gate desk number, and the health result                                                                           |
 
 The gate key opens the full CSV log, with every visitor's name, phone number
 and address. Give it only to the people at the gate.
@@ -46,12 +46,12 @@ of 20 random characters or more.
 
 A visit has four identifiers. Each one does one job.
 
-| Identifier  | Example                  | Who has it      | What it can do                         |
-|-------------|--------------------------|-----------------|----------------------------------------|
-| Reference   | `VR-4022`                | Approvers, gate | Names the request. Opens nothing alone |
-| Entry code  | `KT-4821`                | The visitor     | Records the entry, with the gate key   |
-| Exit code   | `RM-0937`                | The visitor     | Records the exit, with the gate key    |
-| Token       | 22 random characters     | The visitor     | Reads the visitor's own request        |
+| Identifier | Example              | Who has it      | What it can do                         |
+|------------|----------------------|-----------------|----------------------------------------|
+| Reference  | `VR-4022`            | Approvers, gate | Names the request. Opens nothing alone |
+| Entry code | `KT-4821`            | The visitor     | Records the entry, with the gate key   |
+| Exit code  | `RM-0937`            | The visitor     | Records the exit, with the gate key    |
+| Token      | 22 random characters | The visitor     | Reads the visitor's own request        |
 
 1. The reference has only 9,000 values, so it is not a secret. At the gate,
    it shows who the visitor is and records nothing.
@@ -101,13 +101,13 @@ on the gate page and on WhatsApp.
 
 Every answer from the server has these headers:
 
-| Header                      | What it does                                          |
-|-----------------------------|-------------------------------------------------------|
-| `Content-Security-Policy`   | Loads scripts, styles and data only from this server  |
-| `X-Frame-Options`           | Stops another site from showing a page in a frame     |
-| `X-Content-Type-Options`    | Stops the browser from guessing the file type         |
-| `Referrer-Policy`           | Sends no address to other sites                       |
-| `Strict-Transport-Security` | Makes the browser use HTTPS for one year              |
+| Header                      | What it does                                                                                                                      |
+|-----------------------------|-----------------------------------------------------------------------------------------------------------------------------------|
+| `Content-Security-Policy`   | Loads scripts, styles and data only from this server                                                                              |
+| `X-Frame-Options`           | Stops another site from showing a page in a frame                                                                                 |
+| `X-Content-Type-Options`    | Stops the browser from guessing the file type                                                                                     |
+| `Referrer-Policy`           | Sends no address to other sites                                                                                                   |
+| `Strict-Transport-Security` | Makes the browser use HTTPS for one year                                                                                          |
 | `Permissions-Policy`        | Turns off the camera, microphone, location and payment. The gate photo uses the phone's own camera app, which this does not block |
 
 The content policy allows inline scripts (`'unsafe-inline'`). The buttons on
@@ -121,11 +121,11 @@ Excel and Sheets run such a cell as a formula, so a name such as
 
 ## Limits on requests
 
-| Limit                         | Value                                    |
-|-------------------------------|------------------------------------------|
-| New requests                  | `REQUESTS_PER_HOUR` from one address, 60 |
-| "Forgot key?"                 | 3 from one address, 10 in total, each hour, for each key |
-| The health address            | 30 from one address each minute          |
+| Limit              | Value                                                    |
+|--------------------|----------------------------------------------------------|
+| New requests       | `REQUESTS_PER_HOUR` from one address, 60                 |
+| "Forgot key?"      | 3 from one address, 10 in total, each hour, for each key |
+| The health address | 30 from one address each minute                          |
 
 People on one campus Wi-Fi share one address, so the request limit is for a
 group, not one person. Raise it if a class tests the app at once.
@@ -175,12 +175,12 @@ protected device, and delete them after the retention period.
 
 ## Secrets
 
-| Secret                   | Keep it in                                  |
-|--------------------------|---------------------------------------------|
-| `DATABASE_URL`           | Render Environment and your own `.env` only |
-| `META_TOKEN`             | Render Environment and your own `.env` only |
-| `META_APP_SECRET`        | Render Environment and your own `.env` only |
-| `GATE_KEY`, `ADMIN_KEY`  | Render Environment, and the people who need them |
+| Secret                  | Keep it in                                       |
+|-------------------------|--------------------------------------------------|
+| `DATABASE_URL`          | Render Environment and your own `.env` only      |
+| `META_TOKEN`            | Render Environment and your own `.env` only      |
+| `META_APP_SECRET`       | Render Environment and your own `.env` only      |
+| `GATE_KEY`, `ADMIN_KEY` | Render Environment, and the people who need them |
 
 Never put a secret in git, in a chat or in a screenshot. `.gitignore` keeps
 `.env` out of git. If a secret leaks, change it at its source, then in Render.

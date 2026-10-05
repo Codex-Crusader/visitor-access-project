@@ -2,11 +2,11 @@
 
 > ## Documentation
 >
-> | Document                                  | Read it to                                               |
-> |-------------------------------------------|----------------------------------------------------------|
-> | [docs/setup.md](docs/setup.md)             | Set up a new copy, and learn each setting                |
-> | [docs/maintenance.md](docs/maintenance.md) | Use the app each day, and deploy, watch and repair it    |
-> | [docs/safety.md](docs/safety.md)           | Know what the app protects, and its known limits         |
+> | Document                                   | Read it to                                            |
+> |--------------------------------------------|-------------------------------------------------------|
+> | [docs/setup.md](docs/setup.md)             | Set up a new copy, and learn each setting             |
+> | [docs/maintenance.md](docs/maintenance.md) | Use the app each day, and deploy, watch and repair it |
+> | [docs/safety.md](docs/safety.md)           | Know what the app protects, and its known limits      |
 
 A visitor fills in a web form. The server sends the details to an approver on
 WhatsApp. The approver replies YES or NO. The visitor sees the decision on the
@@ -67,23 +67,23 @@ gate sees only its times.
 
 ## The API
 
-| Address                               | Key            | Does                                     |
-|---------------------------------------|----------------|------------------------------------------|
-| `POST /api/requests`                  | none           | Makes a request                          |
-| `GET /api/visit/<token>`              | the token      | The visitor's own request                |
-| `GET /api/config`                     | none           | The settings that the visitor page shows |
-| `GET /api/health`                     | none           | 200 or 503, for the uptime check         |
-| `GET /api/pass/<code or reference>`   | `X-Gate-Key`   | Shows a pass at the gate                 |
-| `POST /api/pass/<code>/<action>`      | `X-Gate-Key`   | Records an entry or an exit              |
-| `GET /api/gate/board`                 | `X-Gate-Key`   | The Inside now and Expected lists        |
-| `GET /api/export.csv`                 | `X-Gate-Key`   | The whole visit log                      |
-| `GET /api/admin/visits`               | `X-Admin-Key`  | One page of requests, newest first       |
-| `GET /api/admin/summary`              | `X-Admin-Key`  | Counts, approvers and rules              |
-| `POST /api/admin/approvers`           | `X-Admin-Key`  | Changes one reason's two approvers       |
-| `GET /api/admin/export.csv`           | `X-Admin-Key`  | The whole visit log                      |
-| `POST /api/forgot-key/<which>`        | none           | Sends a key to its fixed WhatsApp number |
-| `GET /webhook/whatsapp`               | verify token   | Meta's one-time check of the address     |
-| `POST /webhook/whatsapp`              | Meta signature | Replies and photos from WhatsApp         |
+| Address                             | Key            | Does                                     |
+|-------------------------------------|----------------|------------------------------------------|
+| `POST /api/requests`                | none           | Makes a request                          |
+| `GET /api/visit/<token>`            | the token      | The visitor's own request                |
+| `GET /api/config`                   | none           | The settings that the visitor page shows |
+| `GET /api/health`                   | none           | 200 or 503, for the uptime check         |
+| `GET /api/pass/<code or reference>` | `X-Gate-Key`   | Shows a pass at the gate                 |
+| `POST /api/pass/<code>/<action>`    | `X-Gate-Key`   | Records an entry or an exit              |
+| `GET /api/gate/board`               | `X-Gate-Key`   | The Inside now and Expected lists        |
+| `GET /api/export.csv`               | `X-Gate-Key`   | The whole visit log                      |
+| `GET /api/admin/visits`             | `X-Admin-Key`  | One page of requests, newest first       |
+| `GET /api/admin/summary`            | `X-Admin-Key`  | Counts, approvers and rules              |
+| `POST /api/admin/approvers`         | `X-Admin-Key`  | Changes one reason's two approvers       |
+| `GET /api/admin/export.csv`         | `X-Admin-Key`  | The whole visit log                      |
+| `POST /api/forgot-key/<which>`      | none           | Sends a key to its fixed WhatsApp number |
+| `GET /webhook/whatsapp`             | verify token   | Meta's one-time check of the address     |
+| `POST /webhook/whatsapp`            | Meta signature | Replies and photos from WhatsApp         |
 
 In `/api/pass/<code>/<action>`, the action is `entry` or `exit`. In
 `/api/forgot-key/<which>`, it is `gate` or `admin`. The pages are `/` for the
