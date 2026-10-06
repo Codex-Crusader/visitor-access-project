@@ -19,3 +19,4 @@ ignore = [
 # cannot all sit at the top of the file.
 "test_app.py" = ["E402", "I001"]
 "test_concurrency.py" = ["E402", "I001"]
+"tools/screenshots.py" = ["E402", "I001"]

@@ -369,6 +369,30 @@ both linters, and ends with a list of what passed. Each line must say
 To use another Postgres for the tests, set `TEST_DATABASE_URL`. The tests
 write and delete rows, so never point it at the live database.
 
+## The README pictures
+
+The README at the repository root shows six pictures of the app. When a
+screen changes, take the pictures again. The script starts the app on your
+machine with an empty test Postgres, fake settings and five made-up visitors.
+It sends no WhatsApp message and does not touch the live database. It drives
+Google Chrome, so Chrome must be installed. Install the playwright package
+once.
+
+```
+.venv\Scripts\python.exe -m pip install pgserver playwright==1.63.0
+```
+
+Then run the script. It saves the six pictures in the `pictures` folder, which
+git ignores.
+
+```
+.venv\Scripts\python.exe tools\screenshots.py
+```
+
+Look at each picture. Copy the pictures that changed into the `images` folder
+at the repository root, with the same names. If a picture shows something
+new, update its alt text in the README.
+
 ## The uptime check
 
 The workflow Uptime opens `<address>/api/health` every hour from 08:30 to
