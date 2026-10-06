@@ -243,6 +243,19 @@ def normalize_gate_code(text):
     return f"{found.group(1)}-{found.group(2)}"
 
 
+def first_code(words, normalize):
+    """The code in the words after YES, NO, IN or OUT, or None.
+
+    All the words joined come first, for KT 4821. Then the first two and the
+    first one, so a word after the code, as in YES VR-40221 ok, is left out.
+    """
+    for count in (len(words), 2, 1):
+        found = normalize("".join(words[:count]))
+        if found:
+            return found
+    return None
+
+
 def read_reply(body):
     """Work out what the sender wants.
 
@@ -263,10 +276,12 @@ def read_reply(body):
     if word in DECIDE_WORDS:
         # A reference that does not read as one goes on as typed, so the reply
         # names it. It must never fall back to the one request waiting.
-        return "decide", DECIDE_WORDS[word], normalize_reference(rest) or rest.upper() or None
+        key = first_code(parts[1:], normalize_reference)
+        return "decide", DECIDE_WORDS[word], key or rest.upper() or None
     if word in GATE_WORDS:
         # Whatever was typed goes on, so a wrong code is named in the reply.
-        return "gate", GATE_WORDS[word], normalize_gate_code(rest) or rest.upper() or None
+        key = first_code(parts[1:], normalize_gate_code)
+        return "gate", GATE_WORDS[word], key or rest.upper() or None
 
     whole = "".join(parts)
     key = normalize_reference(whole) or normalize_gate_code(whole)

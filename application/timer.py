@@ -113,7 +113,8 @@ def background_loop():
                 log.info("Deleted %s visit records past retention", removed)
             wait = seconds_to_next_round()
         except Exception as failure:
-            log.error("Background work failed: %s", failure)
+            # Unexpected, so the log keeps the traceback to find the line.
+            log.exception("Background work failed: %s", failure)
         wake.wait(wait)
         wake.clear()
         if stopping.is_set():

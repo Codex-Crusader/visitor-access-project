@@ -680,6 +680,13 @@ for typo in ("VR-40222", "VR 99", "please"):
 for typed in ("YES VR 4022", "YES vr4022", "YES 4022"):
     assert whatsapp.read_reply(typed) == ("decide", db.APPROVED, "VR-4022"), typed
 assert whatsapp.read_reply("YES") == ("decide", db.APPROVED, None)
+# A word after the code is left out, so a polite reply still works.
+assert whatsapp.read_reply("Yes VR-40221 ok thanks") == ("decide", db.APPROVED, "VR-40221")
+assert whatsapp.read_reply("no 40221 sorry") == ("decide", db.DECLINED, "VR-40221")
+assert whatsapp.read_reply("IN KT 4821 now") == ("gate", db.ENTRY, "KT-4821")
+assert whatsapp.read_reply("out rm-0937 done") == ("gate", db.EXIT, "RM-0937")
+# A reference that does not read is still named as typed.
+assert whatsapp.read_reply("YES VR 99 ok") == ("decide", db.APPROVED, "VR99OK")
 
 print("escalation never decides, it only asks again")
 with db.connect() as conn:
@@ -814,7 +821,9 @@ def starts_with(**settings):
 assert starts_with()[0], "the test settings start"
 for changes, says in (({"ALLOW_UNSIGNED_WEBHOOK": ""}, "META_APP_SECRET"),
                       ({"GATE_KEY": "short"}, "20 characters"),
-                      ({"GATE_KEY": "change-me-to-something-random"}, ".env.example")):
+                      ({"GATE_KEY": "change-me-to-something-random"}, ".env.example"),
+                      ({"APPROVERS": "{Delivery: +911}"}, "APPROVERS is not valid JSON"),
+                      ({"APPROVERS": '["+911"]'}, "APPROVERS must be a JSON object")):
     started, error = starts_with(**changes)
     assert not started and says in error, (changes, error[-300:])
 assert starts_with(ALLOW_UNSIGNED_WEBHOOK="", META_APP_SECRET="a-real-secret")[0]
@@ -1450,6 +1459,27 @@ finally:
     config.BEHIND_PROXY = False
     limits.forget_hits()
 assert codes == [200] * 10 + [429], codes
+
+# Behind Render, the visitor is the True-Client-IP that Cloudflare sets. The
+# last X-Forwarded-For entry is one of Render's proxies, so it must not decide.
+config.BEHIND_PROXY = True
+try:
+    with application.app.test_request_context(headers={
+            "True-Client-IP": "203.0.113.7",
+            "X-Forwarded-For": "198.51.100.1, 203.0.113.7, 172.70.1.1, 10.1.2.3"}):
+        assert limits.caller() == "203.0.113.7", limits.caller()
+    with application.app.test_request_context(headers={"X-Forwarded-For": "1.1.1.1, 10.1.2.3"}):
+        assert limits.caller() == "10.1.2.3", "without the header, the last entry still counts"
+    # One visitor behind many Render proxies is one caller.
+    for proxy in range(31):
+        status = client.get("/api/health", headers={
+            "True-Client-IP": "203.0.113.9", "X-Forwarded-For": f"203.0.113.9, 10.0.0.{proxy}"}
+        ).status_code
+    assert status == 429, "31 health checks a minute from one visitor are refused"
+finally:
+    config.BEHIND_PROXY = False
+    limits.forget_hits()
+print("  behind Render, the visitor is True-Client-IP, not the proxy")
 # KEY on WhatsApp answers only the numbers that hold a key.
 gate_only = say(APPROVER, "KEY")
 assert "test-gate-key-long-enough" in gate_only and "test-admin-key-long-enough" not in gate_only

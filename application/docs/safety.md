@@ -132,11 +132,15 @@ Excel and Sheets run such a cell as a formula, so a name such as
 People on one campus Wi-Fi share one address, so the request limit is for a
 group, not one person. Raise it if a class tests the app at once.
 
-`BEHIND_PROXY` tells the app where to read the caller's address. On Render, a
-proxy adds the real address to the end of `X-Forwarded-For`, and the app
-reads the last entry. On your own machine, nothing sets that header, and
-trust in it lets anyone invent an address. Set it to `true` only behind a
-proxy.
+`BEHIND_PROXY` tells the app where to read the caller's address. On Render,
+Cloudflare sits in front of Render's own proxies. Cloudflare puts the
+visitor's address in the `True-Client-IP` header, and it replaces a value
+that the visitor sent, so the app reads that header. The last entry of
+`X-Forwarded-For` is one of Render's internal proxies. It changes from call
+to call, so it cannot identify a visitor. The app uses it only when
+`True-Client-IP` is missing. On your own machine, nothing sets these
+headers, and trust in them lets anyone invent an address. Set
+`BEHIND_PROXY` to `true` only behind a proxy.
 
 ## Privacy
 

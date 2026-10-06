@@ -64,7 +64,14 @@ def _approvers():
     raw = os.getenv("APPROVERS", "").strip()
     if not raw:
         return table
-    for reason, numbers in json.loads(raw).items():
+    example = 'Write it like {"Delivery": ["+91...", "+91..."]}.'
+    try:
+        given = json.loads(raw)
+    except ValueError:
+        raise RuntimeError(f"APPROVERS is not valid JSON. {example}") from None
+    if not isinstance(given, dict):
+        raise RuntimeError(f"APPROVERS must be a JSON object. {example}")
+    for reason, numbers in given.items():
         if reason not in table:
             raise RuntimeError(f"APPROVERS names {reason!r}, which is not one of {REASONS}")
         if isinstance(numbers, str):
@@ -179,9 +186,10 @@ PASS_HOURS = _int("PASS_HOURS", 48)
 # Counted per IP address. People on one campus Wi-Fi share an address, so this
 # has to be generous enough for a whole group, not one person.
 REQUESTS_PER_HOUR = _int("REQUESTS_PER_HOUR", 60)
-# True when a proxy such as Render sits in front and sets X-Forwarded-For.
-# Leave it false on your own machine, where nothing sets that header and
-# trusting it would let anyone fake their address.
+# True when a proxy such as Render sits in front and sets True-Client-IP or
+# X-Forwarded-For, see limits.caller(). Leave it false on your own machine,
+# where nothing sets those headers and trusting them would let anyone fake
+# their address.
 BEHIND_PROXY = _flag("BEHIND_PROXY")
 
 # The Postgres connection string, such as Neon's. Visits live there, so they

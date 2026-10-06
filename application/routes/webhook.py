@@ -167,7 +167,8 @@ def whatsapp_reply():
     try:
         answer = answer_message(sender, text, photo, table, guard)
     except Exception as failure:
-        log.error("Could not handle a WhatsApp message: %s", failure)
+        # Unexpected, so the log keeps the traceback to find the line.
+        log.exception("Could not handle a WhatsApp message: %s", failure)
         answer = "Something went wrong on the server. Send that again."
 
     if answer:

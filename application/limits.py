@@ -22,13 +22,20 @@ KEEP_SECONDS = 3600  # the longest window any limit uses
 def caller():
     """The address to count against.
 
-    Proxies append to X-Forwarded-For, so the last entry is the one our own
-    proxy saw. Reading the first entry instead would let anyone invent an
-    address and get a fresh allowance on every request.
+    On Render, Cloudflare sits in front of Render's own proxies. Cloudflare
+    puts the visitor's address in True-Client-IP and replaces a value the
+    visitor sent. The last X-Forwarded-For entry is one of Render's internal
+    proxies, which changes from call to call, so it counted proxies, not
+    visitors. Without True-Client-IP, that last entry is still the safest:
+    the first one is whatever the visitor chose to send.
     """
-    forwarded = request.headers.get("X-Forwarded-For", "")
-    if forwarded and config.BEHIND_PROXY:
-        return forwarded.split(",")[-1].strip()
+    if config.BEHIND_PROXY:
+        visitor = request.headers.get("True-Client-IP", "").strip()
+        if visitor:
+            return visitor
+        forwarded = request.headers.get("X-Forwarded-For", "")
+        if forwarded:
+            return forwarded.split(",")[-1].strip()
     return request.remote_addr or "?"
 
 
