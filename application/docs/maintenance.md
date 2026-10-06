@@ -19,12 +19,17 @@ new copy, read [setup.md](setup.md). For security and privacy, read
 
 1. Open `<address>` on your phone.
 2. Tap Request a Visit.
-3. Fill in your name, phone number and address, then tap Continue.
+3. Fill in your name, phone number and address, then tap Continue. A phone
+   number has 10 digits. A visitor from abroad types `+` and the country
+   code, such as `+44 7911 123456`.
 4. Pick the reason for the visit, and type the person you visit. For See an
    office, pick the office from the list.
 5. To add the people who come with you, tap Add a person and type a name.
    Tap Add another person for each next name, up to 10 people. Tap Review.
-6. Read the details, then tap Send request. Keep the page open.
+6. Read the details, then tap Send request. Keep the page open. If the page
+   says the request was not sent, tap Send request again: if the first one
+   did reach the server, you get that request back, and the approver is not
+   asked twice.
 7. Wait for the decision. The page shows it a few seconds after the reply.
 8. If the request is approved, tap Open pass, and show the entry code to the
    guard.
@@ -58,7 +63,8 @@ the app answers "No request has reference" and decides nothing. Send any other m
 for you.
 
 If you do not answer in 15 minutes, the backup approver gets the same
-request. The first reply decides. A reply after that changes nothing.
+request. If you have no backup, you get a reminder instead. The first reply
+decides. A reply after that changes nothing.
 
 If the request was made between 10:00 and 17:00, Monday to Saturday, and no
 one answers in 30 minutes, the app approves it. Both approvers get a message
@@ -89,15 +95,16 @@ WhatsApp delivers it only if the guard wrote to the app's number in the last
      key?". The app sends the key to the gate desk WhatsApp. If it does not
      arrive, send `KEY` from the gate desk phone to the app's WhatsApp
      number.
-3. Type the code on the visitor's pass, and tap Check. Small letters and
-   spaces are correct, for example `kt 4821`.
+3. Type the code on the visitor's pass, and tap "Check the pass". Small
+   letters and spaces are correct, for example `kt 4821`. For a staff
+   member, see "The allow list" below.
 4. If the pass is approved, tap "Take a photo of the visitor". The phone
    camera opens. Take the photo of the visitor's face.
 5. Make sure that the photo on the screen shows the visitor, then tap Record
    entry. Record entry does not work without a photo. To take the photo
    again, tap "Take the photo again".
-6. When the visitor leaves, type the exit code, tap Check, then tap
-   Record exit.
+6. When the visitor leaves, type the exit code, tap "Check the pass", then
+   tap Record exit.
 7. Tap Next visitor to clear the screen.
 
 The page shows two lists:
@@ -155,20 +162,26 @@ a request. Each one has a 7-digit allow list code.
 1. The person says their code to you.
 2. On WhatsApp, send the code, for example `4569918`. You can also send
    `IN 4569918`. The entry is recorded at once.
-3. On the gate page, type the code and tap Check. The page shows the name.
-   Tap Record entry.
-4. Read the name in the reply. If it is not the person in front of you, do
-   not let them in, and tell the admin.
+3. On the gate page, tap Staff code at the top. The phone shows the number
+   keypad. Type the code and tap "Check the staff code". The page shows the
+   name in large letters, with their tag, such as their department. Tap
+   Record entry. A code typed in the Visitor pass mode works too.
+4. Read the name. If it is not the person in front of you, do not let them
+   in, and tell the admin.
+5. Tap Next person. The page goes back to Visitor pass, for the next
+   visitor.
 
 The person gets a WhatsApp message about the entry, with the time and your
-name. The reply tells you if that message could not be sent. The admin page
+name, but not your number. The reply tells you if that message could not be sent. The admin page
 shows each entry and the guard who recorded it. The app records no exit for
 the allow list.
 
 If the same code comes again within 2 minutes, from you or from another
 guard, the reply says "Already recorded" with the first time. Nothing new is
-recorded, and no second message is sent. One guard can try 30 codes in a
-minute. After that, the reply says to wait a minute.
+recorded, and no second message is sent. One guard can try 60 codes in a
+minute. The gate page uses two of those for each person, the check and the
+entry, so a guard can take 30 people a minute. After that, the reply says
+to wait a minute.
 
 ### The blacklist
 
@@ -188,11 +201,12 @@ blacklist". A banned visitor who is inside can still leave.
    - Another admin added you: use the key they gave you. Or send `KEY` from
      your own WhatsApp to the app's number. The app replies with a new admin
      key of your own, and your old key stops.
-3. The page has seven tabs: Visits, Allow list, Offices, Approvers, Guards,
-   Admins and Blacklist. Visits opens first. The line under the title names
+3. The page has six tabs: Visits, Approvers, Allow list, Blacklist, Guards
+   and Admins. The offices are on the Approvers tab, under the reasons. Visits opens first. The line under the title names
    who is signed in.
 4. On the Visits tab, tap a tile to show only the requests with that status.
-   Waiting means pending or with the backup approver.
+   Waiting means pending, or asked again: sent to the backup, or a reminder
+   to the approver.
 5. Use the search box to find a name, phone number, reference or the person
    visited.
 6. Read the line under each name. It shows the decision and who made it, for
@@ -210,6 +224,20 @@ blacklist". A banned visitor who is inside can still leave.
 
 The admin page works on a phone and on a computer. On a phone, the tabs and
 the tiles scroll sideways, and each table row shows as a card.
+
+### Button colours
+
+The buttons have one colour for each kind of action, on the admin page and
+the gate page. Each button also says what it does, so the colour is never
+the only sign.
+
+| Colour | Means                         | For example                                     |
+|--------|-------------------------------|-------------------------------------------------|
+| Green  | Approve, or let someone in    | Approve, Record entry, Make super admin         |
+| Red    | Delete, decline or ban        | Delete, Decline, Add to the blacklist           |
+| Amber  | A key                         | New key, Change key, Change gate key            |
+| Blue   | Add, change or look           | Add guard, Tag, Change, View photo, Download log |
+| White  | Neutral                       | Refresh, Cancel, Next visitor                   |
 
 ### How the app knows who you are
 
@@ -246,15 +274,15 @@ the admin's name, and the change log keeps a line with every reference.
 
 ### Delete something
 
-Each Delete button on the Allow list, Offices, Guards, Admins and Blacklist
-tabs opens a box that asks "Are you sure?". Tap Delete to delete, or Cancel
+Each Delete button on the Approvers (offices), Allow list, Blacklist, Guards
+and Admins tabs opens a box that asks "Are you sure?". Tap Delete to delete, or Cancel
 to keep it.
 
 ### Change the approvers
 
 1. Tap the Approvers tab.
 2. Tap Change on the reason. See an office is not on this tab, because each
-   office has its own two numbers on the Offices tab.
+   office has its own two numbers, in the offices list below the reasons.
 3. Type the approver's number and the backup's number. Write each one with
    `+` and the country code, like `+919876543210`. Both are required, and
    they must be different.
@@ -265,16 +293,26 @@ can no longer decide that reason's requests, also the requests already sent
 to them. While the app uses Meta's test number, also add each new number to
 the recipient list in Meta's API Setup page.
 
+Once the app sends from the campus's own WhatsApp number (step 4 of "Before
+real use" in [setup.md](setup.md)), there is no recipient list. Every number
+on the admin page then works at once: approvers, offices, guards, admins and
+the allow list. Nobody needs the Meta page for those changes. Two Meta rules
+stay: a plain-text message reaches a person only if they wrote to the app's
+number in the last 24 hours, and the business number, the token and the
+templates are changed in Meta, not on the admin page.
+
 ### Manage the offices
 
 A visitor who picks the reason See an office then picks an office from a
 list. The request goes to that office's own approver, and to its backup if
 nobody answers in `ESCALATE_MINUTES`.
 
-1. Tap the Offices tab.
-2. Type the office's name, the approver's number and the backup's number.
-   Write each number with `+` and the country code. The two numbers must be
-   different. You can also give a tag, see "Tags on long lists".
+1. Tap the Approvers tab. The offices list is under the reasons.
+2. Type the office's name and the approver's number, with `+` and the
+   country code. A backup is a second person, who gets the request when
+   nobody answers in `ESCALATE_MINUTES`. Leave the backup empty for an office
+   with one person: the approver then gets a reminder instead. You can also
+   give a tag, see "Tags on long lists".
 3. Tap Add office. Visitors can pick it at once.
 
 To change an office's numbers, delete the office and add it again with the
@@ -284,7 +322,7 @@ office's name, and the request goes to the approvers for Other.
 
 ### Tags on long lists
 
-The Offices and Allow list tabs can hold hundreds of rows, so each office and
+The offices list and the Allow list tab can hold hundreds of rows, so each office and
 each person can have one tag, such as a building or a department. The two
 lists have their own tags.
 
@@ -586,6 +624,20 @@ both linters, and ends with a list of what passed. Each line must say
 To use another Postgres for the tests, set `TEST_DATABASE_URL`. The tests
 write and delete rows, so never point it at the live database.
 
+## The WhatsApp message list
+
+[whatsapp-messages.md](whatsapp-messages.md) shows every WhatsApp message the
+app sends, in each scenario. A tool makes it by running the app with WhatsApp
+captured, so it always matches the code. After you change a message, make it
+again:
+
+```
+.venv\Scripts\python.exe tools\whatsapp_messages.py
+```
+
+The tool stops with an error if a message is longer than WhatsApp allows, or
+if a message the app sends by itself holds a gate code.
+
 ## The README pictures
 
 The README at the repository root shows six pictures of the app. When a
@@ -739,8 +791,9 @@ campus's own rules say.
 ### The background timer
 
 The timer runs inside the server. Each round does four jobs. It approves the
-requests that are due for automatic approval, and it asks the backup approver
-about the requests that nobody answered. Then it marks old passes as expired
+requests that are due for automatic approval, and it asks again about the
+requests that nobody answered: the backup approver, or the approver with a
+reminder when there is no backup. Then it marks old passes as expired
 and deletes old records. After the round, it sleeps until the next job is due. It sleeps 30 seconds at least, so a
 failed WhatsApp message is tried again soon, and one hour at most. A new
 request wakes it early. The first round runs at once when the server starts,
@@ -791,10 +844,13 @@ starts, goes to the database.
 | Decide, enter, exit                | O(log n)      | One UPDATE that returns the new row        |
 | Background round, when work is due | O(log n + k)  | Indexes on status and time                 |
 | Gate board, every 30 s             | O(k)          | From memory, after the first query         |
+| Blacklist check, for each row      | O(1)          | One shared set of numbers, not copied      |
+| Allow list code, guard or admin key | O(1)         | One shared index, not copied               |
 | One admin page, first or fiftieth  | O(log n + 50) | Starts after the last row of the last page |
 | Admin counts by status             | O(n)          | One pass over an index                     |
 | Admin search                       | O(n) at worst | Reads rows until the page is full          |
 | CSV export                         | O(n)          | It returns every row                       |
+| Allow list or office search        | O(m)          | m people; only 200 rows go on the page     |
 
 A reference has five digits, so there are 90,000 references. A new request
 picks one at random and tries again if it is taken. The free storage fills
@@ -802,6 +858,15 @@ long before the references run out, see "The free plans". Admin search reads eve
 the word is rare. A trigram index (`pg_trgm`) can fix that, but the test
 database does not have it, and the tests must use the same schema as
 production. The retention period keeps n small, so the search stays fast.
+
+Measured on 6 October 2026, with 2,000 blacklisted numbers and 2,000 people
+on the allow list: the gate board with 60 expected visitors went from 254 ms
+to under 1 ms, and an allow list lookup from 8 ms to 0.2 ms. On the admin
+page, one search of 2,000 people went from 742 ms to 49 ms in the test
+browser. Before, each blacklist check copied the whole list, every row made
+a new date formatter, and the page drew every row. Now the lookups share one
+read-only index, the page draws 200 rows with a "Show more" button, and the
+search waits for a pause in typing.
 
 If you change rows outside the app, for example a restore in the Neon
 console, restart the service on Render. The server keeps some reads in

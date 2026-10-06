@@ -48,10 +48,19 @@ def everyone():
     return [dict(row) for row in rows]
 
 
+@db.cached(shared=True)
+@db.read
+def _keys():
+    """Every blacklisted phone key, as a set. Shared, not copied: one lookup is O(1)."""
+    with db.connect() as conn:
+        rows = conn.execute("SELECT phone_key FROM blacklist").fetchall()
+    return frozenset(row["phone_key"] for row in rows)
+
+
 def has(phone):
-    """True when this number is on the blacklist."""
+    """True when this number is on the blacklist. O(1): the gate board asks for every row."""
     key = phone_key(phone)
-    return key is not None and any(row["phone_key"] == key for row in everyone())
+    return key is not None and key in _keys()
 
 
 @db.writes
@@ -97,9 +106,10 @@ def record_attempt(phone, name, what, detail, by):
             conn.execute(
                 "INSERT INTO blocked_attempts (phone, name, what, detail, by_whom, at)"
                 " SELECT %s, %s, %s, %s, %s, %s WHERE NOT EXISTS (SELECT 1 FROM blocked_attempts"
-                " WHERE phone = %s AND what = %s AND detail = %s AND at >= %s)",
+                f" WHERE {phone_key_sql('blocked_attempts.phone')} = %s AND what = %s"
+                " AND detail = %s AND at >= %s)",
                 (phone, name, what, detail or "", by, db.now(),
-                 phone, what, detail or "", db.ago(REPEAT_MINUTES / 1440)),
+                 phone_key(phone), what, detail or "", db.ago(REPEAT_MINUTES / 1440)),
             )
     except Exception as failure:  # the person is still refused
         log.error("Could not record a blocked attempt: %s", failure)

@@ -6,9 +6,11 @@ const el = i => document.getElementById(i);
 const main = el("main");
 const ESC = {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"};
 const x = s => String(s ?? "").replace(/[&<>"']/g, c => ESC[c]);
-const when = t => t ? new Date(t).toLocaleString([], {day:"numeric", month:"short",
-  hour:"2-digit", minute:"2-digit"}) : "—";
-const day = t => new Date(t).toLocaleDateString([], {day: "numeric", month: "short", year: "numeric"});
+// One formatter each, made once: making one for every row is the slow part of a long list.
+const WHEN_FORMAT = new Intl.DateTimeFormat([], {day: "numeric", month: "short", hour: "2-digit", minute: "2-digit"});
+const DAY_FORMAT = new Intl.DateTimeFormat([], {day: "numeric", month: "short", year: "numeric"});
+const when = t => t ? WHEN_FORMAT.format(new Date(t)) : "—";
+const day = t => DAY_FORMAT.format(new Date(t));
 
 // The filters, in the order of the tiles. "waiting" is pending and escalated.
 const FILTERS = [
@@ -18,15 +20,15 @@ const FILTERS = [
 ];
 // Each status as [the pill's data-tone, the word on the pill].
 const STATUS = {
-  pending: ["wait", "Waiting"], escalated: ["wait", "With backup"],
+  pending: ["wait", "Waiting"], escalated: ["wait", "Asked again"],
   approved: ["go", "Approved"], inside: ["go", "Inside"],
   declined: ["stop", "Declined"], closed: ["done", "Closed"],
   expired: ["done", "Expired"],
 };
+// The approvers and the offices share a tab. The allow list and the blacklist sit together.
 const TABS = [
-  ["visits", "Visits"], ["staff", "Allow list"], ["offices", "Offices"],
-  ["numbers", "Approvers"], ["guards", "Guards"], ["admins", "Admins"],
-  ["blacklist", "Blacklist"],
+  ["visits", "Visits"], ["numbers", "Approvers"], ["staff", "Allow list"],
+  ["blacklist", "Blacklist"], ["guards", "Guards"], ["admins", "Admins"],
 ];
 
 // The lists with an add form and a Delete button. Each form field is [name, label, type].
@@ -37,17 +39,20 @@ const FORMS = {
           fields: [["name", "Name", "text"], PHONE, TAG]},
   offices: {prefix: "o", url: "/api/admin/offices", button: "Add office",
             fields: [["name", "Office name", "text"], ["main", "Approver", "tel"],
-                     ["backup", "Backup approver", "tel"], TAG]},
+                     ["backup", "Backup approver (you may leave it empty)", "tel"], TAG]},
   guards: {prefix: "g", url: "/api/admin/guards", button: "Add guard and make a key",
            fields: [["name", "Name", "text"], PHONE]},
   admins: {prefix: "a", url: "/api/admin/admins", button: "Add admin and make a key",
            fields: [["name", "Name", "text"], PHONE]},
-  blacklist: {prefix: "b", url: "/api/admin/blacklist", button: "Add to the blacklist",
+  blacklist: {prefix: "b", url: "/api/admin/blacklist", button: "Add to the blacklist", tone: "stop",
               fields: [["name", "Name", "text"], ["phone", "Phone number", "tel"],
                        ["reason", "Reason (you may leave it empty)", "text"]]},
 };
+// The fields a form needs. A backup approver and a ban's reason may stay empty.
 const MISSING = {name: "Type the name.", phone: "Type the phone number.",
-                 main: "Type the approver's number.", backup: "Type the backup approver's number."};
+                 main: "Type the approver's number."};
+// One person as approver and backup: the table says so, rather than the number twice.
+const backupCell = row => row.backup === row.main ? `<span class="fixed">Same as approver</span>` : x(row.backup);
 
 let section = "visits"; // the open tab
 let rows = [];
@@ -72,7 +77,9 @@ const formErrors = {staff: {}, offices: {}, guards: {}, admins: {}, blacklist: {
 let notes = {};
 let loading = false;
 // The two long lists can be cut down by tag and by search. null shows every tag, "" no tag.
-const views = {staff: {tag: null, q: ""}, offices: {tag: null, q: ""}};
+// Each shows PAGE rows at first, so a redraw costs the same for 200 or 20,000 people.
+const PAGE = 200;
+const views = {staff: {tag: null, q: "", limit: PAGE}, offices: {tag: null, q: "", limit: PAGE}};
 // Each list request gets a number. An answer to an older one is dropped.
 let asked = 0;
 let searchTimer = null;
@@ -208,7 +215,7 @@ function photoLine(v) {
     return `<span class="shot"><img src="${x(photos[v.reference])}" alt="The visitor at the gate"></span>`;
   }
   if (v.photo_stored) {
-    return ` <button class="small" data-photo="${x(v.reference)}">View photo</button><span class="shot"></span>`;
+    return ` <button class="small edit" data-photo="${x(v.reference)}">View photo</button><span class="shot"></span>`;
   }
   return v.photo_at ? " (in the guard's WhatsApp chat)" : "";
 }
@@ -265,7 +272,7 @@ async function bulkDecide(decision) {
     ? `Approve ${what}? Each guard gets one WhatsApp message with the list.`
     : `Decline ${what}? The visitors see Declined.`;
   const verb = decision === "approve" ? "Approve" : "Decline";
-  if (!(await confirmDelete(line, `${verb} ${n}`, decision === "approve" ? "" : "stop"))) return;
+  if (!(await confirmDelete(line, `${verb} ${n}`, decision === "approve" ? "go" : "stop"))) return;
   try {
     const answer = await call("/api/admin/decide", {references, decision});
     picked.clear();
@@ -297,19 +304,20 @@ function renderList() {
 
 function approverRow(a) {
   if (a.reason !== editing) {
-    return `<tr><td>${x(a.reason)}</td><td>${x(a.main)}</td><td>${x(a.backup)}</td>
-      <td class="acts"><button class="small" data-edit="${x(a.reason)}">Change</button></td></tr>`;
+    return `<tr><td>${x(a.reason)}</td><td>${x(a.main)}</td><td>${backupCell(a)}</td>
+      <td class="acts"><button class="small edit" data-edit="${x(a.reason)}">Change</button></td></tr>`;
   }
   const field = (name, label, value) => `<div>
       <label for="ap-${name}">${label}</label>
       <input id="ap-${name}" type="tel" inputmode="tel" autocomplete="off" value="${x(value)}"
         placeholder="+919876543210">
       ${fieldErrors[name] ? `<p class="err">${x(fieldErrors[name])}</p>` : ""}</div>`;
-  const typed = draft || a;
+  // The approver as their own backup shows an empty backup box.
+  const typed = draft || {...a, backup: a.backup === a.main ? "" : a.backup};
   return `<tr><td colspan="4"><b>${x(a.reason)}</b>
-      <div class="pair">${field("main", "Approver", typed.main)}${field("backup", "Backup approver", typed.backup)}</div>
+      <div class="pair">${field("main", "Approver", typed.main)}${field("backup", "Backup approver (you may leave it empty)", typed.backup)}</div>
       <div class="pair" style="margin-top:12px">
-        <button class="btn" id="ap-save">Save both numbers</button>
+        <button class="btn" id="ap-save">Save</button>
         <button class="btn plain" id="ap-cancel">Cancel</button></div></td></tr>`;
 }
 
@@ -329,8 +337,7 @@ async function saveApprovers() {
   draft = {main: main1, backup};
   fieldErrors = {};
   if (!main1) fieldErrors.main = "Type the approver's number.";
-  if (!backup) fieldErrors.backup = "Type the backup approver's number.";
-  if (fieldErrors.main || fieldErrors.backup) return renderApprovers();
+  if (fieldErrors.main) return renderApprovers();
   el("ap-save").disabled = true;
   // The admin can open another reason meanwhile. The answer speaks for this one.
   const reason = editing;
@@ -350,7 +357,7 @@ async function saveApprovers() {
 
 // ------------------------------------------- staff, offices, guards and admins
 const del = (data, label) => `<button class="small del" ${data} data-label="${x(label)}">Delete</button>`;
-const newKey = (kind, phone) => `<button class="small" data-newkey="${kind}" data-id="${x(phone)}">New key</button>`;
+const newKey = (kind, phone) => `<button class="small warn" data-newkey="${kind}" data-id="${x(phone)}">New key</button>`;
 const you = label => label === team.you ? `<span class="you">You</span>` : "";
 const table = (heads, body) => `<table><thead><tr>${heads.map(h => `<th>${h}</th>`).join("")}</tr></thead>
   <tbody>${body}</tbody></table>`;
@@ -366,7 +373,8 @@ function labelCells(box) {
 }
 
 // ------------------------------------------------ tags on the two long lists
-const byText = (a, b) => a.localeCompare(b, undefined, {sensitivity: "base"});
+// One comparer for every sort: a new one for each pair of names is slow on a long list.
+const byText = new Intl.Collator(undefined, {sensitivity: "base"}).compare;
 const tagsOf = kind => [...new Set(team[kind].map(r => r.tag).filter(Boolean))].sort(byText);
 const KEY_OF = {staff: "code", offices: "name"};
 
@@ -384,20 +392,32 @@ function tagged(kind, empty, columns, line) {
     .sort((a, b) => (a.tag === "") - (b.tag === "") || byText(a.tag, b.tag) || byText(a.name, b.name));
   if (!team[kind].length) return `<tr><td colspan="${columns}" class="fixed">${empty}</td></tr>`;
   if (!rows.length) return `<tr><td colspan="${columns}" class="fixed">Nothing matches the tag or the search.</td></tr>`;
-  if (views[kind].tag !== null) return rows.map(line).join("");
+  const shown = rows.slice(0, views[kind].limit);
+  const rest = rows.length - shown.length;
+  const more = rest ? `<tr class="more-row"><td colspan="${columns}"><button class="small edit" data-more="${kind}">
+      Show ${Math.min(PAGE, rest)} more, of ${rest} not shown</button></td></tr>` : "";
+  if (views[kind].tag !== null) return shown.map(line).join("") + more;
+  // One pass for every tag's count: O(n), not O(n) again for each tag. The count is of every
+  // matching row, also the rows not shown yet.
+  const counts = countTags(rows);
   let out = "";
-  rows.forEach((row, i) => {
-    if (i === 0 || row.tag !== rows[i - 1].tag) {
-      const count = rows.filter(r => r.tag === row.tag).length;
-      out += `<tr class="group"><td colspan="${columns}">${x(row.tag || "No tag")} <span>${count}</span></td></tr>`;
+  shown.forEach((row, i) => {
+    if (i === 0 || row.tag !== shown[i - 1].tag) {
+      out += `<tr class="group"><td colspan="${columns}">${x(row.tag || "No tag")} <span>${counts.get(row.tag)}</span></td></tr>`;
     }
     out += line(row);
   });
-  return out;
+  return out + more;
+}
+
+function countTags(rows) {
+  const counts = new Map();
+  for (const row of rows) counts.set(row.tag, (counts.get(row.tag) || 0) + 1);
+  return counts;
 }
 
 const tagButton = (kind, row, label) =>
-  `<button class="small" data-retag="${kind}" data-id="${x(row[KEY_OF[kind]])}" data-tag="${x(row.tag)}"
+  `<button class="small edit" data-retag="${kind}" data-id="${x(row[KEY_OF[kind]])}" data-tag="${x(row.tag)}"
     data-label="${x(label)}">Tag</button>`;
 const tagCell = row => row.tag ? x(row.tag) : `<span class="fixed">No tag</span>`;
 
@@ -405,13 +425,14 @@ const tagCell = row => row.tag ? x(row.tag) : `<span class="fixed">No tag</span>
 function renderTagBar(kind) {
   const {prefix} = FORMS[kind];
   const chosen = views[kind].tag;
-  const count = tag => team[kind].filter(r => r.tag === tag).length;
+  const counts = countTags(team[kind]);
+  const count = tag => counts.get(tag) || 0;
   const chip = (tag, label, n) => `<button ${tag === null ? "data-all" : `data-filter-tag="${x(tag)}"`}
     aria-pressed="${chosen === tag}">${x(label)} <span>${n}</span></button>`;
   el(`${prefix}-chips`).innerHTML = (team[kind].length ? chip(null, "All", team[kind].length)
     + tagsOf(kind).map(tag => chip(tag, tag, count(tag))).join("")
     + (count("") ? chip("", "No tag", count("")) : "") : "")
-    + (chosen ? `<button class="small" data-rename>Rename this tag</button>` : "");
+    + (chosen ? `<button class="small edit" data-rename>Rename this tag</button>` : "");
   el(`${prefix}-tagpick`).innerHTML = pickChips(kind);
 }
 
@@ -473,7 +494,16 @@ function onTagBar(kind, e) {
   if (!hit) return;
   if (hit.hasAttribute("data-rename")) return void renameTag(kind);
   views[kind].tag = hit.hasAttribute("data-all") ? null : hit.dataset.filterTag;
-  renderTeam();
+  views[kind].limit = PAGE;
+  renderTagged(kind);
+}
+
+// Draws one long list and its tag chips. Search and the chips redraw only their own list.
+function renderTagged(kind) {
+  const {prefix} = FORMS[kind];
+  renderTagBar(kind);
+  el(`${prefix}-table`).innerHTML = TABLES[kind]();
+  labelCells(el(`${prefix}-table`));
 }
 
 const TABLES = {
@@ -484,7 +514,7 @@ const TABLES = {
           ${del(`data-delete="staff" data-id="${x(p.code)}"`, `${p.name} ${p.code}`)}</td></tr>`)),
   offices: () => table(["Office", "Approver", "Backup", "Tag", ""],
     tagged("offices", "No offices yet. Visitors type the office's name.", 5, o => `<tr><td>${x(o.name)}</td>
-        <td>${x(o.main)}</td><td>${x(o.backup)}</td><td>${tagCell(o)}</td>
+        <td>${x(o.main)}</td><td>${backupCell(o)}</td><td>${tagCell(o)}</td>
         <td class="acts">${tagButton("offices", o, o.name)}
           ${del(`data-delete="offices" data-id="${x(o.name)}"`, o.name)}</td></tr>`)),
   blacklist: () => table(["Name", "Phone number", "Reason", "Added", ""], team.blacklist.length
@@ -512,7 +542,7 @@ function adminActions(a) {
   const label = `${a.name} ${a.phone}`;
   if (a.super && !team.super) return `<span class="fixed">Only a super admin can change this.</span>`;
   const role = team.super && label !== team.you
-    ? `<button class="small" data-super="${x(a.phone)}" data-on="${!a.super}" data-label="${x(label)}">
+    ? `<button class="small ${a.super ? "del" : "go"}" data-super="${x(a.phone)}" data-on="${!a.super}" data-label="${x(label)}">
         ${a.super ? "Remove super admin" : "Make super admin"}</button>` : "";
   return `${role} ${newKey("admins", a.phone)} ${del(`data-delete="admins" data-id="${x(a.phone)}"`, label)}`;
 }
@@ -521,7 +551,7 @@ async function setSuper(phone, on, label) {
   const line = on
     ? `Make ${label} a super admin? A super admin can approve and decline many requests at once, and change other super admins.`
     : `Take away super admin from ${label}? They stay an admin.`;
-  if (!(await confirmDelete(line, on ? "Make super admin" : "Take it away", on ? "" : "stop"))) return;
+  if (!(await confirmDelete(line, on ? "Make super admin" : "Take it away", on ? "go" : "stop"))) return;
   if (await teamCall("admins", "/api/admin/admins/super", {phone, super: on})) {
     notes.admins = {tone: "good", html: `${x(label)} ${on ? "is now a super admin" : "is no longer a super admin"}.`};
     renderTeam();
@@ -566,10 +596,12 @@ function renderBlocked() {
 }
 
 function renderTeam() {
-  for (const kind of Object.keys(views)) renderTagBar(kind);
+  for (const kind of Object.keys(views)) renderTagged(kind);
   for (const [kind, form] of Object.entries(FORMS)) {
-    el(`${form.prefix}-table`).innerHTML = TABLES[kind]();
-    labelCells(el(`${form.prefix}-table`));
+    if (!(kind in views)) {
+      el(`${form.prefix}-table`).innerHTML = TABLES[kind]();
+      labelCells(el(`${form.prefix}-table`));
+    }
     const note = notes[kind];
     el(`${form.prefix}-note`).innerHTML = note ? `<div class="note ${note.tone}">${note.html}</div>` : "";
     for (const [name] of form.fields) {
@@ -597,7 +629,7 @@ function form(kind) {
         : `maxlength="${name === "tag" ? 40 : 60}"`}
         autocomplete="off"><p class="err" id="${prefix}-${name}-err"></p>
       ${name === "tag" ? `<div class="tagpick" id="${prefix}-tagpick"></div>` : ""}</div>`).join("")}</div>
-    <button class="btn" id="${prefix}-add">${button}</button>`;
+    <button class="btn${FORMS[kind].tone ? ` ${FORMS[kind].tone}` : ""}" id="${prefix}-add">${button}</button>`;
 }
 
 // The search box and tag chips above a long list. Built once, so typing keeps the focus.
@@ -708,6 +740,7 @@ function onTableClick(e) {
   if (d.delete) void remove(d.delete, d.id, d.label);
   else if (d.newkey) void renewKey(d.newkey, d.id);
   else if (d.retag) void retag(d.retag, d.id, d.tag, d.label);
+  else if (d.more) { views[d.more].limit += PAGE; renderTagged(d.more); }
   else if (d.super) void setSuper(d.super, d.on === "true", d.label);
 }
 
@@ -746,9 +779,9 @@ const PANELS = `
   <p class="found" id="found"></p>
   <div id="bulk-note"></div>
   <div class="bulk" id="bulk" hidden>
-    <button class="small" id="pick-all"></button><span id="picked-count"></span>
-    <button class="btn" id="bulk-yes" disabled>Approve</button>
-    <button class="btn plain" id="bulk-no" disabled>Decline</button>
+    <button class="small edit" id="pick-all"></button><span id="picked-count"></span>
+    <button class="btn go" id="bulk-yes" disabled>Approve</button>
+    <button class="btn stop" id="bulk-no" disabled>Decline</button>
   </div>
   <div class="list" id="list"></div>
   <button class="btn plain" id="more" hidden>Show more</button>
@@ -772,8 +805,20 @@ const PANELS = `
   <div class="wrap" id="s-entries"></div>
   <p class="hint">The last 100 entries. Download log at the top saves all of them.</p>
   </section>
-  <section id="offices" role="tabpanel" hidden>
-  <h2>Offices a visitor can pick</h2>
+  <section id="numbers" role="tabpanel" hidden>
+  <h2>Who approves each reason</h2>
+  <div id="approver-note"></div>
+  <div class="wrap" id="approvers"></div>
+  <p class="hint">Each reason needs an approver's number, with + and the country code. A
+    backup is a second person who gets the request when nobody answers in time. With no
+    backup, the approver gets a reminder instead.
+    A change works at once: the old numbers can no longer decide that reason's requests,
+    including requests already sent to them. See an office is not in this table: each office
+    below has its own approvers. A request with no office goes to the numbers for Other.
+    While the app uses Meta's test number, also add each new number to the recipient list in
+    Meta's API Setup page.</p>
+  <p class="hint" id="rules"></p>
+  <h2 class="gap" id="offices">Offices a visitor can pick</h2>
   <div id="o-note"></div>
   ${listBar("offices", "offices")}
   <div class="wrap" id="o-table"></div>
@@ -781,23 +826,10 @@ const PANELS = `
   ${form("offices")}
   <p class="hint">A visitor who picks See an office then picks one of these offices. The request
     goes to that office's approver, and to its backup if nobody answers. With no offices here, the
-    visitor types the office's name, and the request goes to the approvers for Other on the
-    Approvers tab.</p>
+    visitor types the office's name, and the request goes to the approvers for Other above.</p>
   <p class="hint">A tag, such as a building, puts offices into groups, here and in the visitor's
     list. Tap a tag in use, or type a new one. Tag on a row moves that office to another tag. Tap a
     tag above the list to see only that tag, and Rename this tag to rename it for every office.</p>
-  </section>
-  <section id="numbers" role="tabpanel" hidden>
-  <h2>Who approves each reason</h2>
-  <div id="approver-note"></div>
-  <div class="wrap" id="approvers"></div>
-  <p class="hint">Each reason needs two different numbers, with + and the country code.
-    A change works at once: the old numbers can no longer decide that reason's requests,
-    including requests already sent to them. See an office is not here: each office on the
-    Offices tab has its own two numbers. A request with no office goes to the numbers for Other.
-    While the app uses Meta's test number, also add each new number to the recipient list in
-    Meta's API Setup page.</p>
-  <p class="hint" id="rules"></p>
   </section>
   <section id="guards" role="tabpanel" hidden>
   <h2>Who can record entry and exit</h2>
@@ -925,7 +957,16 @@ function render() {
     }
     for (const kind of Object.keys(views)) {
       const {prefix} = FORMS[kind];
-      el(`${prefix}-q`).oninput = e => { views[kind].q = e.target.value.trim(); renderTeam(); };
+      // Waits for a pause in typing, as the visits search does, then redraws this list only.
+      let typing = null;
+      el(`${prefix}-q`).oninput = e => {
+        clearTimeout(typing);
+        typing = setTimeout(() => {
+          views[kind].q = e.target.value.trim();
+          views[kind].limit = PAGE;
+          renderTagged(kind);
+        }, SEARCH_WAIT);
+      };
       el(`${prefix}-chips`).onclick = e => onTagBar(kind, e);
       el(`${prefix}-tagpick`).onclick = e => {
         const pick = e.target.closest("[data-pick]");
@@ -981,7 +1022,7 @@ async function loadSummary() {
         ? ` A request made ${s.work_days.join(", ")}, ${s.work_hours[0]}:00 to ${s.work_hours[1]}:00,`
           + ` is approved automatically after ${s.auto_approve_minutes} minutes with no answer.`
         : "";
-      el("rules").textContent = `A request goes to the backup approver after ${s.escalate_minutes} minutes`
+      el("rules").textContent = `A request is sent again, to the backup or as a reminder, after ${s.escalate_minutes} minutes`
         + ` with no answer.${auto} A pass works for ${s.pass_hours} hours after the request.`
         + ` Records are deleted after ${s.retain_days} days.`;
     }

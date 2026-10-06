@@ -39,7 +39,7 @@ def main():
             print(MISSING[name])
             results.append((name, "MISSING"))
             continue
-        passed = subprocess.run(command).returncode == 0
+        passed = subprocess.run(command, check=False).returncode == 0
         results.append((name, "passed" if passed else "FAILED"))
     print("\n=== summary")
     for name, result in results:

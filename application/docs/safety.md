@@ -215,10 +215,11 @@ Never put a secret in git, in a chat or in a screenshot. `.gitignore` keeps
 | A person the campus has banned       | The blacklist refuses their number, and the admin page lists each attempt  |
 | A ban while a request waits          | The ban declines it. An approval checks the blacklist in the same statement |
 | An admin change nobody expected      | The admin change log names who made it, also by `KEY` on WhatsApp          |
-| A stolen gate key lists the staff    | 30 allow list codes a minute for each key                                  |
+| A stolen gate key lists the staff    | 60 allow list calls a minute for each key                                  |
 | A regular admin acts as a super one  | Only a super admin may renew the key of, delete or change a super admin    |
 | A bulk approval of the wrong rows    | An "Are you sure?" box with the count, and every reference in the log      |
 | Two guards record one staff entry    | One entry for each code in 2 minutes, with a database lock                 |
+| A visitor sends one form twice       | A random key from their browser: the second send gets the first request    |
 | False lines in the approver message  | The form refuses line breaks, control codes and invisible marks            |
 | A formula in the CSV log             | Cells that start with `=`, `+`, `-` or `@` get a quote in front            |
 | A harmful photo file                 | Size and pixel limits, then the server decodes it and stores a new copy    |

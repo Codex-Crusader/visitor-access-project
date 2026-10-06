@@ -125,8 +125,19 @@ th{color:var(--soft);font-weight:600;font-size:.8rem;background:var(--mute)}
 .hint{color:var(--soft);font-size:.85rem;margin:10px 0 0}
 .small{padding:6px 12px;border:1px solid var(--line);border-radius:999px;font-size:.82rem;font-weight:600;
  background:var(--paper)}
-.small.del{color:var(--stop);border-color:var(--stopLn)}
-.small.del:active{background:var(--stopBg)}
+.small.del{color:var(--stop);border-color:var(--stopLn);background:var(--stopBg)}
+.small.del:active{background:#F6DCD8}
+/* Button colours, one for each kind of action. The words stay, so colour is never alone.
+   Green: approve or let in. Red: delete, decline or ban. Amber: a key. Blue: add or change. */
+.btn.go{background:var(--go);border-color:var(--go);color:#fff}
+.btn.go:active{background:#0A5A3C}
+.btn.warn{background:var(--waitBg);border-color:var(--waitLn);color:var(--wait)}
+.btn.warn:active{background:#F8E7C8}
+.small.go{color:var(--go);border-color:var(--goLn);background:var(--goBg)}
+.small.warn{color:var(--wait);border-color:var(--waitLn);background:var(--waitBg)}
+.small.edit{color:var(--brand2);border-color:#C4D3E6;background:var(--tint)}
+.nav nav button.warn{color:var(--wait);border-color:var(--waitLn);background:var(--waitBg)}
+.nav nav button.edit{color:var(--brand2);border-color:#C4D3E6;background:var(--tint)}
 .pair{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .trio{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
 .quad{display:grid;grid-template-columns:1fr 1fr;gap:10px}
@@ -156,6 +167,7 @@ tr.group td{background:var(--tint);color:var(--brand);font-weight:700;font-size:
 .bulk span{color:var(--soft);font-size:.88rem;font-weight:600;flex:1}
 .bulk .btn{width:auto;margin:0;padding:9px 16px}
 tr.group td span{color:var(--soft);font-weight:600;margin-left:4px}
+tr.more-row td{text-align:center;padding:14px}
 .pair .btn{margin-top:0}
 .err{color:var(--stop);font-size:.82rem;margin:5px 0 0;font-weight:600}
 .err:empty{display:none}
@@ -222,8 +234,8 @@ code.key{display:block;margin:8px 0;padding:8px 10px;background:var(--paper);bor
     <div><h1>Visitor Admin</h1><small id="you"></small></div>
     <nav id="nav" hidden>
       <button id="refresh">Refresh</button>
-      <button id="csv">Download log</button>
-      <button id="rekey">Change key</button>
+      <button id="csv" class="edit">Download log</button>
+      <button id="rekey" class="warn">Change key</button>
     </nav>
   </div>
   <main class="main" id="main"></main>

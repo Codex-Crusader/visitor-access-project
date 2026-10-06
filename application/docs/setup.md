@@ -129,7 +129,7 @@ does not have them.
 8. Add the guards on the admin page's Guards tab, and give each guard the
    key that shows. Give `<address>` to visitors, the gate key to the gate
    desk, and the admin key to the admin.
-9. Add the offices on the Offices tab, the staff on the Allow list tab, and
+9. Add the offices on the Approvers tab, the staff on the Allow list tab, and
    any other admins on the Admins tab.
 10. Create the `staff_entry` template, and set `STAFF_ENTRY_TEMPLATE`. See
     "The allow list entry template".
@@ -188,6 +188,13 @@ what to fix:
 3. Without `ADMIN_KEY`, with one shorter than 20 characters, or with the same
    value as `GATE_KEY`, the admin page stays locked. The rest of the app runs.
 
+`REQUESTS_PER_HOUR` counts requests from one internet address. A whole
+campus Wi-Fi can be one address, so before a large event with visitors on
+the campus Wi-Fi, raise it, for example to 300.
+
+`ADMIN_PHONE` must not be the gate desk number (`GUARD`). If it is, "Forgot
+admin key?" is refused, because a guard must never get the admin key.
+
 `BEHIND_PROXY` must be `true` on Render. If it is not set, the app counts
 every visitor as the same caller, and 60 requests in one hour stop the whole
 campus. Render reads `render.yaml` only for a service made from a Blueprint,
@@ -202,7 +209,7 @@ Each reason on the form has a main approver and a backup approver. The
 reasons are `See a student`, `See an office`, `Delivery`, `Event` and `Other`.
 They are the same list as `REASONS` in `config.py` and `static/app.js`. A
 reason that the visitor types in counts as `Other`. `See an office` has no
-pair of its own: each office has its own pair on the Offices tab, and an
+pair of its own: each office has its own pair on the Approvers tab, and an
 office visit with no office goes to the pair for `Other`. `APPROVERS` may
 name `See an office`, but the app does not use it.
 
@@ -258,8 +265,8 @@ With: {{8}}
 Reply YES or NO followed by the reference to decide this request.
 ```
 
-`{{1}}` is the reference. `{{2}}` says if this is a new request or a request
-for the backup approver. The rest are the visitor's details. Replies to the
+`{{1}}` is the reference. `{{2}}` says if this is a new request, a request for
+the backup approver, or a reminder to an approver who has no backup. The rest are the visitor's details. Replies to the
 approvers' and the guards' own commands stay plain text, because that person
 just wrote to the number. The message to the guards about an approval is
 plain text too, so it reaches only a guard who wrote in the last 24 hours.
@@ -294,7 +301,7 @@ If this was not you, tell the campus admin.
 ```
 
 `{{1}}` is the person's name, `{{2}}` is the time, and `{{3}}` is the
-guard. Meta refuses a body that starts or ends with a value, so keep the
+name of the guard, without their number. Meta refuses a body that starts or ends with a value, so keep the
 fixed words around them. When Meta approves it, set `STAFF_ENTRY_TEMPLATE=staff_entry` on
 Render. Until then, the app sends the same text as plain text, which arrives
 only if the person wrote to the app's number in the last 24 hours. A failed
@@ -358,4 +365,5 @@ change on its own. Make one in the Neon console under Branches.
 
 To show a decline, reply `NO` and the reference. To show escalation, set
 `ESCALATE_MINUTES=1` and restart. Send a request and do not reply. After one
-minute, the backup approver gets the same details.
+minute, the backup approver gets the same details. An approver with no backup
+gets a reminder.

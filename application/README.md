@@ -48,7 +48,7 @@ number on the blacklist cannot request a visit or enter.
    record the exit.
 
 If nobody answers in `ESCALATE_MINUTES`, the server sends the same details to
-the backup approver. In working hours, the server approves a request that
+the backup approver, or, when there is no backup, a reminder to the approver. In working hours, the server approves a request that
 nobody answers in `AUTO_APPROVE_MINUTES`. A pass works for `PASS_HOURS` after
 the request.
 
@@ -115,7 +115,7 @@ visitor, `/gate` for the guard and `/admin` for the admin.
 
 | File                                   | What it holds                                                          |
 |----------------------------------------|------------------------------------------------------------------------|
-| `docs/`                                | Setup, maintenance and safety                                          |
+| `docs/`                                | Setup, maintenance, safety, and every WhatsApp message                 |
 | `app.py`                               | Makes the Flask app, adds the security headers, starts the timer       |
 | `routes/visitor.py`                    | The visitor page's calls: a new request and its status                 |
 | `routes/gate.py`                       | The gate page's calls: look up a pass, the board, entry and exit       |
@@ -154,3 +154,4 @@ visitor, `/gate` for the guard and `/admin` for the admin.
 | `test_form.js`                         | Checks the three pages in a real DOM with jsdom                        |
 | `testdb.py`                            | Starts a throwaway Postgres for the two Python tests                   |
 | `ruff.toml`, `eslint.config.mjs`       | Linter settings, and why some rules are off                            |
+| `tools/whatsapp_messages.py`           | Writes docs/whatsapp-messages.md by running the app                    |

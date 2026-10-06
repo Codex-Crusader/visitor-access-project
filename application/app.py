@@ -33,6 +33,14 @@ def too_big(_error):
     return jsonify(error="That is too big. Take the photo again."), 413
 
 
+@app.errorhandler(500)
+def server_failure(_error):
+    """A plain answer for the pages, which read JSON. Flask logs the traceback first."""
+    if request.path.startswith("/api/"):
+        return jsonify(error="The server had a problem. Try again in a minute."), 500
+    return "The server had a problem. Try again in a minute.", 500
+
+
 @app.after_request
 def add_security_headers(response):
     for name, value in pages.SECURITY_HEADERS.items():

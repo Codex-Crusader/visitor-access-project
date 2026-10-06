@@ -1,6 +1,7 @@
 """The visitor page's calls: the settings, a new request, and its status."""
 
 import logging
+import re
 from datetime import datetime, timezone
 
 from flask import Blueprint, jsonify, request
@@ -49,7 +50,8 @@ def office_lists():
 
 
 # The visitor does not see how or when a request is approved, or by whom.
-VISITOR_PRIVATE = ("auto_approve_at", "decided_by", "decided_phone", "entered_by", "exited_by")
+VISITOR_PRIVATE = ("auto_approve_at", "decided_by", "decided_phone", "entered_by", "exited_by",
+                   "request_key")
 
 
 def visitor_view(visit):
@@ -77,8 +79,17 @@ def create_request():
     if office:
         fields["visiting"] = office
 
+    # A resend of the same form, after a slow answer, gets the first request back.
+    key = payload.get("request_key")
+    key = key if isinstance(key, str) and REQUEST_KEY.match(key) else None
+    earlier = visits.by_request_key(key) if key else None
+    if earlier:
+        return jsonify(visitor_view(earlier)), 200
     auto_at = timer.auto_approve_time(datetime.now(timezone.utc))
-    visit = visits.create(fields, guests, auto_at, office)
+    try:
+        visit = visits.create(fields, guests, auto_at, office, key)
+    except visits.SameRequest as same:
+        return jsonify(visitor_view(same.visit)), 200
     try:
         approvers = people.approvers_for(people.approver_table(), visit)
         notify.log_template_problem(whatsapp.notify_approver(visit, approvers))
@@ -90,6 +101,9 @@ def create_request():
     timer.wake.set()
     return jsonify(visitor_view(visit)), 201
 
+
+# Made by the visitor's browser: random, so only that browser can know it.
+REQUEST_KEY = re.compile(r"^[A-Za-z0-9_-]{16,64}$")
 
 # Neutral on purpose: the page does not say why.
 BLOCKED = "This number cannot request a visit. Call the gate desk."

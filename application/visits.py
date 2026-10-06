@@ -44,9 +44,27 @@ def new_gate_code():
             return f"{letters}-{secrets.randbelow(10000):04d}"
 
 
+class SameRequest(Exception):
+    """The browser sent this filled-in form before. visit is the request it made then."""
+
+    def __init__(self, visit):
+        super().__init__(visit["reference"])
+        self.visit = visit
+
+
+@db.read
+def by_request_key(key):
+    """The visit made with this browser key, or None."""
+    with db.connect() as conn:
+        row = conn.execute("SELECT * FROM visits WHERE request_key = %s", (key,)).fetchone()
+    return to_dict(row) if row is not None else None
+
+
 @db.writes
-def create(fields, guests, auto_approve_at=None, office=None):
-    """Insert a visit and its two codes. Retries when a code is already taken."""
+def create(fields, guests, auto_approve_at=None, office=None, request_key=None):
+    """Insert a visit and its two codes. Retries when a code is already taken.
+
+    Raises SameRequest when request_key made a visit before, also from a send at the same time."""
     for _ in range(CODE_ATTEMPTS):
         # Five digits: 90,000 references. Older visits keep their four-digit one.
         reference = f"VR-{random.randint(10000, 99999)}"
@@ -58,8 +76,9 @@ def create(fields, guests, auto_approve_at=None, office=None):
                 )
                 row = conn.execute(
                     "INSERT INTO visits (reference, token, name, phone, address,"
-                    " reason, visiting, guests, status, created_at, auto_approve_at, office)"
-                    " VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING *",
+                    " reason, visiting, guests, status, created_at, auto_approve_at, office,"
+                    " request_key) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"
+                    " RETURNING *",
                     (
                         reference,
                         secrets.token_urlsafe(16),
@@ -73,10 +92,16 @@ def create(fields, guests, auto_approve_at=None, office=None):
                         db.now(),
                         auto_approve_at,
                         office,
+                        request_key,
                     ),
                 ).fetchone()
             return to_dict(row)
-        except errors.UniqueViolation:
+        except errors.UniqueViolation as clash:
+            if clash.diag.constraint_name == "visits_request_key":
+                earlier = by_request_key(request_key)
+                # Gone already: the first send failed and was deleted. This send goes on.
+                if earlier is not None:
+                    raise SameRequest(earlier) from None
             continue
     raise RuntimeError("Could not find a free visit code")
 

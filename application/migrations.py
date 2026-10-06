@@ -188,6 +188,13 @@ CREATE TABLE admin_changes (
 );
 CREATE INDEX admin_changes_at ON admin_changes (at);
 """,
+    # 7: a resend from the same page returns the first request.
+    """
+-- A random key from the visitor's browser, one for each filled-in form. A second send
+-- with the same key, after a timeout, gets the first request back. Empty before this step.
+ALTER TABLE visits ADD COLUMN request_key TEXT;
+CREATE UNIQUE INDEX visits_request_key ON visits (request_key) WHERE request_key IS NOT NULL;
+""",
 ]
 
 # Advisory lock id, so two starting instances never run a step twice.

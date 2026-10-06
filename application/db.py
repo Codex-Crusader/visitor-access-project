@@ -180,8 +180,15 @@ def writes(change):
     return write_then_forget
 
 
-def cached(query):
-    """A read kept in memory until the next write. A None answer is never kept."""
+def cached(query=None, *, shared=False):
+    """A read kept in memory until the next write. A None answer is never kept.
+
+    Each caller gets a copy, which costs O(n) for n rows. With shared=True the read returns
+    something no caller can change, such as a frozenset or a MappingProxyType, so every
+    caller gets the same object, and a lookup in it costs O(1)."""
+    if query is None:
+        return functools.partial(cached, shared=shared)
+
     @functools.wraps(query)
     def from_memory(*args):
         # The module too: staff.everyone and blacklist.everyone are different reads.
@@ -199,7 +206,7 @@ def cached(query):
                         _cache.clear()
                     _cache[key] = hit
         # Each caller gets a copy, so a change to it never reaches the cache.
-        return copy.deepcopy(hit)
+        return hit if shared else copy.deepcopy(hit)
     return from_memory
 
 

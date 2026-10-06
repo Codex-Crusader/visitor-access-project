@@ -83,9 +83,9 @@ function tracker(){
   const v=S.visit, esc=!!v.escalated_at, done=!!v.decided_at;
   return `<ul class="track"><span class="rail"><b></b></span>
     <li data-at="done"><b class="t">Request sent</b><span>${hm(v.created_at)}</span></li>
-    <li data-at="${esc||done?"done":"now"}"><b class="t">First approver</b>
+    <li data-at="${esc||done?"done":"now"}"><b class="t">Approver</b>
       <span>${esc?"No answer by "+hm(v.escalated_at):done?"Replied at "+hm(v.decided_at):"Sent on WhatsApp, no reply yet"}</span></li>
-    ${esc?`<li data-at="${done?"done":"now"}"><b class="t">Backup approver</b><span>Took over at ${hm(v.escalated_at)}</span></li>`:""}
+    ${esc?`<li data-at="${done?"done":"now"}"><b class="t">Asked again</b><span>Sent again at ${hm(v.escalated_at)}</span></li>`:""}
     <li data-at="${done?"done":""}"><b class="t">Decision</b>
       <span>${done?word()+" at "+hm(v.decided_at):"Not yet"}</span></li>
   </ul>`;
@@ -109,7 +109,7 @@ function view(){
     <input id="f_name" class="${flag("name")}" value="${x(S.f.name)}" oninput="set('name',this.value)">
     ${note("name")}
     <label for="f_phone">Phone</label>
-    <input id="f_phone" inputmode="numeric" class="${flag("phone")}" value="${x(S.f.phone)}" oninput="set('phone',this.value)">
+    <input id="f_phone" inputmode="tel" type="tel" class="${flag("phone")}" value="${x(S.f.phone)}" oninput="set('phone',this.value)">
     ${note("phone")}
     <label for="f_address">Address</label>
     <input id="f_address" class="${flag("address")}" value="${x(S.f.address)}" oninput="set('address',this.value)">
@@ -149,7 +149,7 @@ function view(){
       ${fact("Name",S.f.name)}${fact("Phone",S.f.phone)}${fact("Address",S.f.address)}
       ${fact("Reason",reasonText())}${fact(S.f.reason===OFFICE?"Office":"Visiting",visitingText())}${S.g.length?fact("With you",S.g.join(", ")):""}
     </div>
-    <p class="sm">No answer in ${S.cfg.escalate_minutes} minutes, and it moves to a backup approver. You do not fill this in again.</p>
+    <p class="sm">No answer in ${S.cfg.escalate_minutes} minutes, and it is sent again, to a backup approver if there is one. You do not fill this in again.</p>
     <button class="btn" onclick="send()">Send request</button>
     <button class="btn plain" onclick="back()">Edit</button>`;
 
@@ -179,8 +179,8 @@ function view(){
       ${offlineNote()}
       ${tracker()}
       <div class="facts">${fact("Reference",v.reference)}
-        ${fact("With",st()==="escalated"?"Backup approver":"First approver")}
-        ${st()==="escalated"?"":fact("Backup takes over",plus(v.created_at,S.cfg.escalate_minutes))}
+        ${fact("With",st()==="escalated"?"Approver, asked again":"Approver")}
+        ${st()==="escalated"?"":fact("Asked again at",plus(v.created_at,S.cfg.escalate_minutes))}
         ${v.guests.length?fact("With you",v.guests.join(", ")):""}</div>
       ${gate()}`;}
 
@@ -292,6 +292,18 @@ function settle(keys,found){
   return false;
 }
 
+// The same rule as the server: 10 digits, or + and the country code for a visitor from abroad.
+function newKey(){
+  const bytes=new Uint8Array(16);
+  window.crypto.getRandomValues(bytes);
+  return [...bytes].map(b=>b.toString(16).padStart(2,"0")).join("");
+}
+
+function phoneOk(phone){
+  const n=phone.replace(/\D/g,"").length;
+  return phone.startsWith("+")?n>=8&&n<=15:n===10;
+}
+
 function n1(){
   const found={};
   const name=needed("name","Your name");
@@ -299,7 +311,7 @@ function n1(){
 
   const phone=needed("phone","Phone");
   if(phone)found.phone=phone;
-  else if(tidy(S.f.phone).replace(/\D/g,"").length!==10)found.phone="Enter 10 digits.";
+  else if(!phoneOk(tidy(S.f.phone)))found.phone="Enter 10 digits, or + and the country code.";
 
   const address=needed("address","Address");
   if(address)found.address=address;
@@ -338,6 +350,9 @@ function n2(){
   S.f.other=tidy(S.f.other);
   S.f.visiting=tidy(S.f.visiting);
   S.err="";
+  // A new key for each reviewed form. Send again after a slow answer reuses it, so the
+  // approver gets one request, not two.
+  S.key=newKey();
   go("review");
 }
 
@@ -429,7 +444,8 @@ async function send(){
   try{
     S.visit=await load("/api/requests",{method:"POST",headers:{"Content-Type":"application/json"},
       body:JSON.stringify({name:S.f.name,phone:S.f.phone,address:S.f.address,
-        reason:reasonText(),visiting:visitingText(),office:officeList()?S.f.office:"",guests:S.g})},SEND_TIMEOUT);
+        reason:reasonText(),visiting:visitingText(),office:officeList()?S.f.office:"",guests:S.g,
+        request_key:S.key})},SEND_TIMEOUT);
     S.err="";
     keep(S.visit);
     S.hist=["home"];

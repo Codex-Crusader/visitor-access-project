@@ -689,8 +689,9 @@ whatsapp.notify_backup(due[0], people.approvers_for(people.approver_table(), due
 visits.mark_escalated(b["reference"])
 after = client.get(f"/api/visit/{b['token']}").get_json()
 assert after["status"] == "escalated" and after["escalated_at"]
-assert "Backup approver" in sent[-1][1]
-assert templates[-1][0] == "+911234567890" and templates[-1][1][1].startswith("Backup")
+# Here the approver is also the backup, so the escalation reminds that one person.
+assert "Reminder" in sent[-1][1]
+assert templates[-1][0] == "+911234567890" and templates[-1][1][1].startswith("Reminder")
 # An escalated request is still undecided, and a visitor inside never escalates.
 assert b["reference"] in [v["reference"] for v in visits.open_requests()]
 assert ref2 not in [v["reference"] for v in visits.open_requests()]
@@ -1280,11 +1281,24 @@ def set_pair(main_number, backup_number, reason="Event", key=None):
 
 assert set_pair(NEW_MAIN, NEW_BACKUP, key=KEY).status_code == 403
 assert set_pair(NEW_MAIN, NEW_BACKUP, reason="Party").status_code == 400
-for bad_main, bad_backup, field in (("", NEW_BACKUP, "main"), (NEW_MAIN, "", "backup"),
+for bad_main, bad_backup, field in (("", NEW_BACKUP, "main"), (NEW_MAIN, "123", "backup"),
                                     ("98765", NEW_BACKUP, "main"),
                                     (NEW_MAIN, "+91 90000 00011", "backup")):
     refused = set_pair(bad_main, bad_backup)
     assert refused.status_code == 400 and field in refused.get_json()["fields"], field
+assert "Leave the backup empty" in set_pair(NEW_MAIN, NEW_MAIN).get_json()["fields"]["backup"]
+# An empty backup: the approver is both, and the escalation is a reminder to them.
+alone = set_pair(NEW_MAIN, "")
+assert alone.status_code == 200
+assert {"reason": "Event", "main": NEW_MAIN, "backup": NEW_MAIN} in alone.get_json()["approvers"]
+lonely = client.post("/api/requests", json={**payload, "reason": "Event"}).get_json()
+with db.connect() as conn:
+    conn.execute("UPDATE visits SET created_at = %s WHERE reference = %s",
+                 (db.ago(1 / 24), lonely["reference"]))
+db.forget_cache()
+timer.escalate_due()
+assert templates[-1][0] == NEW_MAIN and templates[-1][1][1].startswith("Reminder:"), templates[-1]
+visits.decide(lonely["reference"], db.DECLINED, db.BY_MAIN)
 saved = set_pair("+91 90000-00011", NEW_BACKUP)
 assert saved.status_code == 200, saved.get_json()
 event_row = {"reason": "Event", "main": NEW_MAIN, "backup": NEW_BACKUP}
@@ -1302,7 +1316,7 @@ assert visits.get(event["reference"])["decided_phone"] == NEW_MAIN
 with db.connect() as conn:
     conn.execute("DELETE FROM approvers")
 db.forget_cache()
-print("  both numbers required and checked, new number used at once, old one refused")
+print("  numbers checked, an empty backup reminds the approver, the old number refused")
 
 print("a request made in working hours is approved by itself")
 
@@ -1679,8 +1693,13 @@ def add_office(body, with_key=None):
 assert add_office(ACCOUNTS, with_key=KEY).status_code == 403, "the gate key adds no office"
 bad = add_office({"name": "", "main": "1", "backup": "1"})
 assert bad.status_code == 400 and set(bad.get_json()["fields"]) == {"name", "main", "backup"}
+single = add_office({"name": "Single desk", "main": OFFICE_MAIN, "backup": ""})
+assert single.status_code == 200, single.get_json()
+assert [(o["main"], o["backup"]) for o in single.get_json()["offices"]
+        if o["name"] == "Single desk"] == [(OFFICE_MAIN, OFFICE_MAIN)], "one person, both roles"
+client.post("/api/admin/offices/remove", json={"name": "Single desk"}, headers=ADMIN)
 same = add_office({**ACCOUNTS, "backup": OFFICE_MAIN})
-assert "different" in same.get_json()["fields"]["backup"], same.get_json()
+assert "Leave the backup empty" in same.get_json()["fields"]["backup"], same.get_json()
 made = add_office(ACCOUNTS)
 listed_offices = [{k: o[k] for k in ACCOUNTS} for o in made.get_json()["offices"]]
 assert made.status_code == 200 and listed_offices == [ACCOUNTS], made.get_json()
@@ -1799,6 +1818,7 @@ assert entry_reply.startswith("Entry recorded: Dr Dev"), entry_reply
 assert "message about this entry was sent" in entry_reply, entry_reply
 to_dev = [body for to, body in sent if to == DEV_PHONE]
 assert len(to_dev) == 1 and "Campus entry recorded for Dr Dev" in to_dev[0], to_dev
+assert to_dev[0].count("+91") == 0 and "by Gate desk." in to_dev[0], "no guard's number to staff"
 assert staff.recent_entries()[0]["entered_by"] == f"Gate desk {config.GUARD}"
 # A second send of the same code within 2 minutes records and sends nothing more.
 again_reply = say(APPROVER, f"IN {dev_code[:3]} {dev_code[3:]}")
@@ -2001,7 +2021,7 @@ print("each time the blacklist stops someone, the admin page shows it")
 limits.forget_hits()
 with db.connect() as conn:
     conn.execute("DELETE FROM blocked_attempts")
-caught = approved()
+stopped_visit = approved()
 caught_code = add_staff("Kiran", "+919876543210").get_json()["code"]
 add_black("9876543210")
 
@@ -2015,7 +2035,7 @@ first = attempts()[0]
 assert first["what"] == blacklist.ASKED and first["by_whom"] == blacklist.VISITOR_PAGE
 assert attempts()[0]["name"] == payload["name"] and attempts()[0]["phone"] == payload["phone"]
 # A board tap by reference is not an attempt. The entry code is: the person is at the gate.
-client.get(f"/api/pass/{caught['reference']}", headers=KEY)
+client.get(f"/api/pass/{stopped_visit['reference']}", headers=KEY)
 assert len(attempts()) == 1, "a board tap records nothing"
 
 
@@ -2025,19 +2045,19 @@ def older():
         conn.execute("UPDATE blocked_attempts SET at = %s", (db.ago(11 / 1440),))
 
 
-client.get(f"/api/pass/{entry_of(caught)}", headers=KEY)
+client.get(f"/api/pass/{entry_of(stopped_visit)}", headers=KEY)
 assert attempts()[0]["what"] == blacklist.AT_GATE and attempts()[0]["by_whom"] == access.DESK_KEY
-assert attempts()[0]["detail"] == caught["reference"]
+assert attempts()[0]["detail"] == stopped_visit["reference"]
 # The same person again within 10 minutes is one attempt, so hammering does not fill the list.
-client.post(f"/api/pass/{entry_of(caught)}/entry", headers=KEY, json=PHOTO)
-say(APPROVER, f"IN {entry_of(caught)}")
+client.post(f"/api/pass/{entry_of(stopped_visit)}/entry", headers=KEY, json=PHOTO)
+say(APPROVER, f"IN {entry_of(stopped_visit)}")
 assert len(attempts()) == 2, [a["what"] for a in attempts()]
 older()
-say(APPROVER, f"IN {entry_of(caught)}")
+say(APPROVER, f"IN {entry_of(stopped_visit)}")
 assert attempts()[0]["by_whom"] == f"Gate desk {config.GUARD}", "WhatsApp names the guard"
 older()
-say(APPROVER, entry_of(caught))
-say(APPROVER, caught["reference"])
+say(APPROVER, entry_of(stopped_visit))
+say(APPROVER, stopped_visit["reference"])
 assert len(attempts()) == 4, "lookup by entry code counts, by reference does not"
 say(APPROVER, caught_code)
 older()
@@ -2132,7 +2152,7 @@ assert "Made a new admin key" in changes_csv
 
 # A stolen gate key cannot list the allow list: 30 codes a minute for each key.
 limits.forget_hits()
-tries = [client.get(f"/api/staff/{1000000 + n}", headers=KEY).status_code for n in range(35)]
+tries = [client.get(f"/api/staff/{1000000 + n}", headers=KEY).status_code for n in range(65)]
 assert tries.count(429) == 5 and 404 in tries, tries
 limits.forget_hits()
 print("  bans decline waiting requests, YES cannot race a ban, offices refresh, changes logged")
@@ -2330,6 +2350,137 @@ with db.connect() as conn:
     conn.execute("DELETE FROM admins")
 db.forget_cache()
 print("  only a super admin, each request checked alone, guards told once, all logged")
+
+print("WhatsApp help names only the sender's own jobs")
+limits.forget_hits()
+for other in visits.open_requests():
+    visits.decide(other["reference"], db.DECLINED, db.BY_MAIN)
+ONLY_GUARD, ONLY_APPROVER = "+919600000031", "+919600000032"
+client.post("/api/admin/guards", json={"name": "Gita", "phone": ONLY_GUARD}, headers=ADMIN)
+add_office({"name": "Help desk", "main": ONLY_APPROVER, "backup": ""})
+APPROVER_LINE, GUARD_LINE = whatsapp.HELP_LINES["approver"][1], whatsapp.HELP_LINES["guard"][1]
+KEY_LINE = "KEY sends you your key"
+guard_help = say(ONLY_GUARD[1:], "hello")
+assert GUARD_LINE in guard_help and KEY_LINE in guard_help and APPROVER_LINE not in guard_help
+approver_help = say(ONLY_APPROVER[1:], "hello")
+assert "No request is waiting for you" in approver_help, approver_help
+assert APPROVER_LINE in approver_help and GUARD_LINE not in approver_help
+assert KEY_LINE not in approver_help
+admin_help = say(config.ADMIN_PHONE[1:], "hello")
+assert admin_help == "KEY sends you your key for the admin page.", admin_help
+# One number with two jobs, approver and gate desk: one message with both.
+everything = say(APPROVER, "hello")
+assert all(line in everything for line in (APPROVER_LINE, GUARD_LINE,
+                                           "KEY sends you your key for the gate page.")), everything
+assert whatsapp.help_text({"approver", "guard", "admin"}).endswith(
+    "KEY sends you your keys for the gate page and the admin page."), "all three jobs"
+assert GUARD_LINE in say(ONLY_GUARD[1:], "IN"), "IN with no code explains with the guard's help"
+assert APPROVER_LINE not in say(ONLY_GUARD[1:], "IN")
+sent_before = len(sent)
+client.post("/webhook/whatsapp", json=inbound(STRANGER, "hello"))
+assert len(sent) == sent_before, "a stranger gets no reply"
+# Every message the app sent in this whole run fits in one WhatsApp message.
+assert all(len(body) <= 4096 for _, body in sent), max(len(body) for _, body in sent)
+client.post("/api/admin/guards/remove", json={"phone": ONLY_GUARD}, headers=ADMIN)
+client.post("/api/admin/offices/remove", json={"name": "Help desk"}, headers=ADMIN)
+print("  guard, approver, admin and all three each get their own help; strangers get nothing")
+
+print("worst cases: a resent form, a visitor from abroad, an unexpected failure")
+limits.forget_hits()
+# A resend after a slow answer returns the first request, and the approver hears once.
+KEY_ONE = "a" * 32
+templates.clear()
+first_send = client.post("/api/requests", json={**payload, "request_key": KEY_ONE})
+again_send = client.post("/api/requests", json={**payload, "request_key": KEY_ONE})
+assert first_send.status_code == 201 and again_send.status_code == 200, again_send.get_json()
+assert again_send.get_json()["reference"] == first_send.get_json()["reference"]
+assert again_send.get_json()["token"] == first_send.get_json()["token"], "the same pass"
+assert len(templates) == 1, "the approver is asked once"
+assert "request_key" not in first_send.get_json() and "request_key" not in again_send.get_json()
+other_key = client.post("/api/requests", json={**payload, "request_key": "b" * 32}).get_json()
+assert other_key["reference"] != first_send.get_json()["reference"], "a new form is a new request"
+odd_key = client.post("/api/requests", json={**payload, "request_key": "short"})
+assert odd_key.status_code == 201, "a key that does not look right is ignored"
+gate_seen = client.get(f"/api/pass/{first_send.get_json()['reference']}", headers=KEY).get_json()
+assert "request_key" not in gate_seen, "the gate never sees the key"
+# A request that failed to reach the approver is deleted, so the same key can try again.
+real_template = whatsapp.send_template
+whatsapp.send_template = broken
+try:
+    failed = client.post("/api/requests", json={**payload, "request_key": "c" * 32})
+    assert failed.status_code == 502
+finally:
+    whatsapp.send_template = real_template
+assert client.post("/api/requests", json={**payload, "request_key": "c" * 32}).status_code == 201
+
+# A visitor from abroad gives + and the country code. A short or odd number is refused.
+for number, works in (("+44 7911 123456", True), ("+1 415 555 0100", True), ("+12345", False),
+                      ("987654321", False), ("98765 43210", True)):
+    answer = client.post("/api/requests", json={**payload, "phone": number})
+    assert (answer.status_code == 201) == works, (number, answer.get_json())
+
+# An unexpected failure answers in words the page can show, not an HTML error page.
+real_create = visits.create
+visits.create = broken
+try:
+    with contextlib.redirect_stderr(io.StringIO()):
+        crashed = client.post("/api/requests", json=payload)
+    assert crashed.status_code == 500 and crashed.get_json()["error"].startswith("The server had")
+finally:
+    visits.create = real_create
+for other in visits.open_requests():
+    visits.decide(other["reference"], db.DECLINED, db.BY_MAIN)
+print("  one request for a resent form, + numbers from abroad, a plain answer on failure")
+
+print("shared lookups cost O(1) and no caller can change them")
+shared_code = add_staff("Shared Sam", "+919400000099").get_json()["code"]
+first_look = staff.by_code(shared_code)
+first_look["name"] = "Changed by a caller"
+assert staff.by_code(shared_code)["name"] == "Shared Sam", "a copy, so the index stays right"
+assert staff._by_code() is staff._by_code(), "one shared index, not a copy for each call"
+assert isinstance(blacklist._keys(), frozenset)
+try:
+    staff._by_code()[shared_code]["name"] = "x"
+    raise AssertionError("the shared index must be read-only")
+except TypeError:
+    pass
+client.post("/api/admin/staff/remove", json={"code": shared_code}, headers=ADMIN)
+assert staff.by_code(shared_code) is None, "a write makes the index stale at once"
+print("  one index for all callers, read-only, rebuilt after each write")
+
+print("bugs found in the hunt stay fixed")
+limits.forget_hits()
+# A resend that races its first request, deleted at that moment because WhatsApp failed,
+# makes a new request instead of crashing.
+first_try = client.post("/api/requests", json={**payload, "request_key": "e" * 32}).get_json()
+real_lookup = visits.by_request_key
+
+
+def vanished(key):
+    """The first request is deleted just as the resend finds the key taken."""
+    visits.delete(first_try["reference"])
+    return None
+
+
+visits.by_request_key = vanished
+try:
+    fields, guests, _ = checks.clean_fields(payload)
+    retried = visits.create(fields, guests, request_key="e" * 32)
+finally:
+    visits.by_request_key = real_lookup
+assert retried["reference"] != first_try["reference"]
+assert visits.by_request_key("e" * 32)["reference"] == retried["reference"]
+# The same blacklisted person, typed two ways within 10 minutes, is one attempt.
+with db.connect() as conn:
+    conn.execute("DELETE FROM blocked_attempts")
+blacklist.record_attempt("98765 43210", "K", blacklist.ASKED, "x", "Visitor page")
+blacklist.record_attempt("9876543210", "K", blacklist.ASKED, "x", "Visitor page")
+assert len(blacklist.recent_attempts()) == 1, blacklist.recent_attempts()
+with db.connect() as conn:
+    conn.execute("DELETE FROM blocked_attempts")
+# A request asked again reads "Asked again" in the log, right for a backup or a reminder.
+assert export.STATUS_WORDS["escalated"] == "Asked again"
+print("  a raced resend, one attempt typed two ways, neutral words for asking again")
 
 # Last, because it closes the database for the rest of this process.
 print("on exit, the timer stops and the database closes before Python shuts down")

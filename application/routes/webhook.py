@@ -44,18 +44,18 @@ EXPIRED_REQUEST = ("{reference} expired: it was made more than {hours} hours ago
                    " The visitor must send a new request.")
 
 
-def handle_decide(sender, status, reference, table):
+def handle_decide(sender, status, reference, table, help_lines=whatsapp.HELP):
     if not access.is_approver(sender, table):
-        return "Only the approver can decide a request."
+        return "Only an approver can decide a request."
     if reference is None:
         waiting = access.waiting_for(sender, table)
         if len(waiting) != 1:
-            return whatsapp.waiting_body(waiting)
+            return whatsapp.waiting_body(waiting, help_lines)
         reference = waiting[0]["reference"]
 
     visit = visits.get(reference)
     if visit is None:
-        return f"No request has reference {reference}."
+        return f"No request has reference {reference}. Check the reference in the request message."
     if visit["status"] == db.EXPIRED:
         return EXPIRED_REQUEST.format(reference=reference, hours=config.PASS_HOURS)
     # Each reason has its own two approvers. Nobody decides another's request.
@@ -78,13 +78,13 @@ def handle_decide(sender, status, reference, table):
     return f"{reference} is now {status}.\n\n{whatsapp.brief(visit)}"
 
 
-def handle_gate(guard, sender, action, code):
+def handle_gate(guard, sender, action, code, help_lines=whatsapp.HELP):
     """IN with the entry code, OUT with the exit code. guard is the sender's label, or None."""
     if not guard:
         return "Only a guard can record entry and exit."
     if code is None:
         return (f"Add the {action} code from the visitor's pass."
-                f" For example: {whatsapp.EXAMPLES[action]}.\n\n{whatsapp.HELP}")
+                f" For example: {whatsapp.EXAMPLES[action]}.\n\n{help_lines}")
 
     visit, kind = visits.by_code(code)
     if visit is None:
@@ -207,23 +207,28 @@ def answer_message(sender, text, photo, table, guard):
     if photo:
         return handle_photo(guard, sender, photo)
 
+    # The help names only this sender's jobs: approver, guard, admin, or any mix.
+    roles = {role for role, has in (("approver", access.is_approver(sender, table)),
+                                    ("guard", bool(guard)),
+                                    ("admin", access.is_admin_phone(sender))) if has}
+    help_lines = whatsapp.help_text(roles)
     kind, value, key = whatsapp.read_reply(text)
     if kind == "key":
-        return handle_key(sender, guard)
+        return handle_key(sender, guard, help_lines)
     if kind == "decide":
-        return handle_decide(sender, value, key, table)
+        return handle_decide(sender, value, key, table, help_lines)
     if kind == "gate":
-        return handle_gate(guard, sender, value, key)
+        return handle_gate(guard, sender, value, key, help_lines)
     if kind == "staff":
         return handle_staff(guard, key)
     if kind == "lookup":
         return handle_lookup(guard, sender, key, table)
-    if access.is_approver(sender, table):
-        return whatsapp.waiting_body(access.waiting_for(sender, table))
-    return whatsapp.HELP
+    if "approver" in roles:
+        return whatsapp.waiting_body(access.waiting_for(sender, table), help_lines)
+    return help_lines
 
 
-def handle_key(sender, guard):
+def handle_key(sender, guard, help_lines=whatsapp.HELP):
     """KEY sends the gate desk or admin its key. An added guard or admin gets a new key."""
     answers = []
     by = f"KEY on WhatsApp from +{whatsapp.digits(sender)}"
@@ -243,4 +248,4 @@ def handle_key(sender, guard):
         if own:
             answers.append(whatsapp.own_key_body(own, "admin"))
             audit.record(by, "Made a new admin key", access.guard_label(admin))
-    return "\n\n".join(answers) or whatsapp.HELP
+    return "\n\n".join(answers) or help_lines

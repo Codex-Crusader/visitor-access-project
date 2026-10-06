@@ -33,6 +33,14 @@ def clean_text(value):
     return " ".join(value.split())
 
 
+def visitor_phone_ok(phone):
+    """10 digits, as in India, or + and the country code for a visitor from abroad."""
+    digits = "".join(c for c in phone if c in "0123456789")
+    if phone.startswith("+"):
+        return 8 <= len(digits) <= 15
+    return len(digits) == 10
+
+
 def clean_fields(payload):
     """Return (fields, guests, error)."""
     fields = {}
@@ -47,9 +55,8 @@ def clean_fields(payload):
             return None, None, f"{key} is required"
         fields[key] = value
 
-    digits = "".join(c for c in fields["phone"] if c.isdigit())
-    if len(digits) != 10:
-        return None, None, "phone must be 10 digits"
+    if not visitor_phone_ok(fields["phone"]):
+        return None, None, "phone must be 10 digits, or + and the country code"
 
     raw_guests = payload.get("guests") or []
     if not isinstance(raw_guests, list):

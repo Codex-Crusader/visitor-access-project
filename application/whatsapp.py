@@ -23,14 +23,41 @@ GATE_WORDS = {"IN": db.ENTRY, "OUT": db.EXIT}
 # The gate desk or admin number gets its key back.
 KEY_WORD = "KEY"
 
-HELP = (
-    "Send a reference like VR-40221, or a pass code like KT-4821, to look it up.\n"
-    "YES <reference> approves. NO <reference> declines.\n"
-    "IN <entry code>, then a photo of the visitor, records entry.\n"
-    "OUT <exit code> records exit.\n"
-    "The entry code and the exit code are on the visitor's pass.\n"
-    "A 7-digit allow list code records that person's entry at once."
-)
+# The help each person gets names only the jobs they have. One number can have all three.
+HELP_LINES = {
+    "approver": [
+        "Send a reference like VR-40221 to see that request.",
+        "YES <reference> approves. NO <reference> declines. Small letters work too.",
+    ],
+    "guard": [
+        "Send a pass code like KT-4821 to see that pass.",
+        "IN <entry code>, then a photo of the visitor, records entry.",
+        "OUT <exit code> records exit. Both codes are on the visitor's pass.",
+        "A staff member's 7-digit allow list code records their entry at once.",
+    ],
+}
+KEY_LINES = {
+    frozenset({"guard"}): "KEY sends you your key for the gate page.",
+    frozenset({"admin"}): "KEY sends you your key for the admin page.",
+    frozenset({"guard", "admin"}): "KEY sends you your keys for the gate page and the admin page.",
+}
+ROLES = ("approver", "guard", "admin")
+
+
+def help_text(roles):
+    """The commands for these roles, in one message."""
+    lines = []
+    if "approver" in roles:
+        lines += HELP_LINES["approver"]
+    if "guard" in roles:
+        lines += HELP_LINES["guard"]
+    keys = frozenset(roles) & {"guard", "admin"}
+    if keys:
+        lines.append(KEY_LINES[keys])
+    return "\n".join(lines)
+
+
+HELP = help_text(ROLES)
 EXAMPLES = {db.ENTRY: "IN KT-4821", db.EXIT: "OUT RM-0937"}
 
 
@@ -92,12 +119,19 @@ def send_template(to_phone, values, name=None):
 
 
 # The visit_request template's {{1}} to {{8}}: reference, who is asked, six details.
-def template_values(visit, escalated=False):
+# The second line of the approval request, by stage. A reminder goes to an approver who is
+# also their own backup: no second person to ask.
+STAGE_LINES = {
+    "new": "New request, waiting for your decision.",
+    "backup": "Backup approver: no answer from the first approver.",
+    "reminder": "Reminder: this request still waits for your decision.",
+}
+
+
+def template_values(visit, stage="new"):
     return [
         visit["reference"],
-        "Backup approver: no answer from the first approver."
-        if escalated
-        else "New request, waiting for your decision.",
+        STAGE_LINES[stage],
         visit["name"],
         visit["phone"],
         visit["address"],
@@ -108,11 +142,9 @@ def template_values(visit, escalated=False):
     ]
 
 
-def request_body(visit, escalated=False):
+def request_body(visit, stage="new"):
     lines = [
-        "Backup approver: no answer from the first approver."
-        if escalated
-        else "New campus visit request.",
+        "New campus visit request." if stage == "new" else STAGE_LINES[stage],
         "",
         f"Reference: {visit['reference']}",
         f"Name: {visit['name']}",
@@ -139,10 +171,10 @@ def brief(visit):
     )
 
 
-def waiting_body(visits):
+def waiting_body(visits, help_lines=HELP):
     """What to send an approver who has not given a usable decision."""
     if not visits:
-        return f"No request is waiting for a decision.\n\n{HELP}"
+        return f"No request is waiting for you.\n\n{help_lines}"
     if len(visits) == 1:
         return request_body(visits[0])
     lines = ["These requests are waiting for you:", ""]
@@ -316,19 +348,19 @@ def read_failures(payload):
     return failures
 
 
-def notify(phone, visit, escalated=False):
+def notify(phone, visit, stage="new"):
     """Send the approval request. Returns why the template failed if TEMPLATE_FALLBACK sent text."""
     if not config.REQUEST_TEMPLATE:
-        send(phone, request_body(visit, escalated))
+        send(phone, request_body(visit, stage))
         return None
     try:
-        send_template(phone, template_values(visit, escalated))
+        send_template(phone, template_values(visit, stage))
         return None
     except RuntimeError as failure:
         if not config.TEMPLATE_FALLBACK:
             raise
         problem = str(failure)
-    send(phone, request_body(visit, escalated))
+    send(phone, request_body(visit, stage))
     return problem
 
 
@@ -338,7 +370,9 @@ def notify_approver(visit, approvers):
 
 
 def notify_backup(visit, approvers):
-    return notify(approvers[1], visit, escalated=True)
+    """Ask the backup. An approver who is their own backup gets a reminder instead."""
+    main, backup = approvers
+    return notify(backup, visit, "reminder" if same_number(main, backup) else "backup")
 
 
 def auto_approved_body(visit, minutes):
@@ -387,15 +421,23 @@ def own_key_body(key, which="gate"):
             "Your old key no longer works. Do not share this one.")
 
 
+GUARD_NUMBER = re.compile(r"\s*\+\d+$")
+
+
+def guard_name(by):
+    """A guard's label with no number, as Ravi or Gate desk. Staff need no guard's phone."""
+    return GUARD_NUMBER.sub("", by).replace(" (shared key)", "")
+
+
 def staff_entry_values(person, stamp, by):
     """The allow list entry template's {{1}} to {{3}}: name, time, guard."""
-    return [person["name"], local_time(stamp), by]
+    return [person["name"], local_time(stamp), guard_name(by)]
 
 
 def staff_entry_body(person, stamp, by):
     """What a person on the allow list reads when a guard records their entry."""
     return (f"Campus entry recorded for {person['name']} at {local_time(stamp)}"
-            f" by {by}.\n\nIf this was not you, tell the campus admin.")
+            f" by {guard_name(by)}.\n\nIf this was not you, tell the campus admin.")
 
 
 def notify_staff_entry(person, stamp, by):

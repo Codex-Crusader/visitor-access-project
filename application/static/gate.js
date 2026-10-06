@@ -25,6 +25,31 @@ const tidy = text => {
   return code ? `${code[1]}-${code[2]}` : squeezed;
 };
 
+// "pass" or "staff". It sets the keyboard and the words. A typed code is read the same in both.
+let mode = "pass";
+const MODES = {
+  pass: {title: "Check a pass", label: "Code on the visitor's pass", placeholder: "KT-4821",
+         button: "Check the pass", keyboard: "text"},
+  staff: {title: "Check a staff code", label: "7-digit allow list code", placeholder: "1234567",
+          button: "Check the staff code", keyboard: "numeric"},
+};
+
+function setMode(next) {
+  mode = next;
+  const m = MODES[mode];
+  for (const tab of el("modes").children) {
+    tab.setAttribute("aria-selected", tab.dataset.mode === mode ? "true" : "false");
+  }
+  el("title").textContent = m.title;
+  el("code-label").textContent = m.label;
+  el("look").textContent = m.button;
+  codeBox.placeholder = m.placeholder;
+  codeBox.inputMode = m.keyboard;
+  if (mode === "staff") codeBox.setAttribute("pattern", "[0-9]*");
+  else codeBox.removeAttribute("pattern");
+  codeBox.setAttribute("autocapitalize", mode === "staff" ? "off" : "characters");
+}
+
 let visit = null;
 // The person an allow list code opened, as {code, name, blacklisted}, with entered_at once recorded.
 let person = null;
@@ -102,7 +127,7 @@ function entryStep() {
 const NEED = {
   approved: ["entry", null,
              "To record the entry, type the entry code on the visitor's pass."],
-  inside:   ["exit", `<button class="btn" onclick="act('exit')">Record exit</button>`,
+  inside:   ["exit", `<button class="btn" id="leave" onclick="act('exit')">Record exit</button>`,
              "To record the exit, type the exit code on the visitor's pass. It shows there once they are inside."],
 };
 
@@ -192,9 +217,9 @@ function render() {
   el("entry").hidden = !haveKey;
   boardBox.hidden = !haveKey;
   tools.hidden = !haveKey;
-  el("sub").textContent = haveKey
-    ? "Type the code on the visitor's pass, or an allow list code. Or tap a name below."
-    : "First, type the gate key your admin gave you.";
+  el("sub").textContent = !haveKey ? "First, type the gate key your admin gave you."
+    : mode === "staff" ? "Ask the staff member for their 7-digit allow list code, and type it here."
+      : "Type the code on the visitor's pass, or tap a name below. For staff, tap Staff code.";
 
   if (!haveKey) {
     renderLive();
@@ -361,9 +386,10 @@ function staffView(p) {
       : banner("good", "On the allow list", "Check that this is them, then record the entry.");
   const canEnter = !p.entered_at && !p.blacklisted;
   return `${notice ? problem(notice) : ""}${top}
-    <div class="facts">${fact("Name", p.name)}${p.tag ? fact("Tag", p.tag) : ""}${fact("Allow list code", p.code)}</div>
+    <div class="who"><b>${x(p.name)}</b>${p.tag ? `<span>${x(p.tag)}</span>` : ""}</div>
+    <div class="facts">${fact("Allow list code", p.code)}</div>
     ${canEnter ? `<button class="btn go" id="staff-enter" onclick="enterStaff()">Record entry</button>` : ""}
-    <button class="btn plain" onclick="clear_()">Next visitor</button>`;
+    <button class="btn plain" onclick="clear_()">Next person</button>`;
 }
 
 async function showStaff(code) {
@@ -472,17 +498,26 @@ async function act(action) {
   void loadBoard();
 }
 
+// The next person is most often a visitor, so the page goes back to the pass.
 function clear_() {
   visit = null;
   person = null;
   photo = "";
   notice = "";
   codeBox.value = "";
+  setMode("pass");
   render();
   codeBox.focus();
 }
 
 el("look").onclick = look;
+el("modes").onclick = e => {
+  const tab = e.target.closest("[data-mode]");
+  if (!tab) return;
+  setMode(tab.dataset.mode);
+  render();
+  codeBox.focus();
+};
 codeBox.onkeydown = e => { if (e.key === "Enter") void look(); };
 boardBox.onclick = e => {
   const hit = e.target.closest("[data-ref]");

@@ -50,7 +50,8 @@ CLOSED_PASS = ("reference", "status", "created_at", "decided_at",
                "entered_at", "exited_at", "guests")
 
 # Never sent to the gate. The token opens the visitor's page, which shows the gate code.
-GATE_PRIVATE = ("token", "address", "decided_phone", "entered_by", "exited_by")
+GATE_PRIVATE = ("token", "address", "decided_phone", "entered_by", "exited_by",
+                "request_key")
 
 
 # What the gate reads for a visitor on the blacklist. Leaving is always allowed.
@@ -164,8 +165,9 @@ def gate_action(key, action):
 
 
 NO_SUCH_CODE = "No one on the allow list has that code."
-# Allow list codes one guard may try in a minute, so a stolen key cannot list the names.
-CODES_PER_MINUTE = 30
+# Allow list calls one guard may make in a minute, so a stolen key cannot list the names.
+# The gate page makes two for each person, so this lets one guard take 30 people a minute.
+CODES_PER_MINUTE = 60
 TOO_MANY_CODES = "Too many allow list codes in a minute. Wait a minute and try again."
 
 

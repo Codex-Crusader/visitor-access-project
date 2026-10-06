@@ -69,7 +69,10 @@ el("f_address").value = "12 Park Road, Karjat";
 el("f_address").dispatchEvent(new w.Event("input"));
 call("n1");
 ok("a 5 digit phone blocks Continue", S.s === "step1" && red("f_phone"));
-ok("the message names the rule", el("e_phone").textContent === "Enter 10 digits.");
+ok("the message names the rule", el("e_phone").textContent === "Enter 10 digits, or + and the country code.");
+ok("a visitor from abroad gives + and the country code", w.eval('phoneOk("+44 7911 123456")')
+   && w.eval('phoneOk("98765 43210")') && !w.eval('phoneOk("+12345")') && !w.eval('phoneOk("987654321")'));
+ok("the phone box shows the keypad with +", el("f_phone").getAttribute("inputmode") === "tel");
 
 // --- an over-long name is refused, same as the server ---
 S.f.name = "x".repeat(201); S.f.phone = "9876543210"; S.f.address = "12 Park Road";
@@ -676,11 +679,12 @@ async function approverChecks() {
 
   byId("approvers").querySelector("[data-edit]").click();
   ok("Change opens both number boxes", !!byId("ap-main") && !!byId("ap-backup"));
-  byId("ap-backup").value = "";
+  byId("ap-main").value = "";
   byId("ap-save").click();
   await tick();
-  ok("an empty backup is refused on the page", posts.length === 0
-     && byId("approvers").textContent.includes("backup approver's number"));
+  ok("an empty approver is refused on the page", posts.length === 0
+     && byId("approvers").textContent.includes("approver's number"));
+  byId("ap-main").value = "+911";
   byId("ap-backup").value = "+911";
   byId("ap-save").click();
   await tick(); await tick();
@@ -980,6 +984,10 @@ async function staffGateChecks() {
   const byId = id => desk.document.getElementById(id);
   desk.eval('localStorage.setItem("gatekey","k")');
   desk.eval("render()");
+  desk.document.querySelector('[data-mode="staff"]').click();
+  ok("Staff code opens the number keypad", byId("code").inputMode === "numeric"
+     && byId("code").getAttribute("pattern") === "[0-9]*" && byId("look").textContent === "Check the staff code"
+     && byId("sub").textContent.includes("7-digit"));
   byId("code").value = "123 4567";
   await desk.eval("look()");
   ok("seven digits ask for a staff member, not a pass",
@@ -991,8 +999,13 @@ async function staffGateChecks() {
   await tick(); await tick();
   ok("Record staff entry posts the code", calls.some(([u, m]) => u === "/api/staff/1234567/entry" && m === "POST"));
   ok("it says the entry is recorded", byId("out").innerHTML.includes("Entry recorded") && !byId("staff-enter"));
+  ok("the name and the tag show large, for the face check", !!byId("out").querySelector(".who b"));
   desk.eval("clear_()");
-  ok("Next visitor clears it", byId("out").innerHTML === "");
+  ok("Next person clears it, and goes back to the visitor pass", byId("out").innerHTML === ""
+     && byId("code").inputMode === "text" && byId("look").textContent === "Check the pass");
+  byId("code").value = "1234567";
+  await desk.eval("look()");
+  ok("7 digits in visitor mode still find the staff member", calls.filter(([u]) => u === "/api/staff/1234567").length === 2);
 }
 
 // ------------------------------------------- staff, offices and admins
@@ -1051,7 +1064,12 @@ async function teamChecks() {
   ok("a new staff member gets a code, shown in the note and the list",
      byId("s-note").textContent.includes("7654321") && byId("s-table").textContent.includes("7654321"));
 
-  tab("offices").click();
+  tab("numbers").click();
+  ok("the offices sit on the Approvers tab, under the reasons",
+     !byId("numbers").hidden && byId("numbers").contains(byId("o-table"))
+     && byId("numbers").innerHTML.indexOf("approvers") < byId("numbers").innerHTML.indexOf("o-table"));
+  ok("the tabs: allow list and blacklist side by side", [...byId("tabs").children]
+     .map(t => t.dataset.section).join() === "visits,numbers,staff,blacklist,guards,admins");
   byId("o-add").click();
   ok("an empty office form is refused on the page", posts.filter(([u]) => u.includes("offices")).length === 0
      && byId("o-name-err").textContent !== "" && byId("o-main-err").textContent !== "");
@@ -1309,14 +1327,19 @@ async function tagChecks() {
   chips().find(c => c.textContent.includes("No tag")).click();
   ok("No tag shows the untagged", rows().join() === "Mr Das");
   chips()[0].click();
+  // The search waits for a pause in typing, then redraws the allow list only.
+  const typed = () => new Promise(done => setTimeout(done, admin.eval("SEARCH_WAIT") + 20));
   byId("s-q").value = "1000003";
   byId("s-q").dispatchEvent(new admin.Event("input"));
+  await typed();
   ok("the search finds a code", rows().join() === "Ms Sen" && admin.document.activeElement !== byId("s-table"));
   byId("s-q").value = "zzz";
   byId("s-q").dispatchEvent(new admin.Event("input"));
+  await typed();
   ok("no match says so", byId("s-table").textContent.includes("Nothing matches"));
   byId("s-q").value = "";
   byId("s-q").dispatchEvent(new admin.Event("input"));
+  await typed();
 
   // Tapping a tag in use fills the tag box, so a phone never needs to type it.
   byId("s-tagpick").querySelector('[data-pick="Physics"]').click();
@@ -1351,6 +1374,18 @@ async function tagChecks() {
      && posts.at(-1)[1].list === "staff");
   ok("the filter follows the new name", chips().find(c => c.getAttribute("aria-pressed") === "true")
      .textContent.includes("Science"));
+  // A long list shows 200 rows, then 200 more on each tap: the redraw cost stays the same.
+  lists.staff = Array.from({length: 450}, (_, i) => person(`Person ${i}`, String(2000000 + i), ""));
+  admin.eval("refresh()");
+  await tick(); await tick();
+  chips()[0].click();
+  const drawn = () => byId("s-table").querySelectorAll("tbody tr:not(.group):not(.more-row)").length;
+  ok("a long list shows its first 200 rows", drawn() === 200
+     && byId("s-table").querySelector("[data-more]").textContent.includes("of 250 not shown"));
+  byId("s-table").querySelector("[data-more]").click();
+  ok("Show more adds 200", drawn() === 400);
+  byId("s-table").querySelector("[data-more]").click();
+  ok("and the last 50, with no button left", drawn() === 450 && !byId("s-table").querySelector("[data-more]"));
   ok("the offices list has its own chips", byId("o-chips").textContent.includes("Main Building")
      && !byId("o-chips").textContent.includes("Science"));
 
@@ -1424,6 +1459,16 @@ async function bulkChecks() {
      && boss.byId("bulk-note").textContent.includes("VR-10002: Already approved."));
   boss.byId("tabs").querySelector('[data-section="admins"]').click();
   ok("a super admin can make another admin super", !!boss.byId("a-table").querySelector('[data-super="+92"]'));
+  // One colour for each kind of action: green approves, red deletes or bans, amber is a key.
+  const has = (selector, colour) => {
+    const found = [...boss.win.document.querySelectorAll(selector)];
+    return found.length > 0 && found.every(b => b.classList.contains(colour));
+  };
+  ok("buttons are colour coded by what they do",
+     has("#bulk-yes", "go") && has("#bulk-no", "stop") && has("[data-delete]", "del")
+     && has("[data-newkey]", "warn") && has("#rekey", "warn") && has("#b-add", "stop")
+     && has('[data-super="+92"]', "go") && has("#g-add", "btn") && !has("#g-add", "stop")
+     && has("#csv", "edit"));
   ok("but not change their own role", !boss.byId("a-table").querySelector('[data-super="+91"]'));
 
   console.log("admin page: a regular admin sees no bulk controls, and keeps the key");

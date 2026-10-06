@@ -298,5 +298,27 @@ with db.connect() as conn:
     assert conn.execute("SELECT COUNT(*) AS n FROM staff_entries").fetchone()["n"] == 1
 print("  20 guards sent one allow list code at once -> 1 entry, 1 message")
 
+# --- The same form sent ten times at once, as a phone retrying on a weak signal ---
+same_key = []
+
+
+def resend():
+    r = client.post("/api/requests", json={**payload, "request_key": "z" * 32})
+    with lock:
+        same_key.append(r.get_json()["reference"])
+
+
+threads = [threading.Thread(target=resend) for _ in range(10)]
+for t in threads:
+    t.start()
+for t in threads:
+    t.join()
+assert len(set(same_key)) == 1, same_key
+with db.connect() as conn:
+    made = conn.execute("SELECT COUNT(*) AS n FROM visits WHERE request_key = %s",
+                        ("z" * 32,)).fetchone()["n"]
+assert made == 1, made
+print("  the same form sent 10 times at once -> 1 request")
+
 print()
 print("concurrency checks passed")

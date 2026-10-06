@@ -2,6 +2,7 @@
 
 import re
 import secrets
+from types import MappingProxyType
 
 from psycopg import errors
 
@@ -35,10 +36,19 @@ def everyone():
     return [dict(row) for row in rows]
 
 
+@db.cached(shared=True)
+@db.read
+def _by_code():
+    """Every person on the allow list, by code. Read-only, so it is shared, not copied."""
+    with db.connect() as conn:
+        rows = conn.execute("SELECT code, name, phone, added_at, tag FROM staff").fetchall()
+    return MappingProxyType({row["code"]: MappingProxyType(dict(row)) for row in rows})
+
+
 def by_code(code):
-    """The staff member with this code, as {code, name, phone, added_at}, or None."""
-    found = [person for person in everyone() if person["code"] == code]
-    return found[0] if found else None
+    """The person with this code, as {code, name, phone, added_at, tag}, or None. O(1)."""
+    person = _by_code().get(code)
+    return dict(person) if person else None
 
 
 @db.writes

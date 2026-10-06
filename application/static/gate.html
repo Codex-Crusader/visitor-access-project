@@ -62,6 +62,9 @@ input.key{text-transform:none;letter-spacing:normal;font-size:1rem;text-align:le
 .btn.go{background:var(--go);border-color:var(--go)}
 .btn.plain{background:var(--paper);color:var(--ink);border-color:var(--line);font-weight:600}
 .btn.plain:active{background:var(--mute)}
+/* Green lets in, blue records the exit, amber is the key. The words stay as well. */
+.btn.warn{background:var(--waitBg);border-color:var(--waitLn);color:var(--wait)}
+.btn.warn:active{background:#F8E7C8}
 label.btn{text-align:center;cursor:pointer;margin-top:12px}
 .shot{display:block;width:100%;max-height:340px;object-fit:contain;margin:12px 0 0;
  border-radius:var(--r);background:var(--mute);border:1px solid var(--line)}
@@ -104,6 +107,15 @@ label.btn{text-align:center;cursor:pointer;margin-top:12px}
 .row[data-banned=true] .side small{color:var(--stop);font-weight:700}
 .empty{padding:14px 16px;color:var(--soft);font-size:.93rem;border:1px dashed var(--line);border-radius:var(--r)}
 .updated{margin:10px 0 0;color:var(--soft);font-size:.82rem}
+/* Visitor pass or staff code. Both work in either mode: this only sets the keyboard and words. */
+.modes{display:grid;grid-template-columns:1fr 1fr;gap:6px;padding:5px;margin:0 0 16px;
+ background:var(--mute);border:1px solid var(--line);border-radius:var(--r)}
+.modes button{padding:11px 8px;border-radius:10px;font-weight:650;color:var(--soft)}
+.modes button[aria-selected=true]{background:var(--paper);color:var(--brand);box-shadow:var(--sh)}
+.who{margin:0 0 12px;padding:14px 16px;border:1px solid var(--line);border-radius:var(--r);background:var(--paper)}
+.who b{display:block;font-size:1.4rem;font-weight:750;letter-spacing:-.01em;overflow-wrap:anywhere}
+.who span{display:inline-block;margin-top:6px;padding:3px 11px;border-radius:999px;background:var(--tint);
+ color:var(--brand);font-weight:650;font-size:.9rem}
 .tools{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:28px;padding-top:18px;border-top:1px solid var(--line)}
 .tools .btn{margin:0;padding:13px 10px;font-size:.92rem}
 </style>
@@ -116,18 +128,22 @@ label.btn{text-align:center;cursor:pointer;margin-top:12px}
     <span class="live" id="live" hidden><i></i><span id="liveText">Live</span></span>
   </div>
   <main class="view">
-    <div class="hero"><h2>Check a pass</h2><p class="sub" id="sub">Type the code on the visitor's pass.</p></div>
+    <div class="hero"><h2 id="title">Check a pass</h2><p class="sub" id="sub">Type the code on the visitor's pass.</p></div>
     <div id="entry" hidden>
-      <label for="code">Pass code or allow list code</label>
+      <div class="modes" id="modes" role="tablist" aria-label="What to check">
+        <button role="tab" data-mode="pass" aria-selected="true">Visitor pass</button>
+        <button role="tab" data-mode="staff" aria-selected="false">Staff code</button>
+      </div>
+      <label for="code" id="code-label">Code on the visitor's pass</label>
       <input id="code" placeholder="KT-4821" autocomplete="off" autocapitalize="characters"
              spellcheck="false" inputmode="text" enterkeyhint="go">
-      <button class="btn" id="look">Check</button>
+      <button class="btn" id="look">Check the pass</button>
     </div>
     <div id="out"></div>
     <div id="board" hidden></div>
     <div id="tools" class="tools" hidden>
       <button class="btn plain" id="refresh">Refresh the lists</button>
-      <button class="btn plain" id="rekey">Change gate key</button>
+      <button class="btn warn" id="rekey">Change gate key</button>
     </div>
   </main>
 </div>

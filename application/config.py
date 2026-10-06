@@ -63,11 +63,10 @@ def _approvers():
         raise RuntimeError(f"APPROVERS is not valid JSON. {example}") from None
     if not isinstance(given, dict):
         raise RuntimeError(f"APPROVERS must be a JSON object. {example}")
-    for reason, numbers in given.items():
+    for reason, value in given.items():
         if reason not in table:
             raise RuntimeError(f"APPROVERS names {reason!r}, which is not one of {REASONS}")
-        if isinstance(numbers, str):
-            numbers = [numbers]
+        numbers = [value] if isinstance(value, str) else value
         if not numbers or not str(numbers[0]).strip():
             raise RuntimeError(f"APPROVERS gives no number for {reason!r}")
         main = str(numbers[0]).strip()

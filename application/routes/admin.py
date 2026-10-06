@@ -153,24 +153,26 @@ def approver_rows(table):
 
 @bp.post("/api/admin/approvers")
 def set_approvers():
-    """Change one reason's main and backup approver. Both numbers are required."""
+    """Change one reason's approver and backup. An empty backup means the approver is both."""
     refused = access.admin_refusal()
     if refused:
         return refused
     payload = request.get_json(silent=True) or {}
     reason = payload.get("reason")
-    # Each office has its own pair, on the Offices tab.
+    # Each office has its own pair, under the reasons on the Approvers tab.
     if reason not in config.REASONS or reason == config.OFFICE_REASON:
         return jsonify(error="Unknown reason"), 400
-    main = checks.clean_phone(payload.get("main"))
-    backup = checks.clean_phone(payload.get("backup"))
     problems = {}
+    main = checks.clean_phone(payload.get("main"))
+    # An empty backup means the approver is also the backup: they get a reminder instead.
+    backup_given = str(payload.get("backup") or "").strip()
+    backup = checks.clean_phone(backup_given) if backup_given else main
     if not main:
         problems["main"] = team.PHONE_HINT.format(who="approver")
-    if not backup:
+    if backup_given and not backup:
         problems["backup"] = team.PHONE_HINT.format(who="backup")
-    if main and backup and whatsapp.same_number(main, backup):
-        problems["backup"] = "The backup must be a different number from the approver."
+    if backup_given and main and backup and whatsapp.same_number(main, backup):
+        problems["backup"] = team.SAME_BACKUP
     if problems:
         return jsonify(error="Check the numbers.", fields=problems), 400
     people.save_approvers(reason, main, backup)

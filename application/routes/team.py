@@ -16,6 +16,8 @@ bp = Blueprint("team", __name__)
 
 NAME_LENGTH = 60
 PHONE_HINT = "Type the {who}'s number with + and the country code, like +919876543210."
+SAME_BACKUP = ("This is the approver's own number. Leave the backup empty instead:"
+               " the approver then gets a reminder.")
 
 
 def lists():
@@ -197,7 +199,7 @@ def remove_admin():
 
 @bp.post("/api/admin/offices")
 def add_office():
-    """Add an office with its two approvers. Visitors can pick it at once."""
+    """Add an office with its approver, and a backup if given. Visitors can pick it at once."""
     refused = access.admin_refusal()
     if refused:
         return refused
@@ -207,13 +209,15 @@ def add_office():
     if tag_problem:
         problems["tag"] = tag_problem
     main = checks.clean_phone(payload().get("main"))
-    backup = checks.clean_phone(payload().get("backup"))
+    # An empty backup means the approver is also the backup: they get a reminder instead.
+    backup_given = str(payload().get("backup") or "").strip()
+    backup = checks.clean_phone(backup_given) if backup_given else main
     if not main:
         problems["main"] = PHONE_HINT.format(who="approver")
-    if not backup:
+    if backup_given and not backup:
         problems["backup"] = PHONE_HINT.format(who="backup")
-    if main and backup and whatsapp.same_number(main, backup):
-        problems["backup"] = "The backup must be a different number from the approver."
+    if backup_given and main and backup and whatsapp.same_number(main, backup):
+        problems["backup"] = SAME_BACKUP
     if problems:
         return jsonify(error="Check the office's details.", fields=problems), 400
     if not people.add_office(name, main, backup, tag):

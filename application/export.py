@@ -27,7 +27,7 @@ def local(stamp):
 
 
 STATUS_WORDS = {
-    "pending": "Waiting", "escalated": "With the backup approver", "approved": "Approved",
+    "pending": "Waiting", "escalated": "Asked again", "approved": "Approved",
     "declined": "Declined", "inside": "Inside", "closed": "Left", "expired": "Expired",
 }
 DECIDED_BY = {

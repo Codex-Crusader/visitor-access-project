@@ -2,6 +2,7 @@
 
 import hashlib
 import secrets
+from types import MappingProxyType
 
 import config
 import db
@@ -135,17 +136,27 @@ def holders(table):
     return [_shown(table, g, ("name", "phone", "added_at")) for g in _key_table(table)]
 
 
+@db.cached(shared=True)
+def _key_index(table):
+    """Each guard or admin by phone and by key hash. Read-only, so shared: a lookup is O(1).
+
+    Every gate and admin call looks its key up here."""
+    rows = _key_table(table)
+    by_phone = {row["phone"]: MappingProxyType(row) for row in rows}
+    by_key = {row["key_hash"]: by_phone[row["phone"]] for row in rows}
+    return MappingProxyType({"phone": MappingProxyType(by_phone), "key": MappingProxyType(by_key)})
+
+
 def holder_by_phone(table, phone):
     """The guard or admin with this +number, as {name, phone} and super for an admin, or None."""
-    found = [g for g in _key_table(table) if g["phone"] == phone]
-    return _shown(table, found[0]) if found else None
+    found = _key_index(table)["phone"].get(phone)
+    return _shown(table, found) if found else None
 
 
 def holder_by_key(table, key):
     """The guard or admin whose own key this is, as holder_by_phone() gives it, or None."""
-    wanted = key_hash(key)
-    found = [g for g in _key_table(table) if g["key_hash"] == wanted]
-    return _shown(table, found[0]) if found else None
+    found = _key_index(table)["key"].get(key_hash(key))
+    return _shown(table, found) if found else None
 
 
 @db.writes
