@@ -1,6 +1,7 @@
 """Sends the approval request over WhatsApp and reads the replies."""
 
 import re
+from datetime import datetime
 
 import requests
 
@@ -33,8 +34,9 @@ EXAMPLES = {db.ENTRY: "IN KT-4821", db.EXIT: "OUT RM-0937"}
 
 
 def digits(phone):
-    """Meta wants the number without a plus sign."""
-    return phone.lstrip("+")
+    """The number as Meta wants it: digits only. A setting typed as
+    +91 98765 43210 must still match the 919876543210 that Meta sends."""
+    return "".join(c for c in phone if c.isdigit())
 
 
 def same_number(a, b):
@@ -175,6 +177,12 @@ NEXT_STEP = {
 }
 
 
+def local_time(stamp):
+    """A stored UTC time on the campus clock, as 6 Oct, 10:16."""
+    moment = datetime.fromisoformat(stamp).astimezone(config.WORK_TIMEZONE)
+    return f"{moment.day} {moment:%b}, {moment:%H:%M}"
+
+
 def gate_line(visit, code=None, kind=None):
     line = NEXT_STEP.get((visit["status"], kind))
     return line.format(code=code) if line else GATE_LINES[visit["status"]]
@@ -191,8 +199,8 @@ def pass_body(visit, code=None, kind=None):
             gate_line(visit),
             "",
             f"Reference: {visit['reference']}",
-            f"Entered: {visit['entered_at']}",
-            f"Exited: {visit['exited_at']}",
+            f"Entered: {local_time(visit['entered_at'])}",
+            f"Exited: {local_time(visit['exited_at'])}",
         ]
         return "\n".join(lines)
 
@@ -208,9 +216,9 @@ def pass_body(visit, code=None, kind=None):
     if visit["guests"]:
         lines.append(f"With: {', '.join(visit['guests'])}")
     if visit["entered_at"]:
-        lines.append(f"Entered: {visit['entered_at']}")
+        lines.append(f"Entered: {local_time(visit['entered_at'])}")
     if visit["exited_at"]:
-        lines.append(f"Exited: {visit['exited_at']}")
+        lines.append(f"Exited: {local_time(visit['exited_at'])}")
     return "\n".join(lines)
 
 

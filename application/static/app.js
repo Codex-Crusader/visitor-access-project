@@ -435,16 +435,22 @@ async function poll(){
   if(S.busy)return;
   if(S.visit&&live()&&!document.hidden){
     S.busy=1;
+    // New request can drop this visit while the answer is on its way. The
+    // answer is then about a visit that is gone, so it changes nothing.
+    const token=S.visit.token;
+    const same=()=>S.visit&&S.visit.token===token;
     try{
-      const v=await load(`/api/visit/${S.visit.token}`);
-      const changed=v.status!==S.visit.status;
-      keep(v);
-      S.wait=gap();
-      if(S.down){S.down=0;render()}
-      else if(changed&&LIVE_VIEWS.includes(S.s))render();
+      const v=await load(`/api/visit/${token}`);
+      if(same()){
+        const changed=v.status!==S.visit.status;
+        keep(v);
+        S.wait=gap();
+        if(S.down){S.down=0;render()}
+        else if(changed&&LIVE_VIEWS.includes(S.s))render();
+      }
     }catch(err){
-      if(unknown(err)){forget();render()}
-      else{
+      if(same()&&unknown(err)){forget();render()}
+      else if(same()){
         S.wait=Math.min(S.wait*2,POLL_SLOWEST);
         if(!S.down){S.down=1;if(LIVE_VIEWS.includes(S.s))render()}
       }

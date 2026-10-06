@@ -222,15 +222,19 @@ async function saveApprovers() {
   if (!backup) fieldErrors.backup = "Type the backup approver's number.";
   if (fieldErrors.main || fieldErrors.backup) return renderApprovers();
   el("ap-save").disabled = true;
+  // The admin can open another reason while this one saves. The answer then
+  // speaks for this reason and leaves the other one open.
+  const reason = editing;
   try {
-    const saved = await call("/api/admin/approvers", {reason: editing, main: main1, backup});
+    const saved = await call("/api/admin/approvers", {reason, main: main1, backup});
     approvers = saved.approvers;
-    approverNote = `Saved. New requests for ${editing} now go to these two numbers.`;
-    editing = null;
-    draft = null;
+    approverNote = `Saved. New requests for ${reason} now go to these two numbers.`;
+    if (editing === reason) { editing = null; draft = null; }
   } catch (err) {
     if (err instanceof WrongKey) return forgetKey(err.message);
-    fieldErrors = err.fields && Object.keys(err.fields).length ? err.fields : {backup: err.message};
+    if (editing === reason) {
+      fieldErrors = err.fields && Object.keys(err.fields).length ? err.fields : {backup: err.message};
+    }
   }
   renderApprovers();
 }

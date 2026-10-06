@@ -430,6 +430,11 @@ assert "Inside now" in went_in_reply and exit_code not in went_in_reply, went_in
 entered = client.get(f"/api/visit/{token}").get_json()
 assert entered["status"] == "inside" and entered["entered_at"]
 assert entries.photo_of(code)["taken_at"] == entered["entered_at"]
+# The guard reads the time on the campus clock, not the stored UTC text.
+on_campus = datetime.fromisoformat(entered["entered_at"]).astimezone(config.WORK_TIMEZONE)
+assert f"Entered: {on_campus.day} {on_campus:%b}, {on_campus:%H:%M}" in went_in_reply, went_in_reply
+assert "+00:00" not in went_in_reply, went_in_reply
+assert whatsapp.local_time("2026-10-06T04:46:05+00:00") == "6 Oct, 10:16"
 # Inside, the visitor's pass swaps the entry code for the exit code.
 assert entered["exit_code"] == exit_code and "entry_code" not in entered, entered
 # No approval message carried either code.
@@ -501,6 +506,16 @@ real_guard = application.config.GUARD
 application.config.GUARD = "+919999999999"
 try:
     assert "Only a guard" in snap(APPROVER)
+finally:
+    application.config.GUARD = real_guard
+
+# A gate desk number typed with spaces in the settings still matches the
+# digits Meta sends. Before, its every message was dropped without a reply.
+application.config.GUARD = "+91 99999-99999"
+try:
+    replies = len(sent)
+    say("919999999999", third["reference"])
+    assert len(sent) == replies + 1 and "Approved" in sent[-1][1], sent[replies:]
 finally:
     application.config.GUARD = real_guard
 

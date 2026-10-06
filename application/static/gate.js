@@ -41,6 +41,11 @@ let busy = "";
 let board = null;
 let boardAt = null;
 let boardError = "";
+// Each pass lookup, entry and exit takes the next number. A free server that
+// wakes takes up to a minute, and the guard may check another pass meanwhile.
+// An answer that comes back after a newer call started is dropped, so a slow
+// answer never puts back a pass the guard has moved on from.
+let latest = 0;
 
 function key() {
   try { return localStorage.getItem("gatekey") || ""; } catch { return ""; }
@@ -347,14 +352,18 @@ async function look() {
 
 // Opens a pass by the code the guard typed, or by reference after a tap.
 async function show(key) {
+  const mine = ++latest;
   visit = null;
   photo = "";
   notice = "";
   busy = "Checking the pass";
   render();
   try {
-    visit = await call(`/api/pass/${encodeURIComponent(key)}`);
+    const found = await call(`/api/pass/${encodeURIComponent(key)}`);
+    if (mine !== latest) return;
+    visit = found;
   } catch (err) {
+    if (mine !== latest) return;
     busy = "";
     if (err instanceof WrongKey) return forgetKey(err.message);
     notice = err.message;
@@ -372,6 +381,7 @@ function openPass(reference) {
 }
 
 async function act(action) {
+  const mine = ++latest;
   const code = visit.code;
   notice = "";
   busy = action === "entry" ? "Recording the entry" : "Recording the exit";
@@ -382,14 +392,22 @@ async function act(action) {
                             body: JSON.stringify({photo})});
   }
   try {
-    visit = await call(`/api/pass/${encodeURIComponent(code)}/${action}`, options);
+    const done = await call(`/api/pass/${encodeURIComponent(code)}/${action}`, options);
+    // The entry or exit is recorded either way. The board refresh shows it.
+    if (mine !== latest) return void loadBoard();
+    visit = done;
     photo = "";
   } catch (err) {
+    if (mine !== latest) return;
     busy = "";
     if (err instanceof WrongKey) return forgetKey(err.message);
     notice = err.message;
     // The refusal above is what the guard needs. A failed re-read adds nothing.
-    try { visit = await call(`/api/pass/${encodeURIComponent(code)}`); } catch { /* keep the refusal */ }
+    try {
+      const fresh = await call(`/api/pass/${encodeURIComponent(code)}`);
+      if (mine === latest) visit = fresh;
+    } catch { /* keep the refusal */ }
+    if (mine !== latest) return;
   }
   busy = "";
   render();

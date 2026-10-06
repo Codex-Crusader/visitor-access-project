@@ -811,7 +811,104 @@ async function visitorAutoChecks() {
   ok("a failure backs off to a minute at most", v.eval("POLL_SLOWEST") === 60000);
 }
 
-void boardChecks().then(offlinePassChecks).then(approverChecks).then(guardChecks).then(forgotChecks).then(visitorAutoChecks).then(wrongKeyChecks).then(adminChecks).then(downloadChecks).then(() => {
+// ------------------------------------- a slow answer never replaces a newer pass
+async function staleGateChecks() {
+  console.log("gate desk: a slow answer never replaces the pass on screen");
+  // Each call waits until the test answers it, so the test sets the order.
+  const waiting = {};
+  const g = boot("gate.html", "gate.js", {
+    fetch: url => new Promise(done => {
+      waiting[url] = body => done({status: 200, ok: true, json: () => Promise.resolve(body)});
+    }),
+  });
+  g.localStorage.setItem("gatekey", "k");
+  const pass = (code, status) => ({reference: "VR-" + code.slice(3), status, name: "Visitor " + code,
+    phone: "9876543210", visiting: "2024SEPVUGP0003", reason: "Delivery", guests: [],
+    code, code_kind: status === "inside" ? "exit" : "entry"});
+
+  // The guard checks one pass, then a second before the first answers.
+  const first = g.eval('show("AB-1111")');
+  const second = g.eval('show("CD-2222")');
+  waiting["/api/pass/CD-2222"](pass("CD-2222", "approved"));
+  await second;
+  waiting["/api/pass/AB-1111"](pass("AB-1111", "approved"));
+  await first;
+  ok("the first answer, arriving last, does not replace the second pass",
+     g.eval("visit.code") === "CD-2222" && g.eval("busy") === "");
+
+  // An exit is waiting when the guard opens another pass.
+  g.eval('visit = ' + JSON.stringify(pass("EF-3333", "inside")));
+  const leaving = g.eval("act('exit')");
+  const another = g.eval('show("GH-4444")');
+  waiting["/api/pass/GH-4444"](pass("GH-4444", "approved"));
+  await another;
+  waiting["/api/pass/EF-3333/exit"]({...pass("EF-3333", "closed")});
+  await leaving;
+  ok("a late exit answer does not replace the pass opened after it",
+     g.eval("visit.code") === "GH-4444" && !g.document.getElementById("out").innerHTML.includes("Pass closed"));
+}
+
+// ------------------------------- a late status answer never brings a visit back
+async function stalePollChecks() {
+  console.log("visitor page: New request is not undone by a late status answer");
+  const waiting = {};
+  const v = boot("index.html", "app.js", {
+    fetch: url => new Promise(done => {
+      waiting[url] = body => done({status: 200, ok: true, json: () => Promise.resolve(body)});
+    }),
+  });
+  const old = {token: "old", reference: "VR-11111", status: "approved", name: "A", guests: [],
+    created_at: new Date().toISOString()};
+  // jsdom reports every page as hidden, and the poll skips a hidden page.
+  Object.defineProperty(v.document, "hidden", {value: false});
+  v.eval(`keep(${JSON.stringify(old)})`);
+  const asking = v.eval("poll()");
+  v.eval("again()");
+  waiting["/api/visit/old"](old);
+  await asking;
+  ok("the dropped visit stays dropped", v.eval("S.visit") === null);
+  ok("and stays off the phone", v.localStorage.getItem("tok") === null);
+  // Before, the late answer failed on the missing visit and counted as no
+  // signal, so the next status screen said "No connection right now".
+  ok("a late answer is not taken as a lost connection", v.eval("S.down") === 0);
+  v.eval("clearTimeout(S.timer)");
+}
+
+// ------------------------- a slow save names its own reason, not the one now open
+async function staleApproverChecks() {
+  console.log("admin page: a slow approver save names its own reason");
+  const table = [{reason: "Delivery", main: "+911", backup: "+912"},
+                 {reason: "Event", main: "+913", backup: "+914"}];
+  let release;
+  const answer = body => Promise.resolve({status: 200, ok: true, json: () => Promise.resolve(body)});
+  const admin = boot("admin.html", "admin.js", {
+    fetch: (url, options = {}) => {
+      if (options.method === "POST") return new Promise(done => { release = () => done({
+        status: 200, ok: true, json: () => Promise.resolve({approvers: table})}); });
+      return answer(url.includes("/summary")
+        ? {counts: {}, escalate_minutes: 15, retain_days: 90, auto_approve_minutes: 0,
+           work_hours: [10, 17], work_days: ["Mon"], approvers: table}
+        : {visits: [], next: null});
+    },
+  });
+  const byId = id => admin.document.getElementById(id);
+  admin.eval('localStorage.setItem("adminkey","k")');
+  admin.eval("render(); refresh()");
+  await tick(); await tick();
+  byId("approvers").querySelector('[data-edit="Delivery"]').click();
+  byId("ap-main").value = "+915";
+  byId("ap-backup").value = "+916";
+  const saving = admin.eval("saveApprovers()");
+  // While Delivery saves, the admin opens Event.
+  byId("approvers").querySelector('[data-edit="Event"]').click();
+  release();
+  await saving;
+  ok("the note names the reason that was saved", byId("approver-note").textContent.includes("Delivery")
+     && !byId("approver-note").textContent.includes("Event"));
+  ok("the reason opened meanwhile stays open", admin.eval("editing") === "Event" && !!byId("ap-main"));
+}
+
+void boardChecks().then(staleGateChecks).then(stalePollChecks).then(staleApproverChecks).then(offlinePassChecks).then(approverChecks).then(guardChecks).then(forgotChecks).then(visitorAutoChecks).then(wrongKeyChecks).then(adminChecks).then(downloadChecks).then(() => {
   console.log();
   console.log(failures ? `${failures} check(s) FAILED` : "all form checks passed");
   process.exit(failures ? 1 : 0);
