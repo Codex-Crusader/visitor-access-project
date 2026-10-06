@@ -25,6 +25,9 @@ from PIL import Image
 
 import app as application
 import db
+import entries
+import people
+import visits
 import whatsapp
 
 lock = threading.Lock()
@@ -80,20 +83,20 @@ print(f"submitted {N} at once -> {len(codes)} created, {N - len(codes)} failed")
 assert len(codes) == N, [r.status_code for r in made if r.status_code != 201][:3]
 assert len(set(codes)) == N, f"duplicate codes: {[c for c, n in Counter(codes).items() if n > 1]}"
 assert len(set(tokens)) == N, "duplicate tokens"
-gate_codes = [c for ref in codes for c in db.codes_of(ref).values()]
+gate_codes = [c for ref in codes for c in visits.codes_of(ref).values()]
 assert len(gate_codes) == 2 * N and len(set(gate_codes)) == 2 * N, "missing or shared gate codes"
 print("  every code unique, every token unique, two gate codes each")
 
 # --- Approve them all at once ---
 def approve(code):
-    db.decide(code, db.APPROVED, db.BY_MAIN)
+    visits.decide(code, db.APPROVED, db.BY_MAIN)
 
 threads = [threading.Thread(target=approve, args=(c,)) for c in codes]
 for t in threads:
     t.start()
 for t in threads:
     t.join()
-assert all(db.get(c)["status"] == "approved" for c in codes)
+assert all(visits.get(c)["status"] == "approved" for c in codes)
 print("  all approved under load")
 
 # --- Twenty guards racing to check the SAME visitor in ---
@@ -102,7 +105,7 @@ results = []
 def race(action):
     """Twenty guards press the same button on the same pass at once."""
     results.clear()
-    code = db.codes_of(target)[action]
+    code = visits.codes_of(target)[action]
     def press():
         r = client.post(f"/api/pass/{code}/{action}", headers=KEY, json=photo())
         with lock:
@@ -117,18 +120,18 @@ race("entry")
 wins = results.count(200)
 print(f"  20 guards raced one entry -> {wins} accepted, {results.count(409)} refused")
 assert wins == 1, f"entry must happen exactly once, got {wins}"
-assert db.get(target)["status"] == "inside"
+assert visits.get(target)["status"] == "inside"
 
 # --- Racing exits on the same visitor ---
 race("exit")
 print(f"  20 guards raced one exit  -> {results.count(200)} accepted, {results.count(409)} refused")
 assert results.count(200) == 1
-assert db.get(target)["status"] == "closed"
+assert visits.get(target)["status"] == "closed"
 
 # --- Many different visitors entering and exiting at once ---
 busy = codes[1:41]
 def cycle(reference):
-    pass_codes = db.codes_of(reference)
+    pass_codes = visits.codes_of(reference)
     client.post(f"/api/pass/{pass_codes['entry']}/entry", headers=KEY, json=photo())
     client.post(f"/api/pass/{pass_codes['exit']}/exit", headers=KEY)
 threads = [threading.Thread(target=cycle, args=(c,)) for c in busy]
@@ -136,10 +139,10 @@ for t in threads:
     t.start()
 for t in threads:
     t.join()
-closed = [c for c in busy if db.get(c)["status"] == "closed"]
+closed = [c for c in busy if visits.get(c)["status"] == "closed"]
 print(f"  {len(busy)} visitors in and out at once -> {len(closed)} closed correctly")
 assert len(closed) == len(busy)
-stamps = [(db.get(c)["entered_at"], db.get(c)["exited_at"]) for c in busy]
+stamps = [(visits.get(c)["entered_at"], visits.get(c)["exited_at"]) for c in busy]
 assert all(a and b for a, b in stamps), "every visit must have both timestamps"
 
 # --- Duplicate webhook deliveries arriving concurrently ---
@@ -177,7 +180,7 @@ guard_keys = {r.get_json()["name"]: r.get_json()["key"] for r in added}
 # Each guard's photo has its own color, 12 apart, so the stored one names its guard.
 SHADES = {f"Guard {n}": 12 * n for n in range(20)}
 assert len(set(guard_keys.values())) == 20, "every guard key unique"
-assert len(db.guards()) == 20
+assert len(people.guards()) == 20
 print("  20 guards added at once -> 20 unique keys")
 
 # --- The same twenty race one entry, each with their own key ---
@@ -185,11 +188,11 @@ def fresh_approved(count):
     answers = [client.post("/api/requests", json=payload) for _ in range(count)]
     new_refs = [r.get_json()["reference"] for r in answers]
     for ref in new_refs:
-        db.decide(ref, db.APPROVED, db.BY_MAIN)
+        visits.decide(ref, db.APPROVED, db.BY_MAIN)
     return new_refs
 
 target = fresh_approved(1)[0]
-entry = db.codes_of(target)["entry"]
+entry = visits.codes_of(target)["entry"]
 winners = []
 def own_press(name):
     r = client.post(f"/api/pass/{entry}/entry", headers={"X-Gate-Key": guard_keys[name]},
@@ -205,18 +208,18 @@ won = [name for status, name in winners if status == 200]
 print(f"  20 own keys raced one entry -> {len(won)} accepted")
 assert len(won) == 1, won
 phone = guard_phones[int(won[0].split()[1])]
-assert db.get(target)["entered_by"] == f"{won[0]} {phone}", "the winner is the guard on record"
-assert abs(shade_of(db.photo_of(target)["image"]) - SHADES[won[0]]) <= 6, \
+assert visits.get(target)["entered_by"] == f"{won[0]} {phone}", "the winner is the guard on record"
+assert abs(shade_of(entries.photo_of(target)["image"]) - SHADES[won[0]]) <= 6, \
     "only the winner's photo is kept"
 
 # --- Each guard lets a different visitor in and out at once ---
 refs = fresh_approved(20)
 def own_cycle(n):
-    pass_codes = db.codes_of(refs[n])
+    pass_codes = visits.codes_of(refs[n])
     headers = {"X-Gate-Key": guard_keys[f"Guard {n}"]}
     client.post(f"/api/pass/{pass_codes['entry']}/entry", headers=headers, json=photo())
     client.post(f"/api/pass/{pass_codes['exit']}/exit", headers=headers)
-tokens = [db.get(ref)["token"] for ref in refs]
+tokens = [visits.get(ref)["token"] for ref in refs]
 racing = threading.Event()
 def watch(start):
     """Visitors' pages and the gate board, polling while the guards work.
@@ -240,7 +243,7 @@ racing.clear()
 for t in watchers:
     t.join()
 for n, ref in enumerate(refs):
-    visit = db.get(ref)
+    visit = visits.get(ref)
     label = f"Guard {n} {guard_phones[n]}"
     assert visit["status"] == "closed", visit["status"]
     assert visit["entered_by"] == label and visit["exited_by"] == label, visit
@@ -265,7 +268,7 @@ for t in threads:
     t.start()
 for t in threads:
     t.join()
-assert all(db.get(ref)["status"] == "approved" for ref in pending)
+assert all(visits.get(ref)["status"] == "approved" for ref in pending)
 for guard_phone in guard_phones:
     told = [body for to, body in sent if to == guard_phone]
     assert len(told) == 10, (guard_phone, len(told))

@@ -96,7 +96,11 @@ visitor, `/gate` for the guard and `/admin` for the admin.
 |----------------------------------------|------------------------------------------------------------------------|
 | `docs/`                                | Setup, maintenance and safety                                          |
 | `app.py`                               | Flask routes, the security headers and the background timer            |
-| `db.py`                                | Postgres storage, and the migrations that build its tables             |
+| `db.py`                                | The Postgres connections, the read cache, and the stored values        |
+| `migrations.py`                        | The schema changes, in order                                           |
+| `visits.py`                            | The queries for requests, codes, decisions and the page lists          |
+| `entries.py`                           | The queries for entries, exits and gate photos                         |
+| `people.py`                            | The queries for approvers and guards                                   |
 | `whatsapp.py`                          | Meta API calls, message text, and command reading                      |
 | `config.py`                            | Settings read from the environment                                     |
 | `check_setup.py`                       | Checks your settings and sends one test message                        |

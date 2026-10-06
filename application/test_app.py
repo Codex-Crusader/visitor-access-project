@@ -43,6 +43,10 @@ os.environ.update(
 import app as application
 import config
 import db
+import entries
+import migrations
+import people
+import visits
 import whatsapp
 
 sent = []
@@ -91,11 +95,11 @@ GATE_CODE = re.compile(r"^[A-HJ-NP-Z]{2}-\d{4}$")
 
 def entry_of(ticket):
     """The entry code. The server and the visitor's pass are the only holders."""
-    return db.codes_of(ticket["reference"])["entry"]
+    return visits.codes_of(ticket["reference"])["entry"]
 
 
 def exit_of(ticket):
-    return db.codes_of(ticket["reference"])["exit"]
+    return visits.codes_of(ticket["reference"])["exit"]
 
 
 counter = [0]
@@ -217,7 +221,7 @@ try:
     caught.clear()
     application.escalate_due()
     assert any("backup approver" in line for line in caught), caught
-    assert db.due_for_escalation(), "a failed escalation must stay due and be tried again"
+    assert visits.due_for_escalation(), "a failed escalation must stay due and be tried again"
     with db.connect() as conn:
         conn.execute("UPDATE visits SET created_at = %s WHERE created_at = %s",
                      (db.now(), hour_ago))
@@ -307,9 +311,9 @@ with db.connect() as conn:
                      (older["reference"],))
 db.forget_cache()
 assert "is now approved" in say(APPROVER, "YES 4022")
-assert db.get("VR-4022")["status"] == "approved"
+assert visits.get("VR-4022")["status"] == "approved"
 assert "VR-4022" in say(APPROVER, "vr 4022")
-db.delete("VR-4022")
+visits.delete("VR-4022")
 print("  YES 4022 and a lookup of vr 4022 both reach VR-4022")
 
 print("privacy: the short code must not expose the visitor")
@@ -333,7 +337,7 @@ letters = {entry_of(new_request())[:2] for _ in range(12)}
 application.forget_hits()
 assert len(letters) > 1, letters
 # The generator itself: 2000 codes, no I or O to misread as 1 or 0, never VR.
-made_codes = [db.new_gate_code() for _ in range(2000)]
+made_codes = [visits.new_gate_code() for _ in range(2000)]
 assert all(GATE_CODE.match(c) and not c.startswith("VR") for c in made_codes)
 assert len({c[:2] for c in made_codes}) > 400, "the letters must vary widely"
 # The visitor sees no code while the request waits for a decision.
@@ -382,7 +386,7 @@ assert "already approved" in say(APPROVER, f"NO {code}")
 turned_down = new_request()
 assert "is now declined" in say(APPROVER, f"NO {turned_down['reference']}")
 assert "already declined" in say(APPROVER, f"YES {turned_down['reference']}")
-assert db.get(turned_down["reference"])["status"] == "declined"
+assert visits.get(turned_down["reference"])["status"] == "declined"
 # Once approved, the visitor's pass shows the entry code, and only that one.
 approved_view = client.get(f"/api/visit/{token}").get_json()
 assert approved_view["entry_code"] == entry_code, approved_view
@@ -418,7 +422,7 @@ went_in_reply = snap(APPROVER)
 assert "Inside now" in went_in_reply and exit_code not in went_in_reply, went_in_reply
 entered = client.get(f"/api/visit/{token}").get_json()
 assert entered["status"] == "inside" and entered["entered_at"]
-assert db.photo_of(code)["taken_at"] == entered["entered_at"]
+assert entries.photo_of(code)["taken_at"] == entered["entered_at"]
 # Inside, the visitor's pass swaps the entry code for the exit code.
 assert entered["exit_code"] == exit_code and "entry_code" not in entered, entered
 # No approval message carried either code.
@@ -475,7 +479,7 @@ assert status_of(first) == "approved"
 say(APPROVER, f"IN {entry_of(first)}")
 client.post(f"/api/pass/{entry_of(first)}/entry", headers=KEY, json=PHOTO)
 assert "Already inside" in snap(APPROVER)
-gate_shot = db.photo_of(first["reference"])
+gate_shot = entries.photo_of(first["reference"])
 assert is_clean_photo(gate_shot["image"]) and gate_shot["media_id"] is None, \
     "a late photo changes nothing"
 
@@ -495,18 +499,18 @@ finally:
 
 # A failure after the message id is spent asks for the photo again, and the
 # photo sent again then works, because nothing was used up.
-real_enter = db.enter_with_photo
+real_enter = entries.enter_with_photo
 
 
 def broken(*_args):
     raise RuntimeError("database is locked")
 
 
-db.enter_with_photo = broken
+entries.enter_with_photo = broken
 try:
     assert "Send that again" in snap(APPROVER)
 finally:
-    db.enter_with_photo = real_enter
+    entries.enter_with_photo = real_enter
 assert status_of(third) == "approved"
 assert "Inside now" in snap(APPROVER)
 assert status_of(third) == "inside"
@@ -649,7 +653,7 @@ assert client.get(f"/api/visit/{a['token']}").get_json()["status"] == "approved"
 for typo in ("VR-40222", "VR 99", "please"):
     reply = say(APPROVER, f"NO {typo}")
     assert "No request has reference" in reply, reply
-    assert db.get(b["reference"])["status"] == "pending", typo
+    assert visits.get(b["reference"])["status"] == "pending", typo
 # VR 4022 and VR4022 read as VR-4022. YES alone still means the one waiting.
 for typed in ("YES VR 4022", "YES vr4022", "YES 4022"):
     assert whatsapp.read_reply(typed) == ("decide", db.APPROVED, "VR-4022"), typed
@@ -660,18 +664,18 @@ with db.connect() as conn:
     conn.execute("UPDATE visits SET created_at = %s WHERE reference = %s",
                  (db.ago(1 / 24), b["reference"]))
 db.forget_cache()
-due = db.due_for_escalation()
+due = visits.due_for_escalation()
 assert [v["reference"] for v in due] == [b["reference"]], due
-whatsapp.notify_backup(due[0], db.approvers_for(db.approver_table(), due[0]["reason"]))
-db.mark_escalated(b["reference"])
+whatsapp.notify_backup(due[0], people.approvers_for(people.approver_table(), due[0]["reason"]))
+visits.mark_escalated(b["reference"])
 after = client.get(f"/api/visit/{b['token']}").get_json()
 assert after["status"] == "escalated" and after["escalated_at"]
 assert "Backup approver" in sent[-1][1]
 assert templates[-1][0] == "+911234567890" and templates[-1][1][1].startswith("Backup")
 # An escalated request is still undecided, and a visitor inside never escalates.
-assert b["reference"] in [v["reference"] for v in db.open_requests()]
-assert ref2 not in [v["reference"] for v in db.open_requests()]
-assert ref2 not in [v["reference"] for v in db.due_for_escalation()]
+assert b["reference"] in [v["reference"] for v in visits.open_requests()]
+assert ref2 not in [v["reference"] for v in visits.open_requests()]
+assert ref2 not in [v["reference"] for v in visits.due_for_escalation()]
 
 print("retention deletes records older than RETAIN_DAYS")
 old = new_request()
@@ -680,14 +684,14 @@ with db.connect() as conn:
                  ("2020-01-01T00:00:00+00:00", old["reference"]))
 db.forget_cache()
 old_entry = entry_of(old)
-assert db.purge_old() >= 1
-assert db.get(old["reference"]) is None
+assert visits.purge_old() >= 1
+assert visits.get(old["reference"]) is None
 # Its codes go with it, so a purged pass can never be looked up again.
-assert db.codes_of(old["reference"]) == {}
-assert db.by_code(old_entry) == (None, None)
+assert visits.codes_of(old["reference"]) == {}
+assert visits.by_code(old_entry) == (None, None)
 assert client.get(f"/api/visit/{old['token']}").status_code == 404
 # Today's records survive the purge.
-assert db.get(a["reference"]) is not None
+assert visits.get(a["reference"]) is not None
 # A photo goes with its visit, and the photos of kept visits stay.
 gone, kept = new_request(), new_request()
 with db.connect() as conn:
@@ -697,9 +701,9 @@ with db.connect() as conn:
     conn.execute("UPDATE visits SET created_at = %s WHERE reference = %s",
                  ("2020-01-01T00:00:00+00:00", gone["reference"]))
 db.forget_cache()
-db.purge_old()
-assert db.photo_of(gone["reference"]) is None
-assert db.photo_of(kept["reference"]) is not None
+visits.purge_old()
+assert entries.photo_of(gone["reference"]) is None
+assert entries.photo_of(kept["reference"]) is not None
 # No code outlives its visit, including those of requests deleted after a
 # failed send.
 with db.connect() as conn:
@@ -725,20 +729,20 @@ try:
     # Nobody decides a request of a reason they do not approve.
     refused_reply = say(APPROVER, f"YES {delivery['reference']}")
     assert "another approver" in refused_reply, refused_reply
-    assert db.get(delivery["reference"])["status"] == "pending"
+    assert visits.get(delivery["reference"])["status"] == "pending"
     wrong = say(DELIVERY_MAIN[1:], f"YES {student['reference']}")
     assert "another approver" in wrong, wrong
     # Each approver's waiting list holds only their own reasons.
-    table = db.approver_table()
+    table = people.approver_table()
     waiting_delivery = [v["reference"] for v in application.waiting_for(DELIVERY_MAIN, table)]
     assert waiting_delivery == [delivery["reference"]], waiting_delivery
     assert delivery["reference"] not in [
         v["reference"] for v in application.waiting_for(APPROVER, table)]
     # The backup for the reason can decide it, before or after escalation.
     assert "is now approved" in say(DELIVERY_BACKUP[1:], f"YES {delivery['reference']}")
-    assert db.get(delivery["reference"])["status"] == "approved"
-    assert db.get(delivery["reference"])["decided_by"] == db.BY_BACKUP
-    assert db.get(delivery["reference"])["decided_phone"] == DELIVERY_BACKUP
+    assert visits.get(delivery["reference"])["status"] == "approved"
+    assert visits.get(delivery["reference"])["decided_by"] == db.BY_BACKUP
+    assert visits.get(delivery["reference"])["decided_phone"] == DELIVERY_BACKUP
 
     # Escalation goes to the backup of the request's own reason.
     late = client.post("/api/requests", json={**payload, "reason": "Delivery"}).get_json()
@@ -818,7 +822,7 @@ for number in range(60):
     page_request = client.post("/api/requests", json={**payload, "name": f"Page Test {number}"})
     assert page_request.status_code == 201, page_request.get_data(as_text=True)
 application.forget_hits()
-total = sum(db.status_counts().values())
+total = sum(visits.status_counts().values())
 seen, cursor, pages = [], None, 0
 while True:
     query = f"/api/admin/visits?after={cursor}" if cursor else "/api/admin/visits"
@@ -827,7 +831,8 @@ while True:
     for row in page["visits"]:
         # The token is the visitor's private status link. It never leaves.
         assert "token" not in row, row
-        assert row["approvers"] == list(db.approvers_for(db.approver_table(), row["reason"]))
+        table = people.approver_table()
+        assert row["approvers"] == list(people.approvers_for(table, row["reason"]))
     seen += [row["reference"] for row in page["visits"]]
     cursor = page["next"]
     if not cursor:
@@ -835,7 +840,7 @@ while True:
     cursor = cursor.replace("+", "%2B")
 assert len(seen) == len(set(seen)) == total, (len(seen), len(set(seen)), total)
 assert pages == -(-total // application.ADMIN_PAGE), pages
-times = [db.get(r)["created_at"] for r in seen]
+times = [visits.get(r)["created_at"] for r in seen]
 assert times == sorted(times, reverse=True)
 
 waiting = client.get("/api/admin/visits?status=waiting", headers=ADMIN).get_json()["visits"]
@@ -926,20 +931,20 @@ application.forget_hits()
 print("  200 when both work, 503 with the failed part, Meta asked once an hour")
 
 print("the timer sleeps until the next deadline")
-real_next_due = db.next_due
+real_next_due = visits.next_due
 moment = datetime.now(timezone.utc)
 for due, low, high in ((None, 3600, 3600),
                        (moment + timedelta(minutes=10), 590, 602),
                        (moment - timedelta(minutes=5), 30, 30),
                        (moment + timedelta(hours=5), 3600, 3600)):
-    db.next_due = lambda when=due: when
+    visits.next_due = lambda when=due: when
     wait = application.seconds_to_next_round()
     assert low <= wait <= high, (due, wait)
-db.next_due = real_next_due
+visits.next_due = real_next_due
 application.wake.clear()
 soon = new_request()
 assert application.wake.is_set(), "a new request wakes the timer"
-due = db.next_due()
+due = visits.next_due()
 made = datetime.fromisoformat(soon["created_at"])
 assert due is not None and due <= made + timedelta(minutes=config.ESCALATE_MINUTES), due
 print("  idle an hour, a deadline on time, overdue in 30 seconds, a new request wakes it")
@@ -1001,7 +1006,7 @@ print("rate limits on the public address")
 application.forget_hits()
 
 # Creating requests is capped so a stranger cannot spam the approver's phone.
-codes_before = len(db.all_visits())
+codes_before = len(visits.all_visits())
 limit = __import__("config").REQUESTS_PER_HOUR
 statuses = [client.post("/api/requests", json=payload).status_code for _ in range(limit + 5)]
 assert statuses.count(201) == limit, statuses
@@ -1057,21 +1062,21 @@ application.forget_hits()
 
 print("migrations run once, so a restart keeps every visit")
 kept_visit = new_request()
-assert db.init() == len(db.MIGRATIONS)
-assert db.init() == len(db.MIGRATIONS)
+assert db.init() == len(migrations.MIGRATIONS)
+assert db.init() == len(migrations.MIGRATIONS)
 with db.connect() as conn:
     versions = [row["version"] for row in
                 conn.execute("SELECT version FROM schema_migrations ORDER BY version")]
-assert versions == list(range(1, len(db.MIGRATIONS) + 1)), versions
-assert db.get(kept_visit["reference"]) is not None
+assert versions == list(range(1, len(migrations.MIGRATIONS) + 1)), versions
+assert visits.get(kept_visit["reference"]) is not None
 # A step added later runs on the next start, and the visits stay.
-db.MIGRATIONS.append("ALTER TABLE visits ADD COLUMN test_note TEXT")
+migrations.MIGRATIONS.append("ALTER TABLE visits ADD COLUMN test_note TEXT")
 try:
-    assert db.init() == len(db.MIGRATIONS)
-    assert db.get(kept_visit["reference"])["test_note"] is None
+    assert db.init() == len(migrations.MIGRATIONS)
+    assert visits.get(kept_visit["reference"])["test_note"] is None
 finally:
-    db.MIGRATIONS.pop()
-print(f"  schema at version {len(db.MIGRATIONS)}, a new column added, visits kept")
+    migrations.MIGRATIONS.pop()
+print(f"  schema at version {len(migrations.MIGRATIONS)}, a new column added, visits kept")
 
 print("scripts are cached by version, pages are checked")
 for path, script in (("/", "app.js"), ("/gate", "gate.js"), ("/admin", "admin.js")):
@@ -1111,7 +1116,7 @@ try:
 
     # Open pages repeat their reads. With no write between, they cost no trip,
     # so Neon can sleep while a gate page or a visitor's page stays open.
-    ravi_key = db.add_guard("Cache Guard", "+919800000777")
+    ravi_key = people.add_guard("Cache Guard", "+919800000777")
     status = lambda: client.get(f"/api/visit/{counted['token']}")  # noqa: E731
     gate_board = lambda: client.get("/api/gate/board", headers={"X-Gate-Key": ravi_key})  # noqa: E731
     for label, call in (("status check", status), ("board with a guard's key", gate_board)):
@@ -1127,7 +1132,7 @@ try:
     trips.clear()
     # Every write clears the whole cache, so the guard list is read again too.
     assert gate_board().status_code == 200 and len(trips) == 2, len(trips)
-    db.remove_guard("+919800000777")
+    people.remove_guard("+919800000777")
     # An unknown token is never kept, so a scanner cannot fill the memory.
     for _ in range(2):
         trips.clear()
@@ -1151,16 +1156,18 @@ print("every write to a cached table clears the cache")
 # A new database function that forgets it fails here, not as stale pages later.
 CACHED_TABLES = re.compile(
     r"\b(INSERT INTO|UPDATE|DELETE FROM)\s+(visits|guards|photos|gate_codes)\b")
-with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "db.py"),
-          encoding="utf-8") as db_file:
-    db_source = db_file.read()
 forgot = []
-for node in ast.parse(db_source).body:
-    if isinstance(node, ast.FunctionDef) and node.name != "migrate":
-        names = [getattr(d, "id", "") for d in node.decorator_list]
-        body = ast.get_source_segment(db_source, node) or ""
-        if CACHED_TABLES.search(body) and "writes" not in names:
-            forgot.append(node.name)
+for module in ("db.py", "visits.py", "entries.py", "people.py"):
+    with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), module),
+              encoding="utf-8") as db_file:
+        db_source = db_file.read()
+    for node in ast.parse(db_source).body:
+        if isinstance(node, ast.FunctionDef) and node.name != "migrate":
+            # @writes in db.py, @db.writes in the other three.
+            names = [getattr(d, "id", "") or getattr(d, "attr", "") for d in node.decorator_list]
+            body = ast.get_source_segment(db_source, node) or ""
+            if CACHED_TABLES.search(body) and "writes" not in names:
+                forgot.append(f"{module}: {node.name}")
 assert not forgot, f"these change cached tables without @writes: {forgot}"
 print("  every function that changes visits, guards, photos or codes has @writes")
 
@@ -1195,7 +1202,7 @@ kept_visit = new_request()
 with psycopg.connect(config.DATABASE_URL, autocommit=True) as killer:
     killer.execute("""SELECT pg_terminate_backend(pid) FROM pg_stat_activity
                       WHERE pid <> pg_backend_pid() AND datname = current_database()""")
-assert db.get(kept_visit["reference"])["reference"] == kept_visit["reference"]
+assert visits.get(kept_visit["reference"])["reference"] == kept_visit["reference"]
 
 # At start, a database that is still waking is tried again before giving up.
 real_migrate, real_waits = db.migrate, db.START_WAITS
@@ -1216,7 +1223,7 @@ def never_up():
 
 db.migrate = waking
 try:
-    assert db.init() == len(db.MIGRATIONS) and len(fails) == 3
+    assert db.init() == len(migrations.MIGRATIONS) and len(fails) == 3
     db.migrate = never_up
     try:
         db.init()
@@ -1255,8 +1262,8 @@ assert "another approver" in say(APPROVER, f"YES {event['reference']}")
 # An approver who is not the guard can look a request up.
 assert event["reference"] in say(NEW_MAIN[1:], event["reference"])
 assert "is now approved" in say(NEW_MAIN[1:], f"YES {event['reference']}")
-assert db.get(event["reference"])["decided_by"] == db.BY_MAIN
-assert db.get(event["reference"])["decided_phone"] == NEW_MAIN
+assert visits.get(event["reference"])["decided_by"] == db.BY_MAIN
+assert visits.get(event["reference"])["decided_phone"] == NEW_MAIN
 with db.connect() as conn:
     conn.execute("DELETE FROM approvers")
 db.forget_cache()
@@ -1289,16 +1296,16 @@ with db.connect() as conn:
         conn.execute("UPDATE visits SET auto_approve_at = %s WHERE reference = %s",
                      (moment, case["reference"]))
 db.forget_cache()
-db.mark_escalated(with_backup["reference"])
+visits.mark_escalated(with_backup["reference"])
 say(APPROVER, f"NO {declined['reference']}")
 before = len(sent)
 application.auto_approve_due()
 for case in (due, with_backup):
-    got = db.get(case["reference"])
+    got = visits.get(case["reference"])
     assert got["status"] == "approved" and got["decided_by"] == db.BY_AUTO, got
     assert got["decided_phone"] is None, got
-assert db.get(declined["reference"])["status"] == "declined"
-assert db.get(not_yet["reference"])["status"] == "pending"
+assert visits.get(declined["reference"])["status"] == "declined"
+assert visits.get(not_yet["reference"])["status"] == "pending"
 notices = [body for _, body in sent[before:] if "approved automatically" in body]
 assert len(notices) == 2, notices
 application.auto_approve_due()
@@ -1313,7 +1320,7 @@ application.auto_approve_time = lambda _moment: "2999-01-01T00:00:00+00:00"
 in_hours = client.post("/api/requests", json=payload)
 application.auto_approve_time = real_auto_time
 assert in_hours.status_code == 201
-assert db.get(in_hours.get_json()["reference"])["auto_approve_at"], "the server keeps the time"
+assert visits.get(in_hours.get_json()["reference"])["auto_approve_at"], "the server keeps the time"
 assert not private & in_hours.get_json().keys(), "the new request must not tell the visitor"
 print("  10:00 to 16:59 Monday to Saturday only, a NO first wins, approvers told once")
 
@@ -1348,7 +1355,7 @@ refusal = gate_try.get_json()
 assert gate_try.status_code == 409 and "expired" in refusal["error"], refusal
 assert client.get(f"/api/pass/{entry_of(late_pass)}", headers=KEY).get_json()["status"] == "expired"
 assert "expired" in say(APPROVER, f"IN {entry_of(late_pass)}").lower()
-assert db.check_in(late_pass["reference"], "test", JPEG) is None, "the UPDATE checks the time"
+assert entries.check_in(late_pass["reference"], "test", JPEG) is None, "the UPDATE checks the time"
 assert "Expired" in say(APPROVER, late_pass["reference"])
 
 # The race: IN is accepted, then the pass expires before the photo arrives.
@@ -1357,20 +1364,20 @@ say(APPROVER, f"YES {racing['reference']}")
 assert "Take a photo" in say(APPROVER, f"IN {entry_of(racing)}")
 made_hours_ago(racing, 49)
 assert "expired" in snap(APPROVER).lower()
-assert db.get(racing["reference"])["status"] == "expired"
+assert visits.get(racing["reference"])["status"] == "expired"
 
 # 49 hours old and never answered: it cannot be approved, escalated or picked by YES alone.
 unanswered = new_request()
 made_hours_ago(unanswered, 49)
 reply = say(APPROVER, f"YES {unanswered['reference']}")
 assert "expired" in reply and "new request" in reply, reply
-table = db.approver_table()
+table = people.approver_table()
 waiting_refs = [v["reference"] for v in application.waiting_for(APPROVER, table)]
 assert unanswered["reference"] not in waiting_refs
 before = len(templates)
 application.escalate_due()
 assert unanswered["reference"] not in [t[1][0] for t in templates[before:]], "no backup for it"
-assert db.decide(unanswered["reference"], db.APPROVED, db.BY_AUTO) is None
+assert visits.decide(unanswered["reference"], db.APPROVED, db.BY_AUTO) is None
 
 # A visitor already inside can always leave, however old the request.
 staying = new_request()
@@ -1381,8 +1388,8 @@ assert client.get(f"/api/visit/{staying['token']}").get_json()["status"] == "ins
 assert client.post(f"/api/pass/{exit_of(staying)}/exit", headers=KEY).status_code == 200
 
 # The background round saves the status, so the admin counts and filter match.
-assert db.expire_old() >= 2
-assert db.expire_old() == 0, "a second round changes nothing"
+assert visits.expire_old() >= 2
+assert visits.expire_old() == 0, "a second round changes nothing"
 for gone_pass in (late_pass, unanswered):
     with db.connect() as conn:
         stored = conn.execute("SELECT status FROM visits WHERE reference = %s",
@@ -1446,7 +1453,7 @@ shot = approved()
 shot_entry = f"/api/pass/{entry_of(shot)}/entry"
 no_photo = client.post(shot_entry, headers=KEY)
 assert no_photo.status_code == 400 and no_photo.get_json()["error"] == application.NO_PHOTO
-assert status_of(shot) == "approved" and db.photo_of(shot["reference"]) is None
+assert status_of(shot) == "approved" and entries.photo_of(shot["reference"]) is None
 png = "data:image/png;base64," + base64.b64encode(b"\x89PNG\r\n\x1a\n").decode()
 not_jpeg = "data:image/jpeg;base64," + base64.b64encode(b"\x89PNG\r\n\x1a\n").decode()
 too_big = "data:image/jpeg;base64," + base64.b64encode(
@@ -1468,10 +1475,10 @@ with_details = Image.Exif()
 with_details[0x010F] = "PhoneMaker"
 let_in = client.post(shot_entry, headers=KEY, json=as_photo(jpeg(exif=with_details)))
 assert let_in.status_code == 200, let_in.get_json()
-stored = db.photo_of(shot["reference"])
+stored = entries.photo_of(shot["reference"])
 assert is_clean_photo(stored["image"]) and stored["media_id"] is None
 assert b"PhoneMaker" not in stored["image"]
-assert stored["taken_at"] == db.get(shot["reference"])["entered_at"]
+assert stored["taken_at"] == visits.get(shot["reference"])["entered_at"]
 
 # The photo is for the admin only. No gate, visitor or log answer holds it.
 stored_photo = application.PHOTO_PREFIX + base64.b64encode(stored["image"]).decode()
@@ -1496,8 +1503,8 @@ say(APPROVER, f"IN {entry_of(by_chat)}")
 snap(APPROVER)
 assert status_of(by_chat) == "inside"
 assert client.get(f"/api/admin/photo/{by_chat['reference']}", headers=ADMIN).status_code == 404
-db.delete(shot["reference"])
-assert db.photo_of(shot["reference"]) is None, "the photo goes with its visit"
+visits.delete(shot["reference"])
+assert entries.photo_of(shot["reference"]) is None, "the photo goes with its visit"
 print("  no photo, a wrong file or a big file is refused, the admin alone sees the photo")
 
 print("guards added on the admin page have their own key, and the log names them")
@@ -1529,7 +1536,7 @@ assert [g["phone"] for g in summary["guards"]] == [RAVI_PHONE], summary["guards"
 assert "key_hash" not in str(summary)
 with db.connect() as conn:
     stored = conn.execute("SELECT key_hash FROM guards").fetchone()["key_hash"]
-assert stored == db.key_hash(ravi_key) and ravi_key not in stored, "only the hash is kept"
+assert stored == people.key_hash(ravi_key) and ravi_key not in stored, "only the hash is kept"
 
 # The gate page knows the guard by their key, and records who let the visitor in.
 RAVI_KEY = {"X-Gate-Key": ravi_key}
@@ -1539,10 +1546,10 @@ by_page = approved()
 let_in = client.post(f"/api/pass/{entry_of(by_page)}/entry", headers=RAVI_KEY, json=PHOTO)
 assert let_in.status_code == 200, let_in.get_json()
 assert RAVI_PHONE not in let_in.get_data(as_text=True), "a guard never sees a guard's number"
-assert db.get(by_page["reference"])["entered_by"] == RAVI_LABEL
+assert visits.get(by_page["reference"])["entered_by"] == RAVI_LABEL
 assert RAVI_PHONE not in client.get(f"/api/visit/{by_page['token']}").get_data(as_text=True)
 assert client.post(f"/api/pass/{exit_of(by_page)}/exit", headers=KEY).status_code == 200
-assert db.get(by_page["reference"])["exited_by"] == application.DESK_KEY
+assert visits.get(by_page["reference"])["exited_by"] == application.DESK_KEY
 listed = client.get(f"/api/admin/visits?q={by_page['reference']}", headers=ADMIN).get_json()
 assert listed["visits"][0]["entered_by"] == RAVI_LABEL
 assert listed["visits"][0]["exited_by"] == application.DESK_KEY
@@ -1552,9 +1559,9 @@ assert RAVI_PHONE in client.get("/api/admin/export.csv", headers=ADMIN).get_data
 by_phone = approved()
 say(RAVI, f"IN {entry_of(by_phone)}")
 assert "Inside now" in snap(RAVI)
-assert db.get(by_phone["reference"])["entered_by"] == RAVI_LABEL
+assert visits.get(by_phone["reference"])["entered_by"] == RAVI_LABEL
 assert "Closed" in say(RAVI, f"OUT {exit_of(by_phone)}")
-assert db.get(by_phone["reference"])["exited_by"] == RAVI_LABEL
+assert visits.get(by_phone["reference"])["exited_by"] == RAVI_LABEL
 print("  own key works, only its hash kept, entry and exit name the guard, visitor sees nothing")
 
 print("every guard hears about an approval, never with a gate code")
@@ -1563,7 +1570,7 @@ told = new_request()
 assert "is now approved" in say(APPROVER, f"YES {told['reference']}"), "the reply stays last"
 to_ravi = [body for to, body in sent if whatsapp.same_number(to, RAVI)]
 assert len(to_ravi) == 1 and told["reference"] in to_ravi[0], to_ravi
-assert not any(code in to_ravi[0] for code in db.codes_of(told["reference"]).values())
+assert not any(code in to_ravi[0] for code in visits.codes_of(told["reference"]).values())
 to_approver = [body for to, body in sent if whatsapp.same_number(to, APPROVER)]
 assert not any("Approved visitor" in body for body in to_approver), "the approver is not told again"
 sent.clear()
@@ -1599,7 +1606,7 @@ sent_before = len(sent)
 client.post("/webhook/whatsapp", json=inbound(RAVI, f"IN {entry_of(approved())}"))
 assert not any(whatsapp.same_number(to, RAVI) for to, _ in sent[sent_before:]), \
     "a removed guard gets no reply and no update"
-assert db.get(by_page["reference"])["entered_by"] == RAVI_LABEL, "the log keeps the name"
+assert visits.get(by_page["reference"])["entered_by"] == RAVI_LABEL, "the log keeps the name"
 assert client.post("/api/admin/guards/remove", json={"phone": RAVI_PHONE},
                    headers=ADMIN).status_code == 404
 print("  KEY and the admin each make a new key, the old one stops, removal ends access")
@@ -1615,10 +1622,10 @@ application.start_background()
 assert application.background.is_alive()
 # The first round runs at once, so a request due while the server slept is approved on wake.
 for _ in range(50):
-    if db.get(overdue["reference"])["status"] == "approved":
+    if visits.get(overdue["reference"])["status"] == "approved":
         break
     application.stopping.wait(0.1)
-assert db.get(overdue["reference"])["status"] == "approved", "the first round must not wait"
+assert visits.get(overdue["reference"])["status"] == "approved", "the first round must not wait"
 started = time.monotonic()
 application.stop_background()
 assert time.monotonic() - started < 3, "exit must not wait out the timer's sleep"

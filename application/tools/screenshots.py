@@ -45,6 +45,7 @@ from werkzeug.serving import make_server
 
 import app as application
 import db
+import visits
 import whatsapp
 
 try:
@@ -107,7 +108,7 @@ def add_visits():
                         json={"name": "Suresh", "phone": "+919000000005"}).get_json()
     suresh = {"X-Gate-Key": guard["key"]}
     photo = grey_photo()
-    visits = [
+    made_up = [
         ("Kavita Shah", "9820011223", "Delivery", "Main office", [], "closed", 180),
         ("Arjun Mehta", "9820044556", "See a student", "2024SEPVUGP0017", ["Neha Mehta"],
          "inside", 95),
@@ -116,14 +117,14 @@ def add_visits():
         ("Priya Desai", "9820055667", "See a student", "2023SEPVUGP0042", ["Anil Desai"],
          "pending", 5),
     ]
-    for name, phone, reason, visiting, guests, state, minutes in visits:
+    for name, phone, reason, visiting, guests, state, minutes in made_up:
         made = client.post("/api/requests", json={
             "name": name, "phone": phone, "address": "Karjat, Raigad", "reason": reason,
             "visiting": visiting, "guests": guests}).get_json()
         reference = made["reference"]
         if state != "pending":
             say(APPROVER, f"{'NO' if state == 'declined' else 'YES'} {reference}")
-        codes = db.codes_of(reference)
+        codes = visits.codes_of(reference)
         if state in ("inside", "closed"):
             client.post(f"/api/pass/{codes['entry']}/entry", headers=suresh, json=photo)
         if state == "closed":

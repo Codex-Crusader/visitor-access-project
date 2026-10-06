@@ -77,7 +77,7 @@ def _approvers():
     return table
 
 
-# Defaults. The admin page can replace them, see db.approver_table.
+# Defaults. The admin page can replace them, see people.approver_table.
 APPROVERS = _approvers()
 
 KEY_LENGTH = 20

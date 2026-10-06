@@ -39,6 +39,7 @@ if not config.META_APP_SECRET:
 # The app runs the migrations when it starts, so this runs them too, and a
 # wrong DATABASE_URL shows up here rather than at the first visit.
 import db  # noqa: E402
+import people  # noqa: E402
 
 try:
     version = db.init()
@@ -46,7 +47,7 @@ except Exception as error:
     fail(f"Cannot use the database in DATABASE_URL. {error}")
 print(f"Database        reachable, schema version {version}")
 # The numbers in use, with any change made on the admin page.
-for reason, (main, backup) in db.approver_table().items():
+for reason, (main, backup) in people.approver_table().items():
     print(f"  {reason:<14} {main}, backup {backup}")
 print()
 

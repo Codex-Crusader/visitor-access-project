@@ -21,6 +21,9 @@ from PIL import Image
 
 import config
 import db
+import entries
+import people
+import visits
 import whatsapp
 
 STATIC = Path(__file__).parent / "static"
@@ -241,7 +244,7 @@ def gate_guard():
         return DESK_KEY
     if not key:
         return None
-    guard = db.guard_by_key(key)
+    guard = people.guard_by_key(key)
     return guard_label(guard) if guard else None
 
 
@@ -271,13 +274,13 @@ def signature_ok():
 
 
 def is_approver(phone, table):
-    """True when this number approves at least one reason. table is db.approver_table()."""
+    """True when this number approves at least one reason. table is people.approver_table()."""
     return any(whatsapp.same_number(phone, who) for pair in table.values() for who in pair)
 
 
 def role(phone, visit, table):
     """BY_MAIN or BY_BACKUP for this visit's approvers, or None."""
-    main, backup = db.approvers_for(table, visit["reason"])
+    main, backup = people.approvers_for(table, visit["reason"])
     if whatsapp.same_number(phone, main):
         return db.BY_MAIN
     if whatsapp.same_number(phone, backup):
@@ -287,7 +290,7 @@ def role(phone, visit, table):
 
 def waiting_for(phone, table):
     """The open requests this approver can decide, oldest first. Expired ones are left out."""
-    return [visit for visit in db.open_requests()
+    return [visit for visit in visits.open_requests()
             if visit["status"] in db.OPEN_STATUSES and role(phone, visit, table)]
 
 
@@ -298,7 +301,7 @@ def guard_at(phone):
     """
     if whatsapp.same_number(phone, config.GUARD):
         return f"Gate desk {config.GUARD}"
-    guard = db.guard_by_phone("+" + whatsapp.digits(phone))
+    guard = people.guard_by_phone("+" + whatsapp.digits(phone))
     return guard_label(guard) if guard else None
 
 
@@ -309,7 +312,7 @@ def tell_guards(visit, skip=()):
     not get it. The approval stands either way.
     """
     try:
-        phones = [config.GUARD] + [guard["phone"] for guard in db.guards()]
+        phones = [config.GUARD] + [guard["phone"] for guard in people.guards()]
     except Exception as failure:
         app.logger.error("Could not read the guards to tell them about %s: %s",
                          visit["reference"], failure)
@@ -543,12 +546,12 @@ def create_request():
     if error:
         return jsonify(error=error), 400
 
-    visit = db.create(fields, guests, auto_approve_time(datetime.now(timezone.utc)))
+    visit = visits.create(fields, guests, auto_approve_time(datetime.now(timezone.utc)))
     try:
-        approvers = db.approvers_for(db.approver_table(), visit["reason"])
+        approvers = people.approvers_for(people.approver_table(), visit["reason"])
         log_template_problem(whatsapp.notify_approver(visit, approvers))
     except Exception as sending_failed:
-        db.delete(visit["reference"])
+        visits.delete(visit["reference"])
         app.logger.error("WhatsApp send failed: %s", sending_failed)
         return jsonify(error="Could not reach the approver. Try again."), 502
     # The new request brings new deadlines, so the timer works out when to run next.
@@ -559,7 +562,7 @@ def create_request():
 @app.get("/api/visit/<token>")
 def read_visit(token):
     """The visitor's own view. The token is long, so the code stays private."""
-    found = db.visitor_pass(token)
+    found = visits.visitor_pass(token)
     if found is None:
         return jsonify(error="No request with that token"), 404
     visit, codes = found
@@ -615,11 +618,11 @@ def read_pass(key):
         return jsonify(error="Wrong gate key"), 403
     code = whatsapp.normalize_gate_code(key)
     if code:
-        visit, kind = db.by_code(code)
+        visit, kind = visits.by_code(code)
         if visit is None:
             return jsonify(error="No pass with that code"), 404
         return jsonify(typed_pass(visit, code, kind))
-    visit = db.get(whatsapp.normalize_reference(key) or key.upper())
+    visit = visits.get(whatsapp.normalize_reference(key) or key.upper())
     if visit is None:
         return jsonify(error="No pass with that code"), 404
     return jsonify(gate_view(visit))
@@ -634,7 +637,7 @@ def gate_board():
     guard = gate_guard()
     if not guard:
         return jsonify(error="Wrong gate key"), 403
-    expected, inside = db.at_gate()
+    expected, inside = visits.at_gate()
     return jsonify(expected=expected, inside=inside, you=guard)
 
 
@@ -652,7 +655,7 @@ def gate_action(key, action):
         return jsonify(error="Unknown action"), 404
 
     code = whatsapp.normalize_gate_code(key)
-    visit, kind = db.by_code(code) if code else (None, None)
+    visit, kind = visits.by_code(code) if code else (None, None)
     if visit is None:
         return jsonify(error="No pass has that code. Type the code on the visitor's pass."), 404
     if kind != action:
@@ -669,11 +672,11 @@ def gate_action(key, action):
         photo = read_photo(request.get_json(silent=True))
         if photo is None:
             return jsonify(error=NO_PHOTO, visit=typed_pass(visit, code, kind)), 400
-        done = db.check_in(visit["reference"], guard, photo)
+        done = entries.check_in(visit["reference"], guard, photo)
     else:
-        done = db.check_out(visit["reference"], guard)
+        done = entries.check_out(visit["reference"], guard)
     if done is None:
-        fresh = db.get(visit["reference"])
+        fresh = visits.get(visit["reference"])
         return jsonify(error=REFUSALS[action][fresh["status"]],
                        visit=typed_pass(fresh, code, kind)), 409
     return jsonify(typed_pass(done, code, kind))
@@ -702,7 +705,7 @@ def visit_log():
     buffer = io.StringIO()
     writer = csv.writer(buffer)
     writer.writerow(EXPORT_COLUMNS)
-    for visit in db.all_visits():
+    for visit in visits.all_visits():
         row = dict(visit)
         row["guests"] = ", ".join(row["guests"])
         writer.writerow([safe_cell(row.get(c)) for c in EXPORT_COLUMNS])
@@ -749,11 +752,11 @@ def admin_visits():
             return jsonify(error="Bad page cursor"), 400
         after = tuple(parts)
 
-    visits, cursor = db.admin_page(ADMIN_FILTERS[status], search, after, ADMIN_PAGE)
-    table = db.approver_table()
-    for visit in visits:
-        visit["approvers"] = list(db.approvers_for(table, visit["reason"]))
-    return jsonify(visits=visits, next="|".join(cursor) if cursor else None)
+    rows, cursor = visits.admin_page(ADMIN_FILTERS[status], search, after, ADMIN_PAGE)
+    table = people.approver_table()
+    for visit in rows:
+        visit["approvers"] = list(people.approvers_for(table, visit["reason"]))
+    return jsonify(visits=rows, next="|".join(cursor) if cursor else None)
 
 
 @app.get("/api/admin/photo/<reference>")
@@ -762,7 +765,7 @@ def admin_photo(reference):
     refused = admin_refusal()
     if refused:
         return refused
-    photo = db.photo_of(reference)
+    photo = entries.photo_of(reference)
     if photo is None or photo["image"] is None:
         return jsonify(error="No photo is stored for this visit."), 404
     response = jsonify(photo=PHOTO_PREFIX + base64.b64encode(photo["image"]).decode(),
@@ -779,8 +782,8 @@ def admin_summary():
     if refused:
         return refused
     return jsonify(
-        counts=db.status_counts(),
-        approvers=approver_rows(db.approver_table()),
+        counts=visits.status_counts(),
+        approvers=approver_rows(people.approver_table()),
         **guard_list(),
         escalate_minutes=config.ESCALATE_MINUTES,
         auto_approve_minutes=config.AUTO_APPROVE_MINUTES,
@@ -819,8 +822,8 @@ def set_approvers():
         problems["backup"] = "The backup must be a different number from the approver."
     if problems:
         return jsonify(error="Check the numbers.", fields=problems), 400
-    db.save_approvers(reason, main, backup)
-    return jsonify(approvers=approver_rows(db.approver_table()))
+    people.save_approvers(reason, main, backup)
+    return jsonify(approvers=approver_rows(people.approver_table()))
 
 
 GUARD_NAME_LENGTH = 60
@@ -828,7 +831,7 @@ GUARD_NAME_LENGTH = 60
 
 def guard_list():
     """The gate desk number, set on the server, and the guards added here."""
-    return {"gate_desk": config.GUARD, "guards": db.guards()}
+    return {"gate_desk": config.GUARD, "guards": people.guards()}
 
 
 @app.post("/api/admin/guards")
@@ -852,7 +855,7 @@ def add_guard():
         problems["phone"] = "This is the admin number. A guard must not get the admin key."
     if problems:
         return jsonify(error="Check the guard's details.", fields=problems), 400
-    key = db.add_guard(name, phone)
+    key = people.add_guard(name, phone)
     if key is None:
         return jsonify(error="Check the guard's details.",
                        fields={"phone": "This number is a guard already."}), 400
@@ -862,7 +865,7 @@ def add_guard():
 def guard_from_payload():
     """The +number of an existing guard from the call's JSON, or None."""
     phone = clean_phone((request.get_json(silent=True) or {}).get("phone"))
-    return phone if phone and db.guard_by_phone(phone) else None
+    return phone if phone and people.guard_by_phone(phone) else None
 
 
 @app.post("/api/admin/guards/new-key")
@@ -872,10 +875,10 @@ def renew_guard_key():
     if refused:
         return refused
     phone = guard_from_payload()
-    key = db.renew_guard_key(phone) if phone else None
+    key = people.renew_guard_key(phone) if phone else None
     if key is None:
         return jsonify(error="No guard has that number."), 404
-    return jsonify(key=key, name=db.guard_by_phone(phone)["name"], **guard_list())
+    return jsonify(key=key, name=people.guard_by_phone(phone)["name"], **guard_list())
 
 
 @app.post("/api/admin/guards/remove")
@@ -887,7 +890,7 @@ def remove_guard():
     phone = guard_from_payload()
     if phone is None:
         return jsonify(error="No guard has that number."), 404
-    db.remove_guard(phone)
+    people.remove_guard(phone)
     return jsonify(**guard_list())
 
 
@@ -968,7 +971,7 @@ def handle_decide(sender, status, reference, table):
             return whatsapp.waiting_body(waiting)
         reference = waiting[0]["reference"]
 
-    visit = db.get(reference)
+    visit = visits.get(reference)
     if visit is None:
         return f"No request has reference {reference}."
     if visit["status"] == db.EXPIRED:
@@ -977,11 +980,11 @@ def handle_decide(sender, status, reference, table):
     by = role(sender, visit, table)
     if not by:
         return f"{reference} goes to another approver. You cannot decide it."
-    main, backup = db.approvers_for(table, visit["reason"])
+    main, backup = people.approvers_for(table, visit["reason"])
     phone = main if by == db.BY_MAIN else backup
-    decided = db.decide(reference, status, by, phone)
+    decided = visits.decide(reference, status, by, phone)
     if not decided:
-        now_status = db.get(reference)["status"]
+        now_status = visits.get(reference)["status"]
         if now_status == db.EXPIRED:
             return EXPIRED_REQUEST.format(reference=reference, hours=config.PASS_HOURS)
         return f"{reference} was already {now_status}."
@@ -1002,7 +1005,7 @@ def handle_gate(guard, sender, action, code):
         return (f"Add the {action} code from the visitor's pass."
                 f" For example: {whatsapp.EXAMPLES[action]}.\n\n{whatsapp.HELP}")
 
-    visit, kind = db.by_code(code)
+    visit, kind = visits.by_code(code)
     if visit is None:
         return f"No pass has {action} code {code}. Use the code on the visitor's pass."
     if kind != action:
@@ -1015,12 +1018,12 @@ def handle_gate(guard, sender, action, code):
     # Over WhatsApp the entry needs a photo of the visitor. IN only asks for
     # it. The photo itself lets them in, see handle_photo.
     if action == db.ENTRY:
-        db.wait_for_photo(whatsapp.digits(sender), reference)
+        entries.wait_for_photo(whatsapp.digits(sender), reference)
         return whatsapp.photo_request(visit, code)
 
-    done = db.check_out(reference, guard)
+    done = entries.check_out(reference, guard)
     if done is None:
-        return REFUSALS[action][db.get(reference)["status"]]
+        return REFUSALS[action][visits.get(reference)["status"]]
     return whatsapp.pass_body(done)
 
 
@@ -1029,7 +1032,7 @@ def handle_photo(guard, sender, media_id):
     if not guard:
         return "Only a guard can record entry and exit."
 
-    reference, entered = db.enter_with_photo(
+    reference, entered = entries.enter_with_photo(
         whatsapp.digits(sender), PHOTO_MINUTES, media_id, guard
     )
     if reference is None:
@@ -1038,7 +1041,7 @@ def handle_photo(guard, sender, media_id):
             f"Send IN <entry code>, then the photo within {PHOTO_MINUTES} minutes."
         )
 
-    visit = db.get(reference)
+    visit = visits.get(reference)
     if visit is None:
         return f"No pass has code {reference}."
     if not entered:
@@ -1050,10 +1053,10 @@ def handle_lookup(guard, sender, key, table):
     """A reference or a pass code. The reply repeats only the code that was sent."""
     if not guard and not is_approver(sender, table):
         return None
-    visit, kind = db.by_code(key)
+    visit, kind = visits.by_code(key)
     if visit is not None:
         return whatsapp.pass_body(visit, key, kind)
-    visit = db.get(key)
+    visit = visits.get(key)
     if visit is None:
         return f"No pass has code {key}."
     return whatsapp.pass_body(visit)
@@ -1074,7 +1077,7 @@ def whatsapp_reply():
     message_id, sender, text, photo = whatsapp.read_incoming(payload)
     if sender is None:
         return "", 200
-    table = db.approver_table()
+    table = people.approver_table()
     guard = guard_at(sender)
     if not (is_approver(sender, table) or guard or is_admin_phone(sender)):
         return "", 200
@@ -1124,7 +1127,7 @@ def handle_key(sender, guard):
         if key and whatsapp.same_number(sender, phone):
             answers.append(whatsapp.key_body(which, key))
     if guard and not whatsapp.same_number(sender, config.GUARD):
-        own = db.renew_guard_key("+" + whatsapp.digits(sender))
+        own = people.renew_guard_key("+" + whatsapp.digits(sender))
         if own:
             answers.append(whatsapp.own_key_body(own))
     return "\n\n".join(answers) or whatsapp.HELP
@@ -1136,30 +1139,30 @@ def escalate_due():
     One failed send must not stop the others, or the purge after them. The
     failed request stays pending, so the next round tries it again.
     """
-    table = db.approver_table()
-    for visit in db.due_for_escalation():
+    table = people.approver_table()
+    for visit in visits.due_for_escalation():
         if visit["status"] != db.PENDING:
             continue  # expired: nobody needs to be asked now
         try:
-            approvers = db.approvers_for(table, visit["reason"])
+            approvers = people.approvers_for(table, visit["reason"])
             log_template_problem(whatsapp.notify_backup(visit, approvers))
         except Exception as failure:
             app.logger.error("Could not ask the backup approver about %s: %s",
                              visit["reference"], failure)
             continue
-        db.mark_escalated(visit["reference"])
+        visits.mark_escalated(visit["reference"])
 
 
 def auto_approve_due():
     """Approve each working-hours request no one answered in time, and tell its approvers."""
-    table = db.approver_table()
-    for visit in db.due_for_auto_approval():
-        done = db.decide(visit["reference"], db.APPROVED, db.BY_AUTO)
+    table = people.approver_table()
+    for visit in visits.due_for_auto_approval():
+        done = visits.decide(visit["reference"], db.APPROVED, db.BY_AUTO)
         if done is None:
             continue
         body = whatsapp.auto_approved_body(done, config.AUTO_APPROVE_MINUTES)
         # Plain text: lost to an approver quiet for 24 hours. The approval stands.
-        approvers = db.approvers_for(table, done["reason"])
+        approvers = people.approvers_for(table, done["reason"])
         for phone in dict.fromkeys(approvers):
             reply_to(phone, body)
         tell_guards(done, skip=approvers)
@@ -1173,7 +1176,7 @@ wake = threading.Event()
 
 def seconds_to_next_round():
     """How long the timer sleeps: until the next deadline, within the floor and the cap."""
-    due = db.next_due()
+    due = visits.next_due()
     if due is None:
         return IDLE_SECONDS
     # One second late, so the deadline has passed when the round reads the database.
@@ -1197,10 +1200,10 @@ def background_loop():
         try:
             auto_approve_due()
             escalate_due()
-            expired = db.expire_old()
+            expired = visits.expire_old()
             if expired:
                 app.logger.info("Marked %s passes expired", expired)
-            removed = db.purge_old()
+            removed = visits.purge_old()
             if removed:
                 app.logger.info("Deleted %s visit records past retention", removed)
             wait = seconds_to_next_round()

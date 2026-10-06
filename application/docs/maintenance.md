@@ -306,8 +306,9 @@ the same.
 
 ### Database changes
 
-The app builds and changes its tables by itself when it starts. `db.py` holds
-the list `MIGRATIONS`, which is the schema changes in order. The table
+The app builds and changes its tables by itself when it starts.
+`migrations.py` holds the list `MIGRATIONS`, which is the schema changes in
+order. The table
 `schema_migrations` records the steps that this database already ran, and
 each start runs only the new steps.
 
