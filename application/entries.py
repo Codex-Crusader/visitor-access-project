@@ -2,7 +2,6 @@
 
 import db
 import visits
-from db import APPROVED, CLOSED, INSIDE
 
 
 @db.writes
@@ -16,7 +15,7 @@ def check_in(reference, by, image):
         row = conn.execute(
             "UPDATE visits SET status = %s, entered_at = %s, entered_by = %s WHERE reference = %s"
             " AND status = %s AND created_at >= %s RETURNING *",
-            (INSIDE, stamp, by, reference, APPROVED, visits.pass_cutoff()),
+            (db.INSIDE, stamp, by, reference, db.APPROVED, visits.pass_cutoff()),
         ).fetchone()
         if row is not None:
             conn.execute(
@@ -35,7 +34,7 @@ def check_out(reference, by):
         row = conn.execute(
             "UPDATE visits SET status = %s, exited_at = %s, exited_by = %s WHERE reference = %s"
             " AND status = %s RETURNING *",
-            (CLOSED, db.now(), by, reference, INSIDE),
+            (db.CLOSED, db.now(), by, reference, db.INSIDE),
         ).fetchone()
     return visits.to_dict(row) if row is not None else None
 
@@ -75,7 +74,7 @@ def enter_with_photo(guard, minutes, media_id, by):
         changed = conn.execute(
             "UPDATE visits SET status = %s, entered_at = %s, entered_by = %s WHERE reference = %s"
             " AND status = %s AND created_at >= %s",
-            (INSIDE, stamp, by, reference, APPROVED, visits.pass_cutoff()),
+            (db.INSIDE, stamp, by, reference, db.APPROVED, visits.pass_cutoff()),
         ).rowcount
         if changed == 1:
             conn.execute(

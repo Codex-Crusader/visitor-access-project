@@ -25,6 +25,7 @@ from PIL import Image
 
 import app as application
 import db
+import checks
 import entries
 import people
 import visits
@@ -49,7 +50,7 @@ def photo(shade=0):
     """A real gate page photo, one solid color, so the stored one can be told apart."""
     out = io.BytesIO()
     Image.new("RGB", (32, 32), (shade, 60, 200)).save(out, "JPEG")
-    return {"photo": application.PHOTO_PREFIX + base64.b64encode(out.getvalue()).decode()}
+    return {"photo": checks.PHOTO_PREFIX + base64.b64encode(out.getvalue()).decode()}
 
 
 def shade_of(data):

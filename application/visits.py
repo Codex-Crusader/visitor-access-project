@@ -10,7 +10,6 @@ from psycopg import errors
 
 import config
 import db
-from db import APPROVED, ENTRY, ESCALATED, EXIT, EXPIRED, EXPIRING, INSIDE, OPEN_STATUSES, PENDING
 
 
 def pass_cutoff():
@@ -27,8 +26,8 @@ def to_dict(row):
     if created:
         expires = datetime.fromisoformat(created) + timedelta(hours=config.PASS_HOURS)
         visit["expires_at"] = expires.isoformat(timespec="seconds")
-        if visit.get("status") in EXPIRING and created < pass_cutoff():
-            visit["status"] = EXPIRED
+        if visit.get("status") in db.EXPIRING and created < pass_cutoff():
+            visit["status"] = db.EXPIRED
     return visit
 
 
@@ -59,7 +58,7 @@ def create(fields, guests, auto_approve_at=None):
             with db.connect() as conn:
                 conn.cursor().executemany(
                     "INSERT INTO gate_codes (code, reference, kind) VALUES (%s, %s, %s)",
-                    [(new_gate_code(), reference, ENTRY), (new_gate_code(), reference, EXIT)],
+                    [(new_gate_code(), reference, db.ENTRY), (new_gate_code(), reference, db.EXIT)],
                 )
                 row = conn.execute(
                     "INSERT INTO visits (reference, token, name, phone, address,"
@@ -74,7 +73,7 @@ def create(fields, guests, auto_approve_at=None):
                         fields["reason"],
                         fields["visiting"],
                         json.dumps(guests),
-                        PENDING,
+                        db.PENDING,
                         db.now(),
                         auto_approve_at,
                     ),
@@ -107,7 +106,7 @@ def _pass_row(token):
             " LEFT JOIN gate_codes AS going"
             "  ON going.reference = visits.reference AND going.kind = %s"
             " WHERE visits.token = %s",
-            (ENTRY, EXIT, token),
+            (db.ENTRY, db.EXIT, token),
         ).fetchone()
     return dict(row) if row else None
 
@@ -120,7 +119,7 @@ def visitor_pass(token):
     row = _pass_row(token)
     if row is None:
         return None
-    codes = {ENTRY: row.pop("entry_code"), EXIT: row.pop("exit_code")}
+    codes = {db.ENTRY: row.pop("entry_code"), db.EXIT: row.pop("exit_code")}
     return to_dict(row), codes
 
 
@@ -184,11 +183,11 @@ def _gate_rows():
     with db.connect() as conn:
         expected = conn.execute(
             f"SELECT {BOARD_FIELDS} FROM visits WHERE status = %s ORDER BY decided_at DESC",
-            (APPROVED,),
+            (db.APPROVED,),
         ).fetchall()
         inside = conn.execute(
             f"SELECT {BOARD_FIELDS} FROM visits WHERE status = %s ORDER BY entered_at",
-            (INSIDE,),
+            (db.INSIDE,),
         ).fetchall()
     return [dict(row) for row in expected], [dict(row) for row in inside]
 
@@ -284,7 +283,7 @@ def next_due():
             "SELECT (SELECT MIN(created_at) FROM visits WHERE status = %s) AS pending,"
             " (SELECT MIN(auto_approve_at) FROM visits WHERE status IN (%s, %s)) AS auto,"
             " (SELECT MIN(created_at) FROM visits WHERE status IN (%s, %s, %s)) AS expiring",
-            (PENDING, *OPEN_STATUSES, *EXPIRING),
+            (db.PENDING, *db.OPEN_STATUSES, *db.EXPIRING),
         ).fetchone()
     times = []
     if row["pending"]:
@@ -302,7 +301,7 @@ def open_requests():
     with db.connect() as conn:
         rows = conn.execute(
             "SELECT * FROM visits WHERE status IN (%s, %s) ORDER BY created_at",
-            OPEN_STATUSES,
+            db.OPEN_STATUSES,
         ).fetchall()
     return [to_dict(row) for row in rows]
 
@@ -312,7 +311,7 @@ def due_for_escalation():
     with db.connect() as conn:
         rows = conn.execute(
             "SELECT * FROM visits WHERE status = %s AND created_at <= %s",
-            (PENDING, db.ago(config.ESCALATE_MINUTES / 1440)),
+            (db.PENDING, db.ago(config.ESCALATE_MINUTES / 1440)),
         ).fetchall()
     return [to_dict(row) for row in rows]
 
@@ -323,7 +322,7 @@ def mark_escalated(reference):
         conn.execute(
             "UPDATE visits SET status = %s, escalated_at = %s WHERE reference = %s"
             " AND status = %s",
-            (ESCALATED, db.now(), reference, PENDING),
+            (db.ESCALATED, db.now(), reference, db.PENDING),
         )
 
 
@@ -334,7 +333,7 @@ def decide(reference, status, by, phone=None):
         row = conn.execute(
             "UPDATE visits SET status = %s, decided_at = %s, decided_by = %s, decided_phone = %s"
             " WHERE reference = %s AND status IN (%s, %s) AND created_at >= %s RETURNING *",
-            (status, db.now(), by, phone, reference, *OPEN_STATUSES, pass_cutoff()),
+            (status, db.now(), by, phone, reference, *db.OPEN_STATUSES, pass_cutoff()),
         ).fetchone()
     return to_dict(row) if row is not None else None
 
@@ -345,7 +344,7 @@ def due_for_auto_approval():
     with db.connect() as conn:
         rows = conn.execute(
             "SELECT * FROM visits WHERE status IN (%s, %s) AND auto_approve_at <= %s",
-            (*OPEN_STATUSES, db.now()),
+            (*db.OPEN_STATUSES, db.now()),
         ).fetchall()
     return [to_dict(row) for row in rows]
 
@@ -356,7 +355,7 @@ def expire_old():
     with db.connect() as conn:
         return conn.execute(
             "UPDATE visits SET status = %s WHERE status IN (%s, %s, %s) AND created_at < %s",
-            (EXPIRED, *EXPIRING, pass_cutoff()),
+            (db.EXPIRED, *db.EXPIRING, pass_cutoff()),
         ).rowcount
 
 

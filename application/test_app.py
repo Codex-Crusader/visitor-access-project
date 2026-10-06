@@ -43,6 +43,13 @@ os.environ.update(
 import app as application
 import config
 import db
+import access
+from routes import admin as admin_routes
+import checks
+import limits
+import pages
+import timer
+from routes import webhook as webhook_routes
 import entries
 import migrations
 import people
@@ -78,7 +85,7 @@ def jpeg(width=64, height=48, exif=None):
 
 
 def as_photo(data):
-    return {"photo": application.PHOTO_PREFIX + base64.b64encode(data).decode()}
+    return {"photo": checks.PHOTO_PREFIX + base64.b64encode(data).decode()}
 
 
 def is_clean_photo(data):
@@ -204,9 +211,9 @@ try:
     # lost for a quiet approver while the visitor was told it went out.
     assert application.config.TEMPLATE_FALLBACK is False
     sent_before = len(sent)
-    application.wake.clear()
+    timer.wake.clear()
     refused_request = client.post("/api/requests", json=payload)
-    assert not application.wake.is_set(), "a failed request brings no deadline"
+    assert not timer.wake.is_set(), "a failed request brings no deadline"
     assert refused_request.status_code == 502, refused_request.status_code
     assert len(sent) == sent_before, "no plain text may go out without the fallback"
 
@@ -219,7 +226,7 @@ try:
                      (hour_ago,))
     db.forget_cache()
     caught.clear()
-    application.escalate_due()
+    timer.escalate_due()
     assert any("backup approver" in line for line in caught), caught
     assert visits.due_for_escalation(), "a failed escalation must stay due and be tried again"
     with db.connect() as conn:
@@ -332,9 +339,9 @@ assert entry_code != exit_code
 # The reference is for approvers. It opens nothing, so it never looks like a gate code.
 assert code.startswith("VR-")
 # The letters change from pass to pass, not only the digits.
-application.forget_hits()
+limits.forget_hits()
 letters = {entry_of(new_request())[:2] for _ in range(12)}
-application.forget_hits()
+limits.forget_hits()
 assert len(letters) > 1, letters
 # The generator itself: 2000 codes, no I or O to misread as 1 or 0, never VR.
 made_codes = [visits.new_gate_code() for _ in range(2000)]
@@ -472,7 +479,7 @@ with db.connect() as conn:
     conn.execute("UPDATE photo_waits SET asked = %s", ("2020-01-01T00:00:00+00:00",))
 db.forget_cache()
 late = snap(APPROVER)
-assert "No entry is waiting" in late and str(application.PHOTO_MINUTES) in late, late
+assert "No entry is waiting" in late and str(webhook_routes.PHOTO_MINUTES) in late, late
 assert status_of(first) == "approved"
 
 # The web gate let the visitor in while the guard was taking the photo.
@@ -734,10 +741,10 @@ try:
     assert "another approver" in wrong, wrong
     # Each approver's waiting list holds only their own reasons.
     table = people.approver_table()
-    waiting_delivery = [v["reference"] for v in application.waiting_for(DELIVERY_MAIN, table)]
+    waiting_delivery = [v["reference"] for v in access.waiting_for(DELIVERY_MAIN, table)]
     assert waiting_delivery == [delivery["reference"]], waiting_delivery
     assert delivery["reference"] not in [
-        v["reference"] for v in application.waiting_for(APPROVER, table)]
+        v["reference"] for v in access.waiting_for(APPROVER, table)]
     # The backup for the reason can decide it, before or after escalation.
     assert "is now approved" in say(DELIVERY_BACKUP[1:], f"YES {delivery['reference']}")
     assert visits.get(delivery["reference"])["status"] == "approved"
@@ -750,7 +757,7 @@ try:
         conn.execute("UPDATE visits SET created_at = %s WHERE reference = %s",
                      (db.ago(1 / 24), late["reference"]))
     db.forget_cache()
-    application.escalate_due()
+    timer.escalate_due()
     assert templates[-1][0] == DELIVERY_BACKUP, templates[-1]
     assert templates[-1][1][0] == late["reference"]
 finally:
@@ -818,16 +825,16 @@ finally:
 
 # More than one page of visits. The rate limit would refuse some of them.
 for number in range(60):
-    application.forget_hits()
+    limits.forget_hits()
     page_request = client.post("/api/requests", json={**payload, "name": f"Page Test {number}"})
     assert page_request.status_code == 201, page_request.get_data(as_text=True)
-application.forget_hits()
+limits.forget_hits()
 total = sum(visits.status_counts().values())
-seen, cursor, pages = [], None, 0
+seen, cursor, page_count = [], None, 0
 while True:
     query = f"/api/admin/visits?after={cursor}" if cursor else "/api/admin/visits"
     page = client.get(query, headers=ADMIN).get_json()
-    pages += 1
+    page_count += 1
     for row in page["visits"]:
         # The token is the visitor's private status link. It never leaves.
         assert "token" not in row, row
@@ -839,7 +846,7 @@ while True:
         break
     cursor = cursor.replace("+", "%2B")
 assert len(seen) == len(set(seen)) == total, (len(seen), len(set(seen)), total)
-assert pages == -(-total // application.ADMIN_PAGE), pages
+assert page_count == -(-total // admin_routes.ADMIN_PAGE), page_count
 times = [visits.get(r)["created_at"] for r in seen]
 assert times == sorted(times, reverse=True)
 
@@ -865,7 +872,7 @@ for path, headers in (("/api/admin/visits", ADMIN),
     assert not any(c in answer for c in live_codes), path
 decided = client.get(f"/api/admin/visits?q={live['reference']}", headers=ADMIN).get_json()
 assert decided["visits"][0]["decided_phone"] == "+" + APPROVER, decided
-print(f"  {total} visits over {pages} pages, none twice, none missed, no token, no code")
+print(f"  {total} visits over {page_count} pages, none twice, none missed, no token, no code")
 
 print("pages are served")
 for path in ("/", "/app.js", "/gate", "/gate.js", "/admin", "/admin.js", "/shared.js", "/sw.js"):
@@ -881,9 +888,9 @@ script_path = script_tag[1]
 for answer in (page_answer, not_changed, client.get("/" + script_path),
                client.get("/api/config"), client.get("/api/visit/nope"),
                client.get("/api/admin/visits")):
-    for name, value in application.SECURITY_HEADERS.items():
+    for name, value in pages.SECURITY_HEADERS.items():
         assert answer.headers.get(name) == value, (answer.status_code, name)
-policy = application.CONTENT_POLICY
+policy = pages.CONTENT_POLICY
 assert "frame-ancestors 'self'" in policy and "object-src 'none'" in policy
 assert "img-src 'self' data:" in policy, "the logo is a data: image"
 print("  page, 304, script, API, 404 and 403 all carry them")
@@ -927,7 +934,7 @@ assert whatsapp.token_works() is False
 whatsapp.requests.get = lambda *_a, **_k: type("R", (), {"ok": True, "status_code": 200})()
 assert whatsapp.token_works() is True
 whatsapp.requests.get = real_get
-application.forget_hits()
+limits.forget_hits()
 print("  200 when both work, 503 with the failed part, Meta asked once an hour")
 
 print("the timer sleeps until the next deadline")
@@ -938,12 +945,12 @@ for due, low, high in ((None, 3600, 3600),
                        (moment - timedelta(minutes=5), 30, 30),
                        (moment + timedelta(hours=5), 3600, 3600)):
     visits.next_due = lambda when=due: when
-    wait = application.seconds_to_next_round()
+    wait = timer.seconds_to_next_round()
     assert low <= wait <= high, (due, wait)
 visits.next_due = real_next_due
-application.wake.clear()
+timer.wake.clear()
 soon = new_request()
-assert application.wake.is_set(), "a new request wakes the timer"
+assert timer.wake.is_set(), "a new request wakes the timer"
 due = visits.next_due()
 made = datetime.fromisoformat(soon["created_at"])
 assert due is not None and due <= made + timedelta(minutes=config.ESCALATE_MINUTES), due
@@ -1003,7 +1010,7 @@ print("  formula cells disarmed in the export")
 print(f"  {len(rows)} visits exported with entry and exit times")
 
 print("rate limits on the public address")
-application.forget_hits()
+limits.forget_hits()
 
 # Creating requests is capped so a stranger cannot spam the approver's phone.
 codes_before = len(visits.all_visits())
@@ -1014,7 +1021,7 @@ assert statuses.count(429) == 5, statuses
 print(f"  request flood: {statuses.count(201)} allowed, {statuses.count(429)} refused")
 
 # Wrong gate keys are always refused.
-application.forget_hits()
+limits.forget_hits()
 tries = [client.get("/api/pass/VR-0001", headers={"X-Gate-Key": f"guess{i}"}).status_code
          for i in range(65)]
 assert all(s == 403 for s in tries), set(tries)
@@ -1027,16 +1034,16 @@ for _ in range(50):
 print("  correct key still works after 65 wrong guesses, and 50 times running")
 
 # The request limit must not be buyable with a made-up address header.
-application.forget_hits()
+limits.forget_hits()
 for i in range(20):
     client.post("/api/requests", json={**payload, "phone": "123"},
                 headers={"X-Forwarded-For": f"9.9.9.{i}"})
-buckets = application.hit_buckets()
+buckets = limits.hit_buckets()
 assert buckets == 1, f"spoofed headers created {buckets} buckets"
 print("  20 calls behind 20 fake addresses still counted as one caller")
 
 # The limit must never block Meta's webhook, which shares no bucket with the gate.
-application.forget_hits()
+limits.forget_hits()
 fresh = new_request()
 for _ in range(70):
     client.get("/api/pass/VR-0001", headers={"X-Gate-Key": "guess"})
@@ -1046,19 +1053,19 @@ assert client.get(f"/api/visit/{fresh['token']}").get_json()["status"] == "appro
 print("  webhook still works while the gate is rate limited")
 
 # A visitor polling their own status is never rate limited.
-application.forget_hits()
+limits.forget_hits()
 polls = [client.get(f"/api/visit/{fresh['token']}").status_code for _ in range(50)]
 assert set(polls) == {200}, set(polls)
 print("  50 visitor polls all served")
 
 # The table of callers stays bounded. Callers silent for an hour are dropped
 # once it passes MAX_CALLERS, and callers heard from recently are kept.
-application.forget_hits()
-application.add_silent_callers(application.MAX_CALLERS + 1, 7200)
+limits.forget_hits()
+limits.add_silent_callers(limits.MAX_CALLERS + 1, 7200)
 assert client.post("/api/requests", json={**payload, "phone": "123"}).status_code == 400
-assert application.hit_buckets() == 1, application.hit_buckets()
-print(f"  {application.MAX_CALLERS + 1} silent callers swept out, the live one kept")
-application.forget_hits()
+assert limits.hit_buckets() == 1, limits.hit_buckets()
+print(f"  {limits.MAX_CALLERS + 1} silent callers swept out, the live one kept")
+limits.forget_hits()
 
 print("migrations run once, so a restart keeps every visit")
 kept_visit = new_request()
@@ -1082,7 +1089,7 @@ print("scripts are cached by version, pages are checked")
 for path, script in (("/", "app.js"), ("/gate", "gate.js"), ("/admin", "admin.js")):
     shown = client.get(path)
     assert shown.headers["Cache-Control"] == "no-cache", shown.headers
-    address = f"{script}?v={application.SCRIPT_VERSIONS[script]}"
+    address = f"{script}?v={pages.SCRIPT_VERSIONS[script]}"
     assert address in shown.get_data(as_text=True), path
     kept = client.get("/" + address)
     assert kept.status_code == 200
@@ -1277,14 +1284,14 @@ def ist(day, hour, minute=0):
 
 
 # Monday 5, Saturday 10 and Sunday 11 October 2026.
-assert application.auto_approve_time(ist(5, 9, 59)) is None
-assert application.auto_approve_time(ist(5, 10)) == "2026-10-05T05:00:00+00:00"
-assert application.auto_approve_time(ist(5, 16, 59)) == "2026-10-05T11:59:00+00:00"
-assert application.auto_approve_time(ist(5, 17)) is None
-assert application.auto_approve_time(ist(10, 12)) is not None
-assert application.auto_approve_time(ist(11, 12)) is None
+assert timer.auto_approve_time(ist(5, 9, 59)) is None
+assert timer.auto_approve_time(ist(5, 10)) == "2026-10-05T05:00:00+00:00"
+assert timer.auto_approve_time(ist(5, 16, 59)) == "2026-10-05T11:59:00+00:00"
+assert timer.auto_approve_time(ist(5, 17)) is None
+assert timer.auto_approve_time(ist(10, 12)) is not None
+assert timer.auto_approve_time(ist(11, 12)) is None
 # 04:30 UTC is 10:00 in India, so it counts.
-assert application.auto_approve_time(datetime(2026, 10, 5, 4, 30, tzinfo=timezone.utc)) \
+assert timer.auto_approve_time(datetime(2026, 10, 5, 4, 30, tzinfo=timezone.utc)) \
     == "2026-10-05T05:00:00+00:00"
 
 due, with_backup, declined, not_yet = (new_request() for _ in range(4))
@@ -1299,7 +1306,7 @@ db.forget_cache()
 visits.mark_escalated(with_backup["reference"])
 say(APPROVER, f"NO {declined['reference']}")
 before = len(sent)
-application.auto_approve_due()
+timer.auto_approve_due()
 for case in (due, with_backup):
     got = visits.get(case["reference"])
     assert got["status"] == "approved" and got["decided_by"] == db.BY_AUTO, got
@@ -1308,17 +1315,17 @@ assert visits.get(declined["reference"])["status"] == "declined"
 assert visits.get(not_yet["reference"])["status"] == "pending"
 notices = [body for _, body in sent[before:] if "approved automatically" in body]
 assert len(notices) == 2, notices
-application.auto_approve_due()
+timer.auto_approve_due()
 assert len(sent) == before + 2, "a second round must not approve or notify again"
 view = client.get(f"/api/visit/{due['token']}").get_json()
 assert view["status"] == "approved" and view["entry_code"]
 private = {"decided_by", "decided_phone", "auto_approve_at"}
 assert not private & view.keys(), "the visitor must not see it"
 # The answer to a new request is the visitor's too, also in working hours.
-real_auto_time = application.auto_approve_time
-application.auto_approve_time = lambda _moment: "2999-01-01T00:00:00+00:00"
+real_auto_time = timer.auto_approve_time
+timer.auto_approve_time = lambda _moment: "2999-01-01T00:00:00+00:00"
 in_hours = client.post("/api/requests", json=payload)
-application.auto_approve_time = real_auto_time
+timer.auto_approve_time = real_auto_time
 assert in_hours.status_code == 201
 assert visits.get(in_hours.get_json()["reference"])["auto_approve_at"], "the server keeps the time"
 assert not private & in_hours.get_json().keys(), "the new request must not tell the visitor"
@@ -1372,10 +1379,10 @@ made_hours_ago(unanswered, 49)
 reply = say(APPROVER, f"YES {unanswered['reference']}")
 assert "expired" in reply and "new request" in reply, reply
 table = people.approver_table()
-waiting_refs = [v["reference"] for v in application.waiting_for(APPROVER, table)]
+waiting_refs = [v["reference"] for v in access.waiting_for(APPROVER, table)]
 assert unanswered["reference"] not in waiting_refs
 before = len(templates)
-application.escalate_due()
+timer.escalate_due()
 assert unanswered["reference"] not in [t[1][0] for t in templates[before:]], "no backup for it"
 assert visits.decide(unanswered["reference"], db.APPROVED, db.BY_AUTO) is None
 
@@ -1403,7 +1410,7 @@ assert "expired" in say(APPROVER, f"NO {late_pass['reference']}")
 print("  47 hours works, 49 hours refused everywhere, exit always works, status saved")
 
 print("a forgotten key goes to its own number, never to the page")
-application.forget_hits()
+limits.forget_hits()
 sent.clear()
 gate_reply = client.post("/api/forgot-key/gate")
 assert gate_reply.get_json() == {"sent_to": whatsapp.digits(config.GUARD)[-4:]}
@@ -1418,7 +1425,7 @@ client.post("/api/forgot-key/gate")
 client.post("/api/forgot-key/gate")
 assert client.post("/api/forgot-key/gate").status_code == 429
 # Ten tries an hour in all, even from many addresses.
-application.forget_hits()
+limits.forget_hits()
 config.BEHIND_PROXY = True
 try:
     codes = [client.post("/api/forgot-key/admin",
@@ -1426,7 +1433,7 @@ try:
              for n in range(11)]
 finally:
     config.BEHIND_PROXY = False
-    application.forget_hits()
+    limits.forget_hits()
 assert codes == [200] * 10 + [429], codes
 # KEY on WhatsApp answers only the numbers that hold a key.
 gate_only = say(APPROVER, "KEY")
@@ -1436,31 +1443,31 @@ assert "test-admin-key-long-enough" in say(config.ADMIN_PHONE[1:], "KEY")
 real_admin_phone = config.ADMIN_PHONE
 config.ADMIN_PHONE = config.GUARD
 try:
-    application.forget_hits()
+    limits.forget_hits()
     assert client.post("/api/forgot-key/admin").status_code == 503
     assert "test-admin-key-long-enough" not in say(APPROVER, "KEY")
 finally:
     config.ADMIN_PHONE = real_admin_phone
-    application.forget_hits()
+    limits.forget_hits()
 sent_before = len(sent)
 client.post("/webhook/whatsapp", json=inbound(STRANGER, "KEY"))
 assert len(sent) == sent_before, "a stranger must get no reply"
 print("  sent to the fixed number, 3 tries per caller and 10 in all each hour, KEY works")
 
 print("the gate page lets nobody in without a photo")
-application.forget_hits()
+limits.forget_hits()
 shot = approved()
 shot_entry = f"/api/pass/{entry_of(shot)}/entry"
 no_photo = client.post(shot_entry, headers=KEY)
-assert no_photo.status_code == 400 and no_photo.get_json()["error"] == application.NO_PHOTO
+assert no_photo.status_code == 400 and no_photo.get_json()["error"] == checks.NO_PHOTO
 assert status_of(shot) == "approved" and entries.photo_of(shot["reference"]) is None
 png = "data:image/png;base64," + base64.b64encode(b"\x89PNG\r\n\x1a\n").decode()
 not_jpeg = "data:image/jpeg;base64," + base64.b64encode(b"\x89PNG\r\n\x1a\n").decode()
 too_big = "data:image/jpeg;base64," + base64.b64encode(
-    b"\xff\xd8\xff" + b"x" * application.PHOTO_BYTES).decode()
+    b"\xff\xd8\xff" + b"x" * checks.PHOTO_BYTES).decode()
 # A broken JPEG, and one that claims more pixels than any phone photo, are refused too.
 broken = as_photo(jpeg(400, 300)[:300])["photo"]
-too_wide = as_photo(jpeg(application.PHOTO_SIDE + 1, 8))["photo"]
+too_wide = as_photo(jpeg(checks.PHOTO_SIDE + 1, 8))["photo"]
 for bad in (png, not_jpeg, too_big, broken, too_wide, "data:image/jpeg;base64,not base64!",
             42, ""):
     refused = client.post(shot_entry, headers=KEY, json={"photo": bad})
@@ -1481,7 +1488,7 @@ assert b"PhoneMaker" not in stored["image"]
 assert stored["taken_at"] == visits.get(shot["reference"])["entered_at"]
 
 # The photo is for the admin only. No gate, visitor or log answer holds it.
-stored_photo = application.PHOTO_PREFIX + base64.b64encode(stored["image"]).decode()
+stored_photo = checks.PHOTO_PREFIX + base64.b64encode(stored["image"]).decode()
 encoded = stored_photo.split(",")[1]
 for path, headers in ((f"/api/pass/{exit_of(shot)}", KEY), (f"/api/pass/{shot['reference']}", KEY),
                       ("/api/gate/board", KEY), (f"/api/visit/{shot['token']}", {}),
@@ -1508,7 +1515,7 @@ assert entries.photo_of(shot["reference"]) is None, "the photo goes with its vis
 print("  no photo, a wrong file or a big file is refused, the admin alone sees the photo")
 
 print("guards added on the admin page have their own key, and the log names them")
-application.forget_hits()
+limits.forget_hits()
 RAVI_PHONE = "+919800000001"
 RAVI = RAVI_PHONE[1:]
 RAVI_LABEL = f"Ravi {RAVI_PHONE}"
@@ -1541,7 +1548,7 @@ assert stored == people.key_hash(ravi_key) and ravi_key not in stored, "only the
 # The gate page knows the guard by their key, and records who let the visitor in.
 RAVI_KEY = {"X-Gate-Key": ravi_key}
 assert client.get("/api/gate/board", headers=RAVI_KEY).get_json()["you"] == RAVI_LABEL
-assert client.get("/api/gate/board", headers=KEY).get_json()["you"] == application.DESK_KEY
+assert client.get("/api/gate/board", headers=KEY).get_json()["you"] == access.DESK_KEY
 by_page = approved()
 let_in = client.post(f"/api/pass/{entry_of(by_page)}/entry", headers=RAVI_KEY, json=PHOTO)
 assert let_in.status_code == 200, let_in.get_json()
@@ -1549,10 +1556,10 @@ assert RAVI_PHONE not in let_in.get_data(as_text=True), "a guard never sees a gu
 assert visits.get(by_page["reference"])["entered_by"] == RAVI_LABEL
 assert RAVI_PHONE not in client.get(f"/api/visit/{by_page['token']}").get_data(as_text=True)
 assert client.post(f"/api/pass/{exit_of(by_page)}/exit", headers=KEY).status_code == 200
-assert visits.get(by_page["reference"])["exited_by"] == application.DESK_KEY
+assert visits.get(by_page["reference"])["exited_by"] == access.DESK_KEY
 listed = client.get(f"/api/admin/visits?q={by_page['reference']}", headers=ADMIN).get_json()
 assert listed["visits"][0]["entered_by"] == RAVI_LABEL
-assert listed["visits"][0]["exited_by"] == application.DESK_KEY
+assert listed["visits"][0]["exited_by"] == access.DESK_KEY
 assert RAVI_PHONE in client.get("/api/admin/export.csv", headers=ADMIN).get_data(as_text=True)
 
 # On WhatsApp the guard's own number lets visitors in and out.
@@ -1582,7 +1589,7 @@ with db.connect() as conn:
     conn.execute("UPDATE visits SET auto_approve_at = %s WHERE reference = %s",
                  ("2020-01-01T00:00:00+00:00", auto["reference"]))
 db.forget_cache()
-application.auto_approve_due()
+timer.auto_approve_due()
 assert [to for to, body in sent if auto["reference"] in body and "Approved visitor" in body] \
     == [RAVI_PHONE], sent
 print("  told once on approval and automatic approval, not on a decline, no code")
@@ -1619,18 +1626,18 @@ with db.connect() as conn:
                  ("2020-01-01T00:00:00+00:00", overdue["reference"]))
 db.forget_cache()
 application.start_background()
-assert application.background.is_alive()
+assert timer.background.is_alive()
 # The first round runs at once, so a request due while the server slept is approved on wake.
 for _ in range(50):
     if visits.get(overdue["reference"])["status"] == "approved":
         break
-    application.stopping.wait(0.1)
+    timer.stopping.wait(0.1)
 assert visits.get(overdue["reference"])["status"] == "approved", "the first round must not wait"
 started = time.monotonic()
 application.stop_background()
 assert time.monotonic() - started < 3, "exit must not wait out the timer's sleep"
 application.stop_background()
-assert not application.background.is_alive(), "the timer must stop"
+assert not timer.background.is_alive(), "the timer must stop"
 try:
     db.connect()
     raise AssertionError("a closed database must not open a new pool on the way out")

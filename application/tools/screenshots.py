@@ -45,6 +45,7 @@ from werkzeug.serving import make_server
 
 import app as application
 import db
+import checks
 import visits
 import whatsapp
 
@@ -86,7 +87,7 @@ def say(sender, text):
 def grey_photo():
     out = io.BytesIO()
     Image.new("RGB", (480, 360), (150, 160, 175)).save(out, "JPEG")
-    return {"photo": application.PHOTO_PREFIX + base64.b64encode(out.getvalue()).decode()}
+    return {"photo": checks.PHOTO_PREFIX + base64.b64encode(out.getvalue()).decode()}
 
 
 def move_back(reference, minutes):

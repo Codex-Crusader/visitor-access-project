@@ -95,7 +95,17 @@ visitor, `/gate` for the guard and `/admin` for the admin.
 | File                                   | What it holds                                                          |
 |----------------------------------------|------------------------------------------------------------------------|
 | `docs/`                                | Setup, maintenance and safety                                          |
-| `app.py`                               | Flask routes, the security headers and the background timer            |
+| `app.py`                               | Makes the Flask app, adds the security headers, starts the timer       |
+| `routes/visitor.py`                    | The visitor page's calls: a new request and its status                 |
+| `routes/gate.py`                       | The gate page's calls: look up a pass, the board, entry and exit       |
+| `routes/admin.py`                      | The admin page's calls, and the forgotten-key messages                 |
+| `routes/webhook.py`                    | The WhatsApp webhook: decisions, entry and exit by message             |
+| `pages.py`                             | Serves the three pages, the script versions and the header values      |
+| `checks.py`                            | Checks the form fields, phone numbers and gate photos                  |
+| `access.py`                            | The gate and admin keys, and who is an approver or a guard             |
+| `limits.py`                            | How often one address may call the public addresses                    |
+| `notify.py`                            | Messages the app sends by itself, such as approvals to the guards      |
+| `timer.py`                             | Escalation, automatic approval, expiry and the purge                   |
 | `db.py`                                | The Postgres connections, the read cache, and the stored values        |
 | `migrations.py`                        | The schema changes, in order                                           |
 | `visits.py`                            | The queries for requests, codes, decisions and the page lists          |

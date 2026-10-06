@@ -511,11 +511,11 @@ so work that became due while the server slept is done on wake.
 
 ### Fixed times in the code
 
-| Name            | File             | Value | What it sets                              |
-|-----------------|------------------|-------|-------------------------------------------|
-| `PHOTO_MINUTES` | `app.py`         | 10    | Minutes the guard has to send the photo   |
-| `LONG_HOURS`    | `static/gate.js` | 8     | Hours inside before the row turns yellow  |
-| `IDLE_SECONDS`  | `app.py`         | 3600  | The longest sleep of the background timer |
+| Name            | File                | Value | What it sets                              |
+|-----------------|---------------------|-------|-------------------------------------------|
+| `PHOTO_MINUTES` | `routes/webhook.py` | 10    | Minutes the guard has to send the photo   |
+| `LONG_HOURS`    | `static/gate.js`    | 8     | Hours inside before the row turns yellow  |
+| `IDLE_SECONDS`  | `timer.py`          | 3600  | The longest sleep of the background timer |
 
 ### The database connections
 
