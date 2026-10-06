@@ -5,6 +5,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 import config
 import people
+import staff
 import whatsapp
 
 # The same logger as app.logger, so every message reaches one place.
@@ -17,19 +18,28 @@ GUARD_SENDS_AT_ONCE = 8
 
 def tell_guards(visit, skip=()):
     """Tell every guard, except skip, that a visitor is approved. Plain text, so best effort."""
+    _send_to_guards([whatsapp.guard_update_body(visit)], skip, visit["reference"])
+
+
+def tell_guards_many(visits):
+    """Tell every guard about many approvals at once: one list, not one message per visitor."""
+    if visits:
+        _send_to_guards(whatsapp.guard_list_bodies(visits), (), f"{len(visits)} approvals")
+
+
+def _send_to_guards(bodies, skip, about):
     try:
-        phones = [config.GUARD] + [guard["phone"] for guard in people.guards()]
+        phones = [config.GUARD] + [guard["phone"] for guard in people.holders(people.GUARDS)]
     except Exception as failure:
-        log.error("Could not read the guards to tell them about %s: %s",
-                         visit["reference"], failure)
+        log.error("Could not read the guards to tell them about %s: %s", about, failure)
         return
     skipped = {whatsapp.digits(phone) for phone in skip}
     to_tell = {whatsapp.digits(p): p for p in phones if whatsapp.digits(p) not in skipped}
-    body = whatsapp.guard_update_body(visit)
     # Sent together, so the approver waits for one call to Meta, not one per guard.
     with ThreadPoolExecutor(max_workers=GUARD_SENDS_AT_ONCE) as pool:
         for phone in to_tell.values():
-            pool.submit(reply_to, phone, body)
+            for body in bodies:
+                pool.submit(reply_to, phone, body)
 
 
 def log_template_problem(problem):
@@ -43,3 +53,18 @@ def reply_to(phone, text):
         whatsapp.send(phone, text)
     except Exception as failure:
         log.error("Could not reply: %s", failure)
+
+
+def staff_entered(person, by):
+    """Record an allow list entry, then tell the person. Returns (time, new, told).
+
+    A repeat within a few minutes records and sends nothing. A failed message keeps the entry."""
+    stamp, new = staff.record_entry(person, by)
+    if not new:
+        return stamp, False, False
+    try:
+        whatsapp.notify_staff_entry(person, stamp, by)
+    except Exception as failure:
+        log.error("Could not tell code %s about their entry: %s", person["code"], failure)
+        return stamp, True, False
+    return stamp, True, True

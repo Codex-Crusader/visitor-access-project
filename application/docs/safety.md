@@ -12,10 +12,10 @@ the people who decide about the campus. To set up the app, read
 | A visitor               | Their own private link                | Their own request, its status and its current code                                                                               |
 | An approver             | WhatsApp, from their number           | The requests of their own reasons, and any pass they look up                                                                     |
 | A guard                 | Their own key, or the shared gate key | Open passes without the address, the gate lists, and a WhatsApp message for each approval                                        |
-| The admin               | The admin key                         | Every request, who decided it, which guard let the visitor in and out, the gate page photos, the approver numbers and the guards |
+| An admin                | The admin key, or their own key       | Every request, who decided it, which guard let the visitor in and out, the gate page photos, the approvers, offices, allow list, guards, admins and blacklist |
 | Anybody on the internet | The public pages                      | The forms, the gate desk number, and the health result                                                                           |
 
-Only the admin key opens the CSV log with every visitor's name, phone
+Only an admin key opens the log with every visitor's name, phone
 number and address. A guard sees an open visit only, and never its address.
 
 ## Keys
@@ -28,7 +28,9 @@ number and address. A guard sees an open visit only, and never its address.
    Remove on the admin page stops the guard's key at once.
 2. The admin key opens the admin page. It must be different from the gate
    key. If it is not set, is shorter than 20 characters, or is the same, the
-   admin page stays locked, because every guard has the gate key.
+   admin page stays locked, because every guard has the gate key. Each admin
+   added on the Admins tab has a key of their own, kept only as a hash, as a
+   guard's key is. A guard's number cannot be an admin's number.
 3. Each page keeps its key in the browser's storage on that device. On a
    shared device, tap Change key when you finish. That removes the key.
 4. "Forgot key?" sends the key only to its fixed number: the gate key to
@@ -36,6 +38,9 @@ number and address. A guard sees an open visit only, and never its address.
    If `ADMIN_PHONE` is the gate desk number, the admin key is not sent.
 5. The server compares keys in constant time, so the time of the answer
    tells nothing about the key.
+6. `KEY` on WhatsApp gives a new key to whoever holds an added guard's or
+   admin's unlocked phone. Every new key and every key sent goes into the
+   admin change log, so an admin can see it and delete that person.
 
 There is no lockout after wrong keys. Everyone at one gate shares one
 internet address, so a lockout after one person's typing mistakes shuts out
@@ -205,12 +210,20 @@ Never put a secret in git, in a chat or in a screenshot. `.gitignore` keeps
 | A guessed visitor link               | 22 random characters                                                       |
 | A guessed gate or admin key          | 20 characters or more, required at start                                   |
 | A stolen gate key                    | Remove the guard, or change `GATE_KEY`. A gate key opens no history        |
-| A stolen admin key                   | Change `ADMIN_KEY` on Render. The old key stops at once                    |
+| A stolen admin key                   | Change `ADMIN_KEY` on Render, or tap New key or Delete for an added admin  |
+| An allow list code used by another   | The guard reads the name. The person gets a message about the entry        |
+| A person the campus has banned       | The blacklist refuses their number, and the admin page lists each attempt  |
+| A ban while a request waits          | The ban declines it. An approval checks the blacklist in the same statement |
+| An admin change nobody expected      | The admin change log names who made it, also by `KEY` on WhatsApp          |
+| A stolen gate key lists the staff    | 30 allow list codes a minute for each key                                  |
+| A regular admin acts as a super one  | Only a super admin may renew the key of, delete or change a super admin    |
+| A bulk approval of the wrong rows    | An "Are you sure?" box with the count, and every reference in the log      |
+| Two guards record one staff entry    | One entry for each code in 2 minutes, with a database lock                 |
 | False lines in the approver message  | The form refuses line breaks, control codes and invisible marks            |
 | A formula in the CSV log             | Cells that start with `=`, `+`, `-` or `@` get a quote in front            |
 | A harmful photo file                 | Size and pixel limits, then the server decodes it and stores a new copy    |
 | Many requests from one place         | `REQUESTS_PER_HOUR` for each address, and limits on "Forgot key?"          |
-| A guard who reads the whole history  | Only the admin key opens the CSV log. The gate never receives an address   |
+| A guard who reads the whole history  | Only an admin key opens the log. The gate never receives an address        |
 
 ## Known limits
 
@@ -243,3 +256,15 @@ Tell the people who decide about the campus about these limits.
     [maintenance.md](maintenance.md).
 11. The approval message to the guards is plain text. WhatsApp delivers it
     only to a guard who wrote to the app's number in the last 24 hours.
+12. A person on the allow list says their code aloud at the gate, so anyone
+    who hears it can use it. The guard must check the name in the reply
+    against the person. The person gets a message about each entry, but only
+    when `STAFF_ENTRY_TEMPLATE` is set, or when they wrote to the app's
+    number in the last 24 hours.
+13. The app records an allow list entry but no exit.
+14. Every admin has the same rights. An added admin can delete another
+    added admin, but not the main admin or themselves.
+15. The blacklist knows only phone numbers. A banned person can use another
+    phone, or come as a guest named on someone else's request.
+16. The log download holds the gate page photos. A downloaded copy stays
+    after the app deletes the record at `RETAIN_DAYS`.

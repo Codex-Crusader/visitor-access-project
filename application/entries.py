@@ -1,7 +1,11 @@
 """Entries and exits at the gate, and the visitor's photo."""
 
+import blacklist
 import db
 import visits
+
+# Inside the UPDATE, so a number blacklisted a moment ago never gets in.
+NOT_BLACKLISTED = blacklist.not_listed("visits.phone")
 
 
 @db.writes
@@ -11,7 +15,7 @@ def check_in(reference, by, image):
     with db.connect() as conn:
         row = conn.execute(
             "UPDATE visits SET status = %s, entered_at = %s, entered_by = %s WHERE reference = %s"
-            " AND status = %s AND created_at >= %s RETURNING *",
+            " AND status = %s AND created_at >= %s" + NOT_BLACKLISTED + " RETURNING *",
             (db.INSIDE, stamp, by, reference, db.APPROVED, visits.pass_cutoff()),
         ).fetchone()
         if row is not None:
@@ -62,7 +66,7 @@ def enter_with_photo(guard, minutes, media_id, by):
         reference, stamp = wait["reference"], db.now()
         changed = conn.execute(
             "UPDATE visits SET status = %s, entered_at = %s, entered_by = %s WHERE reference = %s"
-            " AND status = %s AND created_at >= %s",
+            " AND status = %s AND created_at >= %s" + NOT_BLACKLISTED,
             (db.INSIDE, stamp, by, reference, db.APPROVED, visits.pass_cutoff()),
         ).rowcount
         if changed == 1:
@@ -73,6 +77,26 @@ def enter_with_photo(guard, minutes, media_id, by):
                 (reference, media_id, stamp),
             )
     return reference, changed == 1
+
+
+PHOTO_BATCH = 50
+
+
+def stored_photos():
+    """(reference, JPEG bytes) for every gate page photo, 50 per database trip, for the ZIP."""
+    after = ""
+    while True:
+        with db.connect() as conn:
+            rows = conn.execute(
+                "SELECT reference, image FROM photos WHERE image IS NOT NULL AND reference > %s"
+                " ORDER BY reference LIMIT %s",
+                (after, PHOTO_BATCH),
+            ).fetchall()
+        for row in rows:
+            yield row["reference"], bytes(row["image"])
+        if len(rows) < PHOTO_BATCH:
+            return
+        after = rows[-1]["reference"]
 
 
 @db.read

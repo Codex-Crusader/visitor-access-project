@@ -12,7 +12,7 @@ import limits
 import pages
 import timer
 import whatsapp
-from routes import admin, gate, visitor, webhook
+from routes import admin, gate, team, visitor, webhook
 
 app = Flask(__name__, static_folder=str(pages.STATIC), static_url_path="")
 # The largest call is an entry with its photo, as base64. Anything bigger gets 413.
@@ -20,7 +20,7 @@ app.config["MAX_CONTENT_LENGTH"] = 1_000_000
 if config.ADMIN_LOCKED:
     app.logger.warning(config.ADMIN_LOCKED)
 
-for part in (pages, visitor, gate, admin, webhook):
+for part in (pages, visitor, gate, admin, team, webhook):
     app.register_blueprint(part.bp)
 
 # Meta is asked whether the token works at most this often. A failure is asked again sooner.

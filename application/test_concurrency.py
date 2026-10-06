@@ -181,7 +181,7 @@ guard_keys = {r.get_json()["name"]: r.get_json()["key"] for r in added}
 # Each guard's photo has its own color, 12 apart, so the stored one names its guard.
 SHADES = {f"Guard {n}": 12 * n for n in range(20)}
 assert len(set(guard_keys.values())) == 20, "every guard key unique"
-assert len(people.guards()) == 20
+assert len(people.holders(people.GUARDS)) == 20
 print("  20 guards added at once -> 20 unique keys")
 
 # --- The same twenty race one entry, each with their own key ---
@@ -271,6 +271,32 @@ for guard_phone in guard_phones:
     assert len(told) == 10, (guard_phone, len(told))
     assert {ref for ref in pending if any(ref in body for body in told)} == set(pending)
 print("  10 approvals at once -> each of 20 guards told about each one exactly once")
+
+# --- Twenty guards send one allow list code at the same moment ---
+code = client.post("/api/admin/staff", headers=ADMIN,
+                   json={"name": "Dr Dev", "phone": "+919500000001"}).get_json()["code"]
+sent.clear()
+answers = []
+
+
+def same_code(name):
+    r = client.post(f"/api/staff/{code}/entry", headers={"X-Gate-Key": guard_keys[name]})
+    with lock:
+        answers.append(r.get_json())
+
+
+threads = [threading.Thread(target=same_code, args=(name,)) for name in guard_keys]
+for t in threads:
+    t.start()
+for t in threads:
+    t.join()
+fresh = [a for a in answers if a.get("new")]
+assert len(answers) == 20 and len(fresh) == 1, [a.get("new") for a in answers]
+assert len({a["entered_at"] for a in answers}) == 1, "the repeats name the one entry"
+assert len([to for to, _ in sent if to == "+919500000001"]) == 1, "one message, not twenty"
+with db.connect() as conn:
+    assert conn.execute("SELECT COUNT(*) AS n FROM staff_entries").fetchone()["n"] == 1
+print("  20 guards sent one allow list code at once -> 1 entry, 1 message")
 
 print()
 print("concurrency checks passed")

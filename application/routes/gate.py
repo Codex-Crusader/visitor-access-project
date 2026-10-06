@@ -1,12 +1,16 @@
-"""The gate page's calls: look up a pass, the board, entry and exit."""
+"""The gate page's calls: look up a pass, the board, entry and exit, and allow list entries."""
 
 
 from flask import Blueprint, jsonify, request
 
 import access
+import blacklist
 import checks
 import db
 import entries
+import limits
+import notify
+import staff
 import visits
 import whatsapp
 
@@ -49,11 +53,28 @@ CLOSED_PASS = ("reference", "status", "created_at", "decided_at",
 GATE_PRIVATE = ("token", "address", "decided_phone", "entered_by", "exited_by")
 
 
+# What the gate reads for a visitor on the blacklist. Leaving is always allowed.
+BLACKLISTED = "On the blacklist. Do not let them in. Tell the admin."
+
+
 def gate_view(visit):
     if visit["status"] != db.CLOSED:
-        return {key: value for key, value in visit.items() if key not in GATE_PRIVATE}
+        shown = {key: value for key, value in visit.items() if key not in GATE_PRIVATE}
+        # Only a pass that can still enter needs the check. Inside, they may always leave.
+        listed = visit["status"] in db.EXPIRING and blacklist.has(visit["phone"])
+        return {**shown, "blacklisted": listed}
     # The page reads guests.length, so guests is emptied rather than dropped.
     return {key: [] if key == "guests" else visit[key] for key in CLOSED_PASS}
+
+
+def stopped_at_gate(visit, guard):
+    blacklist.record_attempt(visit["phone"], visit["name"], blacklist.AT_GATE,
+                             visit["reference"], guard)
+
+
+def stopped_code(person, guard):
+    blacklist.record_attempt(person["phone"], person["name"], blacklist.ALLOW_CODE,
+                             person["code"], guard)
 
 
 def typed_pass(visit, code, kind):
@@ -64,14 +85,19 @@ def typed_pass(visit, code, kind):
 @bp.get("/api/pass/<key>")
 def read_pass(key):
     """A pass by its typed code, or by reference from the board. A reference records nothing."""
-    if not access.gate_guard():
+    guard = access.gate_guard()
+    if not guard:
         return jsonify(error="Wrong gate key"), 403
     code = whatsapp.normalize_gate_code(key)
     if code:
         visit, kind = visits.by_code(code)
         if visit is None:
             return jsonify(error="No pass with that code"), 404
-        return jsonify(typed_pass(visit, code, kind))
+        shown = typed_pass(visit, code, kind)
+        # The entry code means the person is at the gate. A board tap is not an attempt.
+        if shown["blacklisted"] and kind == db.ENTRY:
+            stopped_at_gate(visit, guard)
+        return jsonify(shown)
     visit = visits.get(whatsapp.normalize_reference(key) or key.upper())
     if visit is None:
         return jsonify(error="No pass with that code"), 404
@@ -85,7 +111,14 @@ def gate_board():
     if not guard:
         return jsonify(error="Wrong gate key"), 403
     expected, inside = visits.at_gate()
-    return jsonify(expected=expected, inside=inside, you=guard)
+    return jsonify(expected=[board_row(v) for v in expected],
+                   inside=[board_row(v) for v in inside], you=guard)
+
+
+def board_row(visit):
+    """A board row without the phone, marked when the number is on the blacklist."""
+    row = {key: value for key, value in visit.items() if key != "phone"}
+    return {**row, "blacklisted": blacklist.has(visit["phone"])}
 
 
 @bp.post("/api/pass/<key>/<action>")
@@ -110,6 +143,10 @@ def gate_action(key, action):
                        visit=typed_pass(visit, code, kind)), 409
 
     # The update itself decides. Two guards pressing at once must not both win.
+    if action == db.ENTRY and blacklist.has(visit["phone"]):
+        stopped_at_gate(visit, guard)
+        return jsonify(error=BLACKLISTED, visit=typed_pass(visit, code, kind)), 409
+
     if action == db.ENTRY:
         # Checked last, so a pass that cannot enter never asks for a photo.
         photo = checks.read_photo(request.get_json(silent=True))
@@ -120,6 +157,52 @@ def gate_action(key, action):
         done = entries.check_out(visit["reference"], guard)
     if done is None:
         fresh = visits.get(visit["reference"])
-        return jsonify(error=REFUSALS[action][fresh["status"]],
-                       visit=typed_pass(fresh, code, kind)), 409
+        # Still approved means the number joined the blacklist a moment ago.
+        why = REFUSALS[action].get(fresh["status"], BLACKLISTED)
+        return jsonify(error=why, visit=typed_pass(fresh, code, kind)), 409
     return jsonify(typed_pass(done, code, kind))
+
+
+NO_SUCH_CODE = "No one on the allow list has that code."
+# Allow list codes one guard may try in a minute, so a stolen key cannot list the names.
+CODES_PER_MINUTE = 30
+TOO_MANY_CODES = "Too many allow list codes in a minute. Wait a minute and try again."
+
+
+def staff_view(person):
+    """A person on the allow list as the gate sees them: name and code, never the number."""
+    return {"code": person["code"], "name": person["name"], "tag": person["tag"],
+            "blacklisted": blacklist.has(person["phone"])}
+
+
+@bp.get("/api/staff/<code>")
+def read_staff(code):
+    """A person on the allow list, by their 7-digit code. Records no entry."""
+    guard = access.gate_guard()
+    if not guard:
+        return jsonify(error="Wrong gate key"), 403
+    if limits.too_many("allow-code", CODES_PER_MINUTE, 60, who=guard):
+        return jsonify(error=TOO_MANY_CODES), 429
+    person = staff.by_code(staff.normalize_code(code) or "")
+    if person is None:
+        return jsonify(error=NO_SUCH_CODE), 404
+    shown = staff_view(person)
+    if shown["blacklisted"]:
+        stopped_code(person, guard)
+    return jsonify(shown)
+
+
+@bp.post("/api/staff/<code>/entry")
+def staff_entry(code):
+    """Record an allow list entry at once, and send the person a WhatsApp message."""
+    guard = access.gate_guard()
+    if not guard:
+        return jsonify(error="Wrong gate key"), 403
+    person = staff.by_code(staff.normalize_code(code) or "")
+    if person is None:
+        return jsonify(error=NO_SUCH_CODE), 404
+    if blacklist.has(person["phone"]):
+        stopped_code(person, guard)
+        return jsonify(error=BLACKLISTED), 409
+    stamp, new, told = notify.staff_entered(person, guard)
+    return jsonify(**staff_view(person), entered_at=stamp, new=new, told=told)

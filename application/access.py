@@ -1,4 +1,4 @@
-"""Who may do what: the gate and admin keys, approvers, guards, Meta's signature."""
+"""Who may do what: the gate and admin keys, approvers, guards, admins, Meta's signature."""
 
 import hashlib
 import hmac
@@ -34,15 +34,52 @@ def gate_guard():
         return DESK_KEY
     if not key:
         return None
-    guard = people.guard_by_key(key)
+    guard = people.holder_by_key(people.GUARDS, key)
     return guard_label(guard) if guard else None
+
+
+# Who used the ADMIN_KEY from the server settings.
+MAIN_ADMIN = "Main admin (ADMIN_KEY)"
+
+
+def admin_who():
+    """(label, super) for the admin key's holder, or (None, False). The main admin is super.
+
+    Never matches while the page is locked."""
+    if config.ADMIN_LOCKED:
+        return None, False
+    key = request.headers.get("X-Admin-Key", "")
+    if same_secret(key, config.ADMIN_KEY):
+        return MAIN_ADMIN, True
+    if not key:
+        return None, False
+    admin = people.holder_by_key(people.ADMINS, key)
+    return (guard_label(admin), admin["super"]) if admin else (None, False)
+
+
+def admin_caller():
+    """The label of the admin key's holder, or None."""
+    return admin_who()[0]
+
+
+def admin_is_super():
+    return admin_who()[1]
+
+
+# 409, never 403: the admin page forgets the key on 403, and this admin's key is right.
+SUPER_ONLY = "Only a super admin can do this."
+
+
+def super_refusal():
+    """Why a super admin's call is refused, or None. Run after admin_refusal()."""
+    return None if admin_is_super() else (jsonify(error=SUPER_ONLY), 409)
 
 
 def admin_refusal():
     """Why an admin call is refused, or None. Checks the lock first: an empty key never matches."""
     if config.ADMIN_LOCKED:
         return jsonify(error=config.ADMIN_LOCKED), 503
-    if not same_secret(request.headers.get("X-Admin-Key", ""), config.ADMIN_KEY):
+    if not admin_caller():
         return jsonify(error="Wrong admin key"), 403
     return None
 
@@ -60,13 +97,13 @@ def signature_ok():
 
 
 def is_approver(phone, table):
-    """True when this number approves at least one reason. table is people.approver_table()."""
-    return any(whatsapp.same_number(phone, who) for pair in table.values() for who in pair)
+    """True when this number approves a reason or an office. table is people.approver_table()."""
+    return any(whatsapp.same_number(phone, who) for who in people.every_approver(table))
 
 
 def role(phone, visit, table):
     """BY_MAIN or BY_BACKUP for this visit's approvers, or None."""
-    main, backup = people.approvers_for(table, visit["reason"])
+    main, backup = people.approvers_for(table, visit)
     if whatsapp.same_number(phone, main):
         return db.BY_MAIN
     if whatsapp.same_number(phone, backup):
@@ -84,12 +121,18 @@ def guard_at(phone):
     """The label of the guard with this number, or None. GUARD, the gate desk, is always one."""
     if whatsapp.same_number(phone, config.GUARD):
         return f"Gate desk {config.GUARD}"
-    guard = people.guard_by_phone("+" + whatsapp.digits(phone))
+    guard = people.holder_by_phone(people.GUARDS, "+" + whatsapp.digits(phone))
     return guard_label(guard) if guard else None
 
 
+def added_admin_at(phone):
+    """The admin added on the admin page with this number, as {name, phone}, or None."""
+    return people.holder_by_phone(people.ADMINS, "+" + whatsapp.digits(phone))
+
+
 def is_admin_phone(phone):
-    return whatsapp.same_number(phone, config.ADMIN_PHONE)
+    """ADMIN_PHONE, or an admin added on the admin page."""
+    return whatsapp.same_number(phone, config.ADMIN_PHONE) or added_admin_at(phone) is not None
 
 
 FORGOT_KEYS = ("gate", "admin")

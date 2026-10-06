@@ -6,11 +6,15 @@ import logging
 from flask import Blueprint, request
 
 import access
+import audit
+import blacklist
 import config
 import db
 import entries
+import limits
 import notify
 import people
+import staff
 import visits
 import whatsapp
 from routes import gate
@@ -58,13 +62,15 @@ def handle_decide(sender, status, reference, table):
     by = access.role(sender, visit, table)
     if not by:
         return f"{reference} goes to another approver. You cannot decide it."
-    main, backup = people.approvers_for(table, visit["reason"])
+    main, backup = people.approvers_for(table, visit)
     phone = main if by == db.BY_MAIN else backup
     decided = visits.decide(reference, status, by, phone)
     if not decided:
         now_status = visits.get(reference)["status"]
         if now_status == db.EXPIRED:
             return EXPIRED_REQUEST.format(reference=reference, hours=config.PASS_HOURS)
+        if now_status in db.OPEN_STATUSES:
+            return f"{reference} cannot be approved: the number is on the blacklist."
         return f"{reference} was already {now_status}."
     # Before the reply to the approver, so the reply is the last message sent.
     if status == db.APPROVED:
@@ -90,6 +96,9 @@ def handle_gate(guard, sender, action, code):
         return gate.REFUSALS[action][visit["status"]]
 
     reference = visit["reference"]
+    if action == db.ENTRY and blacklist.has(visit["phone"]):
+        gate.stopped_at_gate(visit, guard)
+        return gate.BLACKLISTED
     # IN only asks for the photo. The photo lets the visitor in, see handle_photo.
     if action == db.ENTRY:
         entries.wait_for_photo(whatsapp.digits(sender), reference)
@@ -119,8 +128,26 @@ def handle_photo(guard, sender, media_id):
     if visit is None:
         return f"No pass has code {reference}."
     if not entered:
-        return gate.REFUSALS["entry"][visit["status"]]
+        # Still approved means the number joined the blacklist after the IN.
+        if visit["status"] == db.APPROVED:
+            gate.stopped_at_gate(visit, guard)
+        return gate.REFUSALS["entry"].get(visit["status"], gate.BLACKLISTED)
     return whatsapp.pass_body(visit)
+
+
+def handle_staff(guard, code):
+    """A guard sent an allow list code. The entry is recorded at once. The reply names them."""
+    if not guard:
+        return "Only a guard can record entry and exit."
+    if limits.too_many("allow-code", gate.CODES_PER_MINUTE, 60, who=guard):
+        return gate.TOO_MANY_CODES
+    person = staff.by_code(code)
+    if person is None:
+        return f"No one on the allow list has the code {code}. Check the code, or ask the admin."
+    if blacklist.has(person["phone"]):
+        gate.stopped_code(person, guard)
+        return f"{person['name']}: {gate.BLACKLISTED}"
+    return whatsapp.staff_entry_reply(person, *notify.staff_entered(person, guard))
 
 
 def handle_lookup(guard, sender, key, table):
@@ -128,12 +155,18 @@ def handle_lookup(guard, sender, key, table):
     if not guard and not access.is_approver(sender, table):
         return None
     visit, kind = visits.by_code(key)
-    if visit is not None:
-        return whatsapp.pass_body(visit, key, kind)
-    visit = visits.get(key)
+    code = key if visit is not None else None
+    if visit is None:
+        visit = visits.get(key)
     if visit is None:
         return f"No pass has code {key}."
-    return whatsapp.pass_body(visit)
+    body = whatsapp.pass_body(visit, code, kind)
+    if visit["status"] in db.EXPIRING and blacklist.has(visit["phone"]):
+        # A guard with the entry code has the person at the gate.
+        if guard and kind == db.ENTRY:
+            gate.stopped_at_gate(visit, guard)
+        return f"{gate.BLACKLISTED}\n\n{body}"
+    return body
 
 
 @bp.post("/webhook/whatsapp")
@@ -181,6 +214,8 @@ def answer_message(sender, text, photo, table, guard):
         return handle_decide(sender, value, key, table)
     if kind == "gate":
         return handle_gate(guard, sender, value, key)
+    if kind == "staff":
+        return handle_staff(guard, key)
     if kind == "lookup":
         return handle_lookup(guard, sender, key, table)
     if access.is_approver(sender, table):
@@ -189,14 +224,23 @@ def answer_message(sender, text, photo, table, guard):
 
 
 def handle_key(sender, guard):
-    """KEY sends the gate desk or admin its key. An added guard gets a new key of their own."""
+    """KEY sends the gate desk or admin its key. An added guard or admin gets a new key."""
     answers = []
+    by = f"KEY on WhatsApp from +{whatsapp.digits(sender)}"
     for which in access.FORGOT_KEYS:
         key, phone = access.key_and_phone(which)
         if key and whatsapp.same_number(sender, phone):
             answers.append(whatsapp.key_body(which, key))
+            audit.record(by, f"Sent the shared {which} key")
     if guard and not whatsapp.same_number(sender, config.GUARD):
-        own = people.renew_guard_key("+" + whatsapp.digits(sender))
+        own = people.renew_key(people.GUARDS, "+" + whatsapp.digits(sender))
         if own:
             answers.append(whatsapp.own_key_body(own))
+            audit.record(by, "Made a new gate key", guard)
+    admin = access.added_admin_at(sender)
+    if admin:
+        own = people.renew_key(people.ADMINS, admin["phone"])
+        if own:
+            answers.append(whatsapp.own_key_body(own, "admin"))
+            audit.record(by, "Made a new admin key", access.guard_label(admin))
     return "\n\n".join(answers) or whatsapp.HELP

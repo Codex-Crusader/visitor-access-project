@@ -37,6 +37,10 @@ EXIT = "exit"
 BY_MAIN = "main"
 BY_BACKUP = "backup"
 BY_AUTO = "auto"
+# Declined because the number went on the blacklist while the request was open.
+BY_BLACKLIST = "blacklist"
+# Decided on the admin page by a super admin. decided_phone then holds that admin's label.
+BY_ADMIN = "admin"
 
 
 def now():
@@ -180,7 +184,8 @@ def cached(query):
     """A read kept in memory until the next write. A None answer is never kept."""
     @functools.wraps(query)
     def from_memory(*args):
-        key = (query.__name__, *args)
+        # The module too: staff.everyone and blacklist.everyone are different reads.
+        key = (query.__module__, query.__name__, *args)
         with _cache_lock:
             hit = _cache.get(key)
             seen = _changes[0]

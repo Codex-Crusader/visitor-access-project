@@ -7,6 +7,7 @@ import requests
 
 import config
 import db
+import staff
 
 API_URL = f"https://graph.facebook.com/v21.0/{config.META_PHONE_NUMBER_ID}/messages"
 TIMEOUT_SECONDS = 15
@@ -27,7 +28,8 @@ HELP = (
     "YES <reference> approves. NO <reference> declines.\n"
     "IN <entry code>, then a photo of the visitor, records entry.\n"
     "OUT <exit code> records exit.\n"
-    "The entry code and the exit code are on the visitor's pass."
+    "The entry code and the exit code are on the visitor's pass.\n"
+    "A 7-digit allow list code records that person's entry at once."
 )
 EXAMPLES = {db.ENTRY: "IN KT-4821", db.EXIT: "OUT RM-0937"}
 
@@ -74,12 +76,12 @@ def send(to_phone, body):
     return _post(to_phone, {"type": "text", "text": {"body": body}})
 
 
-def send_template(to_phone, values):
-    """The approved template, which arrives at any time."""
+def send_template(to_phone, values, name=None):
+    """An approved template, which arrives at any time. The approval request by default."""
     return _post(to_phone, {
         "type": "template",
         "template": {
-            "name": config.REQUEST_TEMPLATE,
+            "name": name or config.REQUEST_TEMPLATE,
             "language": {"code": config.TEMPLATE_LANGUAGE},
             "components": [{
                 "type": "body",
@@ -238,9 +240,16 @@ def first_code(words, normalize):
     return None
 
 
+# Each of these reads as a space in a reply.
+PUNCTUATION = str.maketrans(dict.fromkeys(",.!?;:'\"()", " "))
+
+
 def read_reply(body):
-    """(kind, value, key), kind being decide, gate, lookup, key or help."""
-    parts = body.strip().split()
+    """(kind, value, key), kind being decide, gate, staff, lookup, key or help.
+
+    Any case works: yes vr-40221 is YES VR-40221. Marks a phone adds, as in "No, VR-40221."
+    or "Yes!", are dropped. The dash stays: it is part of a code."""
+    parts = body.translate(PUNCTUATION).strip().split()
     if not parts:
         return "help", None, None
 
@@ -254,12 +263,16 @@ def read_reply(body):
         # An unreadable reference goes on as typed. It must never decide the one request waiting.
         key = first_code(parts[1:], normalize_reference)
         return "decide", DECIDE_WORDS[word], key or rest.upper() or None
+    if word == "IN" and staff.normalize_code(rest):
+        return "staff", None, rest
     if word in GATE_WORDS:
         # Whatever was typed goes on, so a wrong code is named in the reply.
         key = first_code(parts[1:], normalize_gate_code)
         return "gate", GATE_WORDS[word], key or rest.upper() or None
 
     whole = "".join(parts)
+    if staff.normalize_code(whole):
+        return "staff", None, whole
     key = normalize_reference(whole) or normalize_gate_code(whole)
     if key:
         return "lookup", None, key
@@ -343,11 +356,64 @@ def guard_update_body(visit):
     return "\n".join(lines)
 
 
+# WhatsApp takes 4,096 characters in one message. The list stops well before that.
+LIST_CHARACTERS = 3500
+
+
+def guard_list_bodies(visits):
+    """What each guard reads after approvals in bulk: one list, in as few messages as fit.
+    Never a gate code."""
+    head = f"{len(visits)} approved visitors on the way:"
+    foot = ("When they arrive, send IN and the entry code on their pass,"
+            " then a photo of each visitor.")
+    bodies, lines = [], [head, ""]
+    for visit in visits:
+        line = brief(visit) + (f", with {', '.join(visit['guests'])}" if visit["guests"] else "")
+        if sum(len(part) + 1 for part in lines) + len(line) > LIST_CHARACTERS:
+            bodies.append("\n".join(lines))
+            lines = ["More approved visitors:", ""]
+        lines.append(line)
+    bodies.append("\n".join([*lines, "", foot]))
+    return bodies
+
+
 def key_body(name, key):
     return (f"The {name} key for the visitor access app is:\n{key}\n\n"
             "Do not share it outside the people who need it.")
 
 
-def own_key_body(key):
-    return (f"Your own gate key for the visitor access app is:\n{key}\n\n"
+def own_key_body(key, which="gate"):
+    return (f"Your own {which} key for the visitor access app is:\n{key}\n\n"
             "Your old key no longer works. Do not share this one.")
+
+
+def staff_entry_values(person, stamp, by):
+    """The allow list entry template's {{1}} to {{3}}: name, time, guard."""
+    return [person["name"], local_time(stamp), by]
+
+
+def staff_entry_body(person, stamp, by):
+    """What a person on the allow list reads when a guard records their entry."""
+    return (f"Campus entry recorded for {person['name']} at {local_time(stamp)}"
+            f" by {by}.\n\nIf this was not you, tell the campus admin.")
+
+
+def notify_staff_entry(person, stamp, by):
+    """The template when STAFF_ENTRY_TEMPLATE is set, else plain text."""
+    if config.STAFF_ENTRY_TEMPLATE:
+        send_template(person["phone"], staff_entry_values(person, stamp, by),
+                      config.STAFF_ENTRY_TEMPLATE)
+    else:
+        send(person["phone"], staff_entry_body(person, stamp, by))
+
+
+def staff_entry_reply(person, stamp, new, told):
+    """What the guard reads after an allow list code. The name lets the guard check the face."""
+    if not new:
+        return (f"Already recorded: {person['name']} entered at {local_time(stamp)}."
+                " Nothing new was recorded or sent.")
+    sent = ("A WhatsApp message about this entry was sent to them." if told
+            else "The WhatsApp message to them could not be sent. The entry is recorded.")
+    return (f"Entry recorded: {person['name']}, allow list code {person['code']},"
+            f" at {local_time(stamp)}.\n"
+            f"Check that this is {person['name']}. {sent}")

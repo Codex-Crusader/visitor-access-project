@@ -15,6 +15,8 @@ const dayHm = t => t ? new Date(t).toLocaleString([], {weekday:"short", hour:"2-
 // A pass code is KT-4821, typed any way. A reference is VR-40221, VR-4022 or the digits alone.
 const PASS_CODE = /^([A-HJ-NP-Z]{2})-?(\d{4})$/;
 const REFERENCE = /^(?:VR-?)?(\d{4,5})$/;
+// An allow list code: 7 digits. It records that person's entry, with no pass.
+const STAFF_CODE = /^\d{7}$/;
 const tidy = text => {
   const squeezed = text.replace(/\s+/g, "").toUpperCase();
   const ref = REFERENCE.exec(squeezed);
@@ -24,6 +26,8 @@ const tidy = text => {
 };
 
 let visit = null;
+// The person an allow list code opened, as {code, name, blacklisted}, with entered_at once recorded.
+let person = null;
 // The visitor's photo as a JPEG data URL. Belongs to this pass only.
 let photo = "";
 let notice = "";
@@ -52,6 +56,7 @@ class WrongKey extends Error {}
 function forgetKey(why = "") {
   try { localStorage.removeItem("gatekey"); } catch { /* it was never stored */ }
   visit = null;
+  person = null;
   photo = "";
   notice = why;
   board = null;
@@ -69,6 +74,8 @@ const BANNER = {
   escalated:["wait", "Not approved yet", "Do not let them in."],
   expired:  ["bad", "Pass expired", "Do not let them in. They must send a new request."],
 };
+
+const BLACKLISTED = ["bad", "On the blacklist", "Do not let them in. Tell the admin."];
 
 const svg = d => `<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
 const ICON = {
@@ -138,10 +145,11 @@ function since(t, now) {
 
 const plus = v => v.guests && v.guests.length ? ` +${v.guests.length}` : "";
 
+// A banned visitor stays on the board, marked red, so no guard misses them.
 function row(v, side, long) {
-  return `<button class="row" data-long="${!!long}" data-ref="${x(v.reference)}">
+  return `<button class="row" data-long="${!!long}" data-banned="${!!v.blacklisted}" data-ref="${x(v.reference)}">
       <span><b>${x(v.name)}${plus(v)}</b><small>Visiting ${x(v.visiting)}</small></span>
-      <span class="side"><code>${x(v.reference)}</code><small>${side}</small></span></button>`;
+      <span class="side"><code>${x(v.reference)}</code><small>${v.blacklisted ? "On the blacklist" : side}</small></span></button>`;
 }
 
 function section(title, list, empty, line) {
@@ -185,7 +193,7 @@ function render() {
   boardBox.hidden = !haveKey;
   tools.hidden = !haveKey;
   el("sub").textContent = haveKey
-    ? "Type the code on the visitor's pass, or tap a name below."
+    ? "Type the code on the visitor's pass, or an allow list code. Or tap a name below."
     : "First, type the gate key your admin gave you.";
 
   if (!haveKey) {
@@ -211,12 +219,19 @@ function render() {
     return;
   }
 
+  if (person) {
+    out.innerHTML = staffView(person);
+    return;
+  }
+
   if (!visit) {
     out.innerHTML = notice ? problem(notice) : "";
     return;
   }
 
-  const [tone, title, line] = BANNER[visit.status] || ["wait", visit.status, ""];
+  // A blacklisted number never enters, whatever its pass says.
+  const [tone, title, line] = visit.blacklisted ? BLACKLISTED
+    : BANNER[visit.status] || ["wait", visit.status, ""];
 
   // A closed visit comes with times only, so nothing personal shows.
   const closed = visit.status === "closed";
@@ -239,7 +254,7 @@ function render() {
       ${visit.entered_at ? fact("Entered", hm(visit.entered_at)) : ""}
       ${visit.exited_at ? fact("Exited", hm(visit.exited_at)) : ""}
     </div>
-    ${nextStep(visit)}
+    ${visit.blacklisted ? "" : nextStep(visit)}
     <button class="btn plain" onclick="clear_()">Next visitor</button>`;
   const cam = el("cam");
   if (cam) cam.onchange = () => void takePhoto(cam.files[0]);
@@ -328,13 +343,75 @@ async function look() {
     render();
     return;
   }
-  await show(code);
+  await (STAFF_CODE.test(code) ? showStaff(code) : show(code));
+}
+
+// What the guard reads after the entry: a repeat is not recorded twice, a failed message says so.
+function entryLine(p) {
+  if (p.new === false) return `${p.name} entered at ${hm(p.entered_at)}. Nothing new was recorded or sent.`;
+  return `${p.name} entered at ${hm(p.entered_at)}. `
+    + (p.told === false ? "The WhatsApp message to them could not be sent." : "A WhatsApp message about it was sent to them.");
+}
+
+// An allow list code shows the name first, so the guard can check the face before the entry.
+function staffView(p) {
+  const top = p.blacklisted ? banner(...BLACKLISTED)
+    : p.entered_at
+      ? banner("good", p.new === false ? "Already recorded" : "Entry recorded", entryLine(p))
+      : banner("good", "On the allow list", "Check that this is them, then record the entry.");
+  const canEnter = !p.entered_at && !p.blacklisted;
+  return `${notice ? problem(notice) : ""}${top}
+    <div class="facts">${fact("Name", p.name)}${p.tag ? fact("Tag", p.tag) : ""}${fact("Allow list code", p.code)}</div>
+    ${canEnter ? `<button class="btn go" id="staff-enter" onclick="enterStaff()">Record entry</button>` : ""}
+    <button class="btn plain" onclick="clear_()">Next visitor</button>`;
+}
+
+async function showStaff(code) {
+  const mine = ++latest;
+  visit = null;
+  person = null;
+  photo = "";
+  notice = "";
+  busy = "Checking the allow list code";
+  render();
+  try {
+    const found = await call(`/api/staff/${code}`);
+    if (mine !== latest) return;
+    person = found;
+  } catch (err) {
+    if (mine !== latest) return;
+    busy = "";
+    if (err instanceof WrongKey) return forgetKey(err.message);
+    notice = err.message;
+  }
+  busy = "";
+  render();
+}
+
+async function enterStaff() {
+  const mine = ++latest;
+  const code = person.code;
+  notice = "";
+  busy = "Recording the entry";
+  render();
+  try {
+    const done = await call(`/api/staff/${code}/entry`, {method: "POST"});
+    if (mine !== latest) return;
+    person = done;
+  } catch (err) {
+    if (mine !== latest) return;
+    if (err instanceof WrongKey) { busy = ""; return forgetKey(err.message); }
+    notice = err.message;
+  }
+  busy = "";
+  render();
 }
 
 // Opens a pass by the code the guard typed, or by reference after a tap.
 async function show(key) {
   const mine = ++latest;
   visit = null;
+  person = null;
   photo = "";
   notice = "";
   busy = "Checking the pass";
@@ -397,6 +474,7 @@ async function act(action) {
 
 function clear_() {
   visit = null;
+  person = null;
   photo = "";
   notice = "";
   codeBox.value = "";

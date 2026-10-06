@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 
 from flask import Blueprint, jsonify, request
 
+import blacklist
 import checks
 import config
 import db
@@ -28,7 +29,23 @@ def read_config():
         escalate_minutes=config.ESCALATE_MINUTES,
         retain_days=config.RETAIN_DAYS,
         pass_hours=config.PASS_HOURS,
+        # Names only: the visitor never sees an approver's number. offices stays a flat list
+        # of names for a phone that still runs the old script.
+        **offices_or_none(),
     )
+
+
+def offices_or_none():
+    """The offices, flat and grouped by tag, or empty while the database cannot answer."""
+    try:
+        return office_lists()
+    except Exception as failure:  # any failure: the visitor types the office instead
+        log.error("Could not read the offices: %s", failure)
+        return {"offices": [], "office_groups": []}
+
+
+def office_lists():
+    return {"offices": people.office_names(), "office_groups": people.office_groups()}
 
 
 # The visitor does not see how or when a request is approved, or by whom.
@@ -45,13 +62,25 @@ def create_request():
     if limits.too_many("request", config.REQUESTS_PER_HOUR, 3600):
         return jsonify(error="Too many requests from here. Try again later."), 429
 
-    fields, guests, error = checks.clean_fields(request.get_json(silent=True) or {})
+    payload = request.get_json(silent=True) or {}
+    fields, guests, error = checks.clean_fields(payload)
     if error:
         return jsonify(error=error), 400
+    if blacklist.has(fields["phone"]):
+        blacklist.record_attempt(fields["phone"], fields["name"], blacklist.ASKED,
+                                 fields["visiting"], blacklist.VISITOR_PAGE)
+        return jsonify(error=BLOCKED), 403
+    office, error = chosen_office(fields["reason"], payload.get("office"))
+    if error:
+        # The page's list may be old: an office was deleted, or the list did not load.
+        return jsonify(error=error, **office_lists()), 400
+    if office:
+        fields["visiting"] = office
 
-    visit = visits.create(fields, guests, timer.auto_approve_time(datetime.now(timezone.utc)))
+    auto_at = timer.auto_approve_time(datetime.now(timezone.utc))
+    visit = visits.create(fields, guests, auto_at, office)
     try:
-        approvers = people.approvers_for(people.approver_table(), visit["reason"])
+        approvers = people.approvers_for(people.approver_table(), visit)
         notify.log_template_problem(whatsapp.notify_approver(visit, approvers))
     except Exception as sending_failed:
         visits.delete(visit["reference"])
@@ -60,6 +89,24 @@ def create_request():
     # The new request brings new deadlines, so the timer works out when to run next.
     timer.wake.set()
     return jsonify(visitor_view(visit)), 201
+
+
+# Neutral on purpose: the page does not say why.
+BLOCKED = "This number cannot request a visit. Call the gate desk."
+
+
+def chosen_office(reason, given):
+    """(office, error). The office must be on the list. With no offices, nothing changes."""
+    if reason != config.OFFICE_REASON:
+        return None, None
+    names = people.office_names()
+    if not names:
+        return None, None
+    wanted = str(given or "").strip().lower()
+    found = [name for name in names if name.lower() == wanted]
+    if not found:
+        return None, "That office is not on the list now. Choose again."
+    return found[0], None
 
 
 @bp.get("/api/visit/<token>")

@@ -126,7 +126,8 @@ ok("the + button has a spoken name", el("more").textContent.includes("Add a pers
 ok("no name box before the +", el("f_guest") === null);
 el("more").click();
 ok("pressing + opens a name box", !!el("f_guest"));
-ok("the + gives way to the box", el("more") === null);
+ok("the + stays under the box, for the next person", !!el("more")
+   && el("more").textContent.includes("Add another person"));
 ok("the box has the focus", w.document.activeElement === el("f_guest"));
 ok("only the box shows, no Add button", el("f_guest").parentElement.querySelector("button") === null);
 
@@ -167,7 +168,28 @@ ok("the review lists both people", el("view").innerHTML.includes("Ravi Rao, Meer
 
 S.s = "step2"; S.g = Array.from({length: 10}, (_, i) => "Guest " + i); call("render");
 ok("at ten people the + goes away", el("more") === null);
-S.g = []; call("render");
+
+// Each + keeps the typed name and opens a new box, so many people go on one request.
+S.g = []; S.adding = 0; S.f.guest = ""; S.e = {}; call("render");
+el("more").click();
+el("f_guest").value = "Anil";
+el("f_guest").dispatchEvent(new w.Event("input"));
+el("more").click();
+ok("the + keeps the name and opens an empty box", S.g.join() === "Anil"
+   && el("f_guest").value === "" && w.document.activeElement === el("f_guest"));
+el("f_guest").value = "Bina";
+el("f_guest").dispatchEvent(new w.Event("input"));
+el("more").click();
+ok("and again for a third person", S.g.join() === "Anil,Bina" && !!el("f_guest"));
+el("more").click();
+ok("an empty box is not added", S.g.length === 2 && !!el("f_guest"));
+// A text box drops line breaks, so the pasted text goes straight into the form state.
+S.f.guest = "Bad\nName";
+el("more").click();
+ok("a bad name turns red and is not added", red("f_guest") && S.g.length === 2);
+S.g = Array.from({length: 9}, (_, i) => "Guest " + i); S.e = {}; S.f.guest = ""; call("render");
+ok("nine added and one box open: no more +", !!el("f_guest") && el("more") === null);
+S.g = []; S.adding = 0; S.f.guest = ""; S.e = {}; call("render");
 
 // ------------------------------------------------------------------- gate page
 console.log("gate page: the code box asks for a full keyboard");
@@ -496,8 +518,15 @@ async function adminChecks() {
   ok("the gate and admin pages show the university logo, as the visitor page does",
      !!logo("gate.html") && !!logo("admin.html") && !!visitorLogo
      && logo("gate.html")[1] === visitorLogo[1] && logo("admin.html")[1] === visitorLogo[1]);
-  ok("the logo sits above the header", byId("app") === null
-     && admin.document.querySelector(".app > .brand + header.top") !== null);
+  ok("the logo sits above the title row, as on the visitor page", byId("app") === null
+     && admin.document.querySelector(".app > .brand + .nav h1") !== null);
+  const gatePage = new JSDOM(read("gate.html")).window.document;
+  ok("the gate page has the same logo bar and title row",
+     gatePage.querySelector(".app > .brand + .nav h1") !== null);
+  const token = (page, name) => (new RegExp(`--${name}:(#[0-9A-F]{6})`).exec(read(page)) || [])[1];
+  ok("all three pages use the visitor page's colors", ["brand", "brand2", "go", "stop", "line", "mute"]
+     .every(name => token("gate.html", name) === token("index.html", name)
+                    && token("admin.html", name) === token("index.html", name)));
   ok("the gate page is light only", !read("gate.html").includes("dark")
      && read("gate.html").includes('content="only light"'));
 
@@ -721,7 +750,7 @@ async function guardChecks() {
      admin.eval('photoLine({photo_at: "t"})').includes("WhatsApp chat"));
   byId("tabs").querySelector('[data-section="guards"]').click();
   ok("the guards tab opens", !byId("guards").hidden && byId("visits").hidden);
-  ok("the gate desk row shows", byId("guard-table").textContent.includes("+911"));
+  ok("the gate desk row shows", byId("g-table").textContent.includes("+911"));
 
   byId("g-add").click();
   await tick();
@@ -736,25 +765,28 @@ async function guardChecks() {
   byId("g-phone").value = "+919800000001";
   byId("g-add").click();
   await tick(); await tick();
-  ok("the new guard is listed, escaped", byId("guard-table").innerHTML.includes("Ravi &lt;b&gt;"));
-  ok("the new key shows once", byId("guard-note").textContent.includes("k1"));
+  ok("the new guard is listed, escaped", byId("g-table").innerHTML.includes("Ravi &lt;b&gt;"));
+  ok("the new key shows once", byId("g-note").textContent.includes("k1"));
   ok("the form empties", byId("g-name").value === "" && byId("g-phone").value === "");
 
-  byId("guard-table").querySelector("[data-newkey]").click();
+  byId("g-table").querySelector("[data-newkey]").click();
   await tick(); await tick();
-  ok("New key shows the new key", byId("guard-note").textContent.includes("k2")
-     && !byId("guard-note").textContent.includes("k1"));
-  byId("guard-table").querySelector("[data-remove]").click();
-  ok("Remove asks once more", !!byId("guard-table").querySelector("[data-remove-now]")
-     && byId("guard-note").textContent === "");
-  byId("guard-table").querySelector("[data-keep]").click();
-  ok("Keep cancels", !byId("guard-table").querySelector("[data-remove-now]"));
-  byId("guard-table").querySelector("[data-remove]").click();
-  byId("guard-table").querySelector("[data-remove-now]").click();
-  await tick(); await tick();
-  ok("Remove sends the number", posts.at(-1)[0] === "/api/admin/guards/remove"
+  ok("New key shows the new key", byId("g-note").textContent.includes("k2")
+     && !byId("g-note").textContent.includes("k1"));
+  const sent = posts.length;
+  byId("g-table").querySelector("[data-delete]").click();
+  ok("Delete asks: are you sure?", byId("over").textContent.includes("Are you sure?")
+     && byId("over").textContent.includes("Ravi <b>") && posts.length === sent);
+  byId("sure-no").click();
+  await tick();
+  ok("Cancel closes the box and keeps the guard", byId("over").innerHTML === ""
+     && posts.length === sent && byId("g-table").innerHTML.includes("Ravi"));
+  byId("g-table").querySelector("[data-delete]").click();
+  byId("sure-yes").click();
+  await tick(); await tick(); await tick();
+  ok("Delete sends the number", posts.at(-1)[0] === "/api/admin/guards/remove"
      && posts.at(-1)[1].phone === "+919800000001");
-  ok("the guard is gone", !byId("guard-table").textContent.includes("Ravi"));
+  ok("the guard is gone", !byId("g-table").textContent.includes("Ravi") && byId("over").innerHTML === "");
 }
 
 async function forgotChecks() {
@@ -894,7 +926,523 @@ async function staleApproverChecks() {
   ok("the reason opened meanwhile stays open", admin.eval("editing") === "Event" && !!byId("ap-main"));
 }
 
-void boardChecks().then(staleGateChecks).then(stalePollChecks).then(staleApproverChecks).then(offlinePassChecks).then(approverChecks).then(guardChecks).then(forgotChecks).then(visitorAutoChecks).then(wrongKeyChecks).then(adminChecks).then(downloadChecks).then(() => {
+// ------------------------------------------------ the office list
+async function officeFormChecks() {
+  console.log("visitor form: See an office offers the list of offices");
+  const v = boot("index.html", "app.js", {fetch: () => Promise.reject(new Error("offline"))});
+  const S = v.eval("S");
+  const byId = id => v.document.getElementById(id);
+  const red = id => !!byId(id) && byId(id).classList.contains("bad");
+  Object.assign(S.f, {name: "Asha Rao", phone: "9876543210", address: "12 Park Road"});
+  S.cfg.offices = ["Accounts", "Admissions <b>"];
+  S.s = "step2"; v.eval("render()");
+  v.eval('pick("See an office")');
+  ok("the office list replaces the visiting box", !!byId("f_office") && !byId("f_visiting"));
+  ok("it lists every office, escaped", byId("f_office").options.length === 3
+     && byId("f_office").innerHTML.includes("Admissions &lt;b&gt;"));
+  v.eval("n2()");
+  ok("no office chosen blocks Review", S.s === "step2" && red("f_office"));
+  byId("f_office").value = "Accounts";
+  byId("f_office").dispatchEvent(new v.Event("change"));
+  ok("choosing one clears the red", !red("f_office") && S.f.office === "Accounts");
+  v.eval("n2()");
+  ok("an office passes, with no student check", S.s === "review"
+     && byId("view").innerHTML.includes(">Office<") && byId("view").innerHTML.includes("Accounts"));
+  let body = null;
+  v.fetch = (url, options) => { body = JSON.parse(options.body); return Promise.reject(new Error("offline")); };
+  await v.eval("send()");
+  ok("the request names the office", body.office === "Accounts" && body.visiting === "Accounts"
+     && body.reason === "See an office");
+  S.s = "step2"; v.eval('pick("Delivery")');
+  ok("another reason drops the office", S.f.office === "" && !byId("f_office") && !!byId("f_visiting"));
+  S.cfg.offices = [];
+  v.eval('pick("See an office")');
+  ok("with no offices the visitor types the office", !byId("f_office")
+     && byId("f_visiting").placeholder === "Office name");
+  S.f.visiting = "Dr Rao, Accounts";
+  v.eval("n2()");
+  ok("an office visit may name a staff member", S.s === "review");
+}
+
+// ------------------------------------------------ a staff code at the gate
+async function staffGateChecks() {
+  console.log("gate desk: a staff code shows the name, then records the entry");
+  const calls = [];
+  const desk = boot("gate.html", "gate.js", {
+    fetch: (url, options = {}) => {
+      calls.push([url, options.method || "GET"]);
+      const body = url.includes("/api/gate/board") ? {inside: [], expected: []}
+        : url.endsWith("/entry") ? {code: "1234567", name: "Dr Dev", entered_at: new Date().toISOString()}
+        : url.includes("/api/staff/") ? {code: "1234567", name: "Dr Dev"} : {};
+      return Promise.resolve({status: 200, ok: true, json: () => Promise.resolve(body)});
+    },
+  });
+  const byId = id => desk.document.getElementById(id);
+  desk.eval('localStorage.setItem("gatekey","k")');
+  desk.eval("render()");
+  byId("code").value = "123 4567";
+  await desk.eval("look()");
+  ok("seven digits ask for a staff member, not a pass",
+     calls.some(([u, m]) => u === "/api/staff/1234567" && m === "GET")
+     && !calls.some(([u]) => u.startsWith("/api/pass/")));
+  ok("the name shows before the entry", byId("out").innerHTML.includes("Dr Dev")
+     && !calls.some(([u]) => u.endsWith("/entry")));
+  byId("staff-enter").click();
+  await tick(); await tick();
+  ok("Record staff entry posts the code", calls.some(([u, m]) => u === "/api/staff/1234567/entry" && m === "POST"));
+  ok("it says the entry is recorded", byId("out").innerHTML.includes("Entry recorded") && !byId("staff-enter"));
+  desk.eval("clear_()");
+  ok("Next visitor clears it", byId("out").innerHTML === "");
+}
+
+// ------------------------------------------- staff, offices and admins
+async function teamChecks() {
+  console.log("admin page: staff, offices and admins, each deleted only after Are you sure?");
+  const posts = [];
+  let lists = {gate_desk: "+911", guards: [], main_admin: "+919", you: "Meera +918", offices: [],
+    admins: [{name: "Meera", phone: "+918", added_at: "2026-10-05T05:00:00+00:00"}],
+    staff: [], staff_entries: [{code: "1234567", name: "Dr Dev", entered_at: "2026-10-06T04:00:00+00:00",
+                                entered_by: "Ravi +919800000001"}]};
+  const answer = (status, body) => Promise.resolve({status, ok: status < 300, json: () => Promise.resolve(body)});
+  const admin = boot("admin.html", "admin.js", {
+    fetch: (url, options = {}) => {
+      if (options.method === "POST") {
+        const sent = JSON.parse(options.body);
+        posts.push([url, sent]);
+        if (url === "/api/admin/staff") {
+          lists = {...lists, staff: [{code: "7654321", name: sent.name, phone: sent.phone,
+                                      added_at: "2026-10-06T05:00:00+00:00"}]};
+          return answer(200, {...lists, code: "7654321", name: sent.name});
+        }
+        if (url === "/api/admin/offices") {
+          if (sent.main === sent.backup) {
+            return answer(400, {error: "Check the office's details.",
+                                fields: {backup: "The backup must be a different number from the approver."}});
+          }
+          lists = {...lists, offices: [{name: sent.name, main: sent.main, backup: sent.backup}]};
+          return answer(200, lists);
+        }
+        if (url === "/api/admin/offices/remove") { lists = {...lists, offices: []}; return answer(200, lists); }
+        if (url === "/api/admin/admins/remove") {
+          return answer(409, {error: "You cannot delete yourself. Ask another admin."});
+        }
+        return answer(404, {error: "unknown"});
+      }
+      return answer(200, url.includes("/summary")
+        ? {counts: {}, escalate_minutes: 15, retain_days: 90, approvers: [], ...lists}
+        : {visits: [], next: null});
+    },
+  });
+  const byId = id => admin.document.getElementById(id);
+  const tab = name => byId("tabs").querySelector(`[data-section="${name}"]`);
+  admin.eval('localStorage.setItem("adminkey","k")');
+  admin.eval("render(); refresh()");
+  await tick(); await tick();
+  ok("the header names who is signed in", byId("you").textContent === "Signed in as Meera +918");
+
+  tab("staff").click();
+  ok("the staff tab opens", !byId("staff").hidden && byId("visits").hidden);
+  ok("the staff entries name the guard", byId("s-entries").textContent.includes("Ravi +919800000001")
+     && byId("s-entries").textContent.includes("1234567"));
+  byId("s-name").value = "Dr Dev";
+  byId("s-phone").value = "+917000000001";
+  byId("s-add").click();
+  await tick(); await tick();
+  ok("a new staff member gets a code, shown in the note and the list",
+     byId("s-note").textContent.includes("7654321") && byId("s-table").textContent.includes("7654321"));
+
+  tab("offices").click();
+  byId("o-add").click();
+  ok("an empty office form is refused on the page", posts.filter(([u]) => u.includes("offices")).length === 0
+     && byId("o-name-err").textContent !== "" && byId("o-main-err").textContent !== "");
+  byId("o-name").value = "Accounts";
+  byId("o-main").value = "+917000000002";
+  byId("o-backup").value = "+917000000002";
+  byId("o-add").click();
+  await tick(); await tick();
+  ok("the server's reason shows under the backup", byId("o-backup-err").textContent.includes("different"));
+  byId("o-backup").value = "+917000000003";
+  byId("o-add").click();
+  await tick(); await tick();
+  ok("the office is listed with its two numbers", byId("o-table").textContent.includes("Accounts")
+     && byId("o-table").textContent.includes("+917000000003"));
+  byId("o-table").querySelector("[data-delete]").click();
+  ok("deleting an office asks first", byId("over").textContent.includes("Are you sure?")
+     && byId("over").textContent.includes("Accounts"));
+  byId("sure-yes").click();
+  await tick(); await tick(); await tick();
+  ok("Delete sends the office name", posts.at(-1)[0] === "/api/admin/offices/remove"
+     && posts.at(-1)[1].name === "Accounts" && !byId("o-table").textContent.includes("+917000000003"));
+
+  tab("admins").click();
+  ok("the admins tab lists the main admin and the others",
+     byId("a-table").textContent.includes("+919") && byId("a-table").textContent.includes("Meera"));
+  ok("it marks who you are", byId("a-table").querySelector(".you") !== null);
+  byId("a-table").querySelector("[data-delete]").click();
+  byId("sure-yes").click();
+  await tick(); await tick(); await tick();
+  ok("the server's refusal shows", byId("a-note").textContent.includes("cannot delete yourself"));
+}
+
+// ------------------------------------------------------------- the blacklist
+async function blacklistChecks() {
+  console.log("admin page: the blacklist, and a visit's Blacklist this number");
+  const posts = [];
+  let banned = [];
+  const answer = (status, body) => Promise.resolve({status, ok: status < 300, json: () => Promise.resolve(body)});
+  const admin = boot("admin.html", "admin.js", {
+    fetch: (url, options = {}) => {
+      if (options.method === "POST") {
+        const sent = JSON.parse(options.body);
+        posts.push([url, sent]);
+        banned = url.endsWith("/remove") ? []
+          : [{phone_key: "9820011223", phone: sent.phone, name: sent.name, reason: sent.reason,
+              added_at: "2026-10-06T05:00:00+00:00"}];
+        return answer(200, {blacklist: banned});
+      }
+      return answer(200, url.includes("/summary") ? {counts: {}, approvers: [], blacklist: banned}
+        : {visits: [{reference: "VR-1", name: "Kavita", phone: "9820011223", address: "x",
+                     reason: "Delivery", visiting: "y", guests: [], status: "approved",
+                     created_at: "2026-10-05T05:00:00+00:00", approvers: ["+911", "+912"]}], next: null});
+    },
+  });
+  const byId = id => admin.document.getElementById(id);
+  admin.eval('localStorage.setItem("adminkey","k")');
+  admin.eval("render(); refresh()");
+  await tick(); await tick();
+  ok("the tab says Allow list, not Staff",
+     byId("tabs").querySelector('[data-section="staff"]').textContent === "Allow list");
+  byId("list").querySelector("[data-ban]").click();
+  ok("Blacklist this number asks first", byId("over").textContent.includes("Are you sure?")
+     && byId("sure-yes").textContent === "Add to blacklist" && posts.length === 0);
+  byId("sure-yes").click();
+  await tick(); await tick(); await tick();
+  ok("it sends the visit's number and name", posts.at(-1)[0] === "/api/admin/blacklist"
+     && posts.at(-1)[1].phone === "9820011223" && posts.at(-1)[1].name === "Kavita");
+  ok("the blacklist tab opens with the number", !byId("blacklist").hidden
+     && byId("b-table").textContent.includes("9820011223") && byId("b-note").textContent.includes("Kavita"));
+  ok("each cell names its column for the phone view",
+     byId("b-table").querySelector("td").dataset.label === "Name");
+  byId("b-name").value = "Ravi";
+  byId("b-phone").value = "9820099999";
+  byId("b-add").click();
+  await tick(); await tick();
+  ok("the reason may stay empty", posts.at(-1)[1].reason === "" && byId("b-reason-err").textContent === "");
+  byId("b-table").querySelector("[data-delete]").click();
+  byId("sure-yes").click();
+  await tick(); await tick(); await tick();
+  ok("Delete takes the number off", posts.at(-1)[0] === "/api/admin/blacklist/remove"
+     && byId("b-table").textContent.includes("No number is on the blacklist"));
+  ok("the key box tells an added admin to send KEY", (() => {
+    admin.eval("forgetKey()");
+    return byId("main").textContent.includes("Send KEY from your own WhatsApp");
+  })());
+
+  console.log("admin page: blocked attempts show on every tab for a day");
+  const hourAgo = new Date(Date.now() - 3600000).toISOString();
+  const daysAgo = new Date(Date.now() - 3 * 86400000).toISOString();
+  const watcher = boot("admin.html", "admin.js", {
+    fetch: url => answer(200, url.includes("/summary")
+      ? {counts: {}, approvers: [], blacklist: [], blocked: [
+          {at: hourAgo, name: "Farah <b>", phone: "9820077889", what: "Came to the gate with a pass",
+           detail: "VR-12345", by_whom: "Ravi +919800000001"},
+          {at: daysAgo, name: "Farah", phone: "9820077889", what: "Asked for a visit", detail: "",
+           by_whom: "Visitor page"}]}
+      : {visits: [], next: null}),
+  });
+  const w2 = id => watcher.document.getElementById(id);
+  watcher.eval('localStorage.setItem("adminkey","k")');
+  watcher.eval("render(); refresh()");
+  await tick(); await tick();
+  ok("a red alert counts only the last 24 hours", w2("alert").textContent.includes("stopped one attempt"));
+  ok("the Blacklist tab shows the count", w2("tabs").querySelector('[data-section="blacklist"]')
+     .textContent.replace(/\s+/g, " ").trim() === "Blacklist 1");
+  w2("alert").querySelector("[data-section]").click();
+  ok("See who opens the blacklist tab", !w2("blacklist").hidden && w2("visits").hidden);
+  const rows = w2("b-attempts").textContent;
+  ok("the list names who, what and which guard, escaped", rows.includes("Ravi +919800000001")
+     && rows.includes("VR-12345") && w2("b-attempts").innerHTML.includes("Farah &lt;b&gt;")
+     && rows.includes("Asked for a visit"));
+
+  console.log("gate desk: a blacklisted number never shows Record entry");
+  const desk = boot("gate.html", "gate.js", {fetch: () => Promise.reject(new Error("offline"))});
+  const out = () => desk.document.getElementById("out").innerHTML;
+  desk.eval('localStorage.setItem("gatekey","k")');
+  desk.eval('visit = {reference:"VR-1", status:"approved", name:"Kavita", phone:"9820011223",' +
+            ' visiting:"y", reason:"Delivery", guests:[], code:"KT-4821", code_kind:"entry", blacklisted:true}');
+  desk.eval("render()");
+  ok("the banner says do not let them in", out().includes("On the blacklist")
+     && !out().includes("Let them in") && !out().includes("Record entry"));
+  desk.eval('visit = null; person = {code:"1234567", name:"Kavita", blacklisted:true}; render()');
+  ok("an allow list code for that number offers no entry", out().includes("On the blacklist")
+     && !desk.document.getElementById("staff-enter"));
+}
+
+// ------------------------------------------------------------- worst cases
+async function worstCaseChecks() {
+  console.log("visitor form: an office deleted after the page loaded");
+  const v = boot("index.html", "app.js", {fetch: () => Promise.reject(new Error("offline"))});
+  const S = v.eval("S");
+  const byId = id => v.document.getElementById(id);
+  const refusal = {error: "That office is not on the list now. Choose again.", offices: ["Library"]};
+  const refuse = () => Promise.resolve({ok: false, status: 400, json: () => Promise.resolve(refusal)});
+  Object.assign(S.f, {name: "Asha", phone: "9876543210", address: "Karjat", reason: "See an office",
+                      office: "Accounts", visiting: ""});
+  S.cfg.offices = ["Accounts", "Library"];
+  v.fetch = refuse;
+  await v.eval("send()");
+  ok("it goes back to the office list, with the server's offices", S.s === "step2"
+     && byId("f_office").options.length === 2 && byId("f_office").innerHTML.includes("Library")
+     && !byId("f_office").innerHTML.includes("Accounts"));
+  ok("the office box is red and says why", byId("f_office").classList.contains("bad")
+     && byId("e_office").textContent.includes("not on the list now"));
+  ok("Back still works", S.hist.join() === "home,step1");
+  // The list never loaded, so the visitor typed the office. The server's list replaces it.
+  Object.assign(S.f, {office: "", visiting: "Accounts office"});
+  S.cfg.offices = [];
+  await v.eval("send()");
+  ok("a typed office becomes the list", S.s === "step2" && !!byId("f_office") && !byId("f_visiting"));
+
+  console.log("gate desk: a banned visitor on the board, and a repeated allow list code");
+  const desk = boot("gate.html", "gate.js", {
+    fetch: () => Promise.resolve({status: 200, ok: true, json: () => Promise.resolve({
+      inside: [{reference: "VR-1", name: "Kiran", visiting: "y", guests: [], status: "inside",
+                entered_at: new Date().toISOString(), blacklisted: true}], expected: []})}),
+  });
+  desk.eval('localStorage.setItem("gatekey","k")');
+  await desk.eval("loadBoard()");
+  const banned = desk.document.querySelector(".row");
+  ok("the row is red and says On the blacklist", banned.dataset.banned === "true"
+     && banned.textContent.includes("On the blacklist"));
+  const out = () => desk.document.getElementById("out").textContent;
+  desk.eval('person = {code:"1234567", name:"Dev", entered_at:new Date().toISOString(), new:false, told:false}; render()');
+  ok("a repeat says Already recorded, nothing sent", out().includes("Already recorded")
+     && out().includes("Nothing new"));
+  desk.eval('person = {...person, new:true, told:false}; render()');
+  ok("a failed message is said plainly", out().includes("could not be sent"));
+
+  console.log("admin page: the change log, a ban's declined requests, and a list changed meanwhile");
+  let summaries = 0;
+  const answer = (status, body) => Promise.resolve({status, ok: status < 300, json: () => Promise.resolve(body)});
+  const admin = boot("admin.html", "admin.js", {
+    fetch: (url, options = {}) => {
+      if (options.method === "POST") {
+        if (url.endsWith("/guards/remove")) return answer(404, {error: "No guard has that number."});
+        return answer(200, {blacklist: [{phone: "9820011223", name: "Kavita", reason: "",
+          added_at: "2026-10-06T05:00:00+00:00"}], declined: ["VR-1", "VR-2"]});
+      }
+      if (url.includes("/summary")) {
+        summaries++;
+        return answer(200, {counts: {}, approvers: [], gate_desk: "+911",
+          guards: summaries === 1 ? [{name: "Ravi", phone: "+918", added_at: "2026-10-05T05:00:00+00:00"}] : [],
+          changes: [{at: "2026-10-06T05:00:00+00:00", by_whom: "Asha +919600000009",
+                     action: "Deleted a guard", detail: "Ravi <b>"}]});
+      }
+      return answer(200, {visits: [{reference: "VR-1", name: "Kavita", phone: "9820011223", address: "x",
+        reason: "Delivery", visiting: "y", guests: [], status: "declined", decided_by: "blacklist",
+        decided_at: "2026-10-06T05:00:00+00:00", created_at: "2026-10-06T04:00:00+00:00",
+        approvers: ["+911", "+912"]}], next: null});
+    },
+  });
+  const a = id => admin.document.getElementById(id);
+  admin.eval('localStorage.setItem("adminkey","k")');
+  admin.eval("render(); refresh()");
+  await tick(); await tick();
+  ok("a request declined by a ban says so", a("list").textContent.includes("Declined by the blacklist"));
+  ok("the change log names who did what, escaped", a("a-changes").textContent.includes("Asha +919600000009")
+     && a("a-changes").innerHTML.includes("Ravi &lt;b&gt;"));
+  a("g-table").querySelector("[data-delete]").click();
+  a("sure-yes").click();
+  await tick(); await tick(); await tick(); await tick();
+  ok("a guard deleted by another admin: the list reloads", summaries === 2
+     && !a("g-table").textContent.includes("Ravi") && a("g-note").textContent.includes("No guard"));
+  a("list").querySelector("[data-ban]").click();
+  a("sure-yes").click();
+  await tick(); await tick(); await tick();
+  ok("a ban says how many waiting requests it declined", a("b-note").textContent.includes("2 waiting requests were declined"));
+}
+
+// ------------------------------------------------------------- tags
+async function tagChecks() {
+  console.log("admin page: tags, a search box and groups on the allow list and offices");
+  const posts = [];
+  const person = (name, code, tag) => ({name, code, tag, phone: `+9170000${code.slice(-5)}`,
+    added_at: "2026-10-06T05:00:00+00:00"});
+  const lists = {staff: [person("Dr Iyer", "1000001", "Physics"), person("Dr Rao", "1000002", "Physics"),
+                       person("Ms Sen", "1000003", "Library <b>"), person("Mr Das", "1000004", "")],
+               offices: [{name: "Fees", main: "+911", backup: "+912", tag: "Main Building"}]};
+  const answer = (status, body) => Promise.resolve({status, ok: status < 300, json: () => Promise.resolve(body)});
+  const admin = boot("admin.html", "admin.js", {
+    fetch: (url, options = {}) => {
+      if (options.method === "POST") {
+        const sent = JSON.parse(options.body);
+        posts.push([url, sent]);
+        if (url.endsWith("/staff/tag")) {
+          lists.staff = lists.staff.map(p => p.code === sent.code ? {...p, tag: sent.tag} : p);
+          return answer(200, {...lists, tag: sent.tag});
+        }
+        if (url.endsWith("/tags/rename")) {
+          lists.staff = lists.staff.map(p => p.tag === sent.old ? {...p, tag: sent.new} : p);
+          return answer(200, {...lists, tag: sent.new});
+        }
+        lists.staff = [...lists.staff, person(sent.name, "1000005", sent.tag)];
+        return answer(200, {...lists, code: "1000005", name: sent.name, tag: sent.tag});
+      }
+      return answer(200, url.includes("/summary") ? {counts: {}, approvers: [], ...lists}
+        : {visits: [], next: null});
+    },
+  });
+  const byId = id => admin.document.getElementById(id);
+  const rows = () => [...byId("s-table").querySelectorAll("tbody tr:not(.group)")].map(r => r.cells[0].textContent);
+  const groups = () => [...byId("s-table").querySelectorAll("tr.group")].map(r => r.textContent.replace(/\s+/g, " ").trim());
+  admin.eval('localStorage.setItem("adminkey","k")');
+  admin.eval("render(); refresh()");
+  await tick(); await tick();
+  ok("under All, each tag gets a heading, No tag last, escaped", groups().join("|")
+     === "Library <b> 1|Physics 2|No tag 1" && byId("s-table").innerHTML.includes("Library &lt;b&gt;"));
+  const chips = () => [...byId("s-chips").querySelectorAll("button")];
+  ok("the chips: All, each tag with its count, No tag", chips().map(c => c.textContent.replace(/\s+/g, " ").trim())
+     .join("|") === "All 4|Library <b> 1|Physics 2|No tag 1");
+  chips().find(c => c.textContent.includes("Physics")).click();
+  ok("a tag chip shows only that tag, without headings", rows().join() === "Dr Iyer,Dr Rao" && groups().length === 0);
+  ok("a chosen tag can be renamed", !!byId("s-chips").querySelector("[data-rename]"));
+  chips().find(c => c.textContent.includes("No tag")).click();
+  ok("No tag shows the untagged", rows().join() === "Mr Das");
+  chips()[0].click();
+  byId("s-q").value = "1000003";
+  byId("s-q").dispatchEvent(new admin.Event("input"));
+  ok("the search finds a code", rows().join() === "Ms Sen" && admin.document.activeElement !== byId("s-table"));
+  byId("s-q").value = "zzz";
+  byId("s-q").dispatchEvent(new admin.Event("input"));
+  ok("no match says so", byId("s-table").textContent.includes("Nothing matches"));
+  byId("s-q").value = "";
+  byId("s-q").dispatchEvent(new admin.Event("input"));
+
+  // Tapping a tag in use fills the tag box, so a phone never needs to type it.
+  byId("s-tagpick").querySelector('[data-pick="Physics"]').click();
+  ok("a tapped tag fills the box", byId("s-tag").value === "Physics");
+  chips().find(c => c.textContent.includes("Library")).click();
+  byId("s-name").value = "Dr Bose";
+  byId("s-phone").value = "+917000000005";
+  byId("s-add").click();
+  await tick(); await tick();
+  ok("the tag goes with the new person", posts.at(-1)[1].tag === "Physics");
+  ok("a new person hidden by the filter is explained", byId("s-note").textContent.includes("does not show below"));
+  chips()[0].click();
+
+  // Tag on a row: a sheet with the tags in use, the code stays the same.
+  byId("s-table").querySelector('[data-retag][data-id="1000004"]').click();
+  ok("Tag opens a sheet with the tags in use", byId("over").textContent.includes("Tag for Mr Das")
+     && !!byId("tag-pick").querySelector('[data-pick="Physics"]'));
+  byId("tag-pick").querySelector('[data-pick="Physics"]').click();
+  byId("tag-save").click();
+  await tick(); await tick(); await tick();
+  ok("it sends the code and the tag", posts.at(-1)[0] === "/api/admin/staff/tag"
+     && posts.at(-1)[1].code === "1000004" && posts.at(-1)[1].tag === "Physics");
+  ok("it says the new tag", byId("s-note").textContent.includes("Mr Das now has the tag Physics"));
+
+  chips().find(c => c.textContent.includes("Physics")).click();
+  byId("s-chips").querySelector("[data-rename]").click();
+  byId("tag-new").value = "Science";
+  byId("tag-save").click();
+  await tick(); await tick(); await tick();
+  ok("Rename this tag sends the old and new names", posts.at(-1)[0] === "/api/admin/tags/rename"
+     && posts.at(-1)[1].old === "Physics" && posts.at(-1)[1].new === "Science"
+     && posts.at(-1)[1].list === "staff");
+  ok("the filter follows the new name", chips().find(c => c.getAttribute("aria-pressed") === "true")
+     .textContent.includes("Science"));
+  ok("the offices list has its own chips", byId("o-chips").textContent.includes("Main Building")
+     && !byId("o-chips").textContent.includes("Science"));
+
+  console.log("visitor form: offices are grouped by tag");
+  const v = boot("index.html", "app.js", {fetch: () => Promise.reject(new Error("offline"))});
+  const S = v.eval("S");
+  S.cfg.offices = ["Exams", "Fees", "Library"];
+  S.cfg.office_groups = [{tag: "Main <Building>", offices: ["Exams", "Fees"]}, {tag: "", offices: ["Library"]}];
+  S.s = "step2"; S.f.reason = "See an office"; v.eval("render()");
+  const labels = [...v.document.querySelectorAll("#f_office optgroup")].map(g => g.label);
+  ok("each tag is a group, untagged last as Other offices, escaped",
+     labels.join("|") === "Main <Building>|Other offices"
+     && v.document.querySelector("#f_office building") === null);
+  S.cfg.office_groups = [{tag: "", offices: ["Exams", "Fees", "Library"]}];
+  v.eval("render()");
+  ok("no tags at all: a plain list, no group heading",
+     !v.document.querySelector("#f_office optgroup") && v.document.getElementById("f_office").options.length === 4);
+}
+
+// ------------------------------------------------------------- bulk decisions
+async function bulkChecks() {
+  console.log("admin page: a super admin approves many requests at once");
+  const waitingRow = (n, status = "pending") => ({reference: `VR-1000${n}`, name: `Visitor ${n}`,
+    phone: "9876543210", address: "x", reason: "Delivery", visiting: "y", guests: [], status,
+    created_at: "2026-10-06T05:00:00+00:00", approvers: ["+911", "+912"]});
+  const make = (isSuper, decideStatus = 200) => {
+    const posts = [];
+    let reads = 0;
+    const answer = (status, body) => Promise.resolve({status, ok: status < 300, json: () => Promise.resolve(body)});
+    const win = boot("admin.html", "admin.js", {
+      fetch: (url, options = {}) => {
+        if (options.method === "POST") {
+          posts.push([url, JSON.parse(options.body)]);
+          if (url.endsWith("/decide")) {
+            return decideStatus === 200
+              ? answer(200, {decided: ["VR-10001"], skipped: [{reference: "VR-10002", why: "Already approved."}]})
+              : answer(decideStatus, {error: "Only a super admin can do this."});
+          }
+          return answer(200, {});
+        }
+        reads++;
+        return answer(200, url.includes("/summary")
+          ? {counts: {pending: 2}, approvers: [], super: isSuper, you: isSuper ? "Uma +91" : "Ravi +92",
+             main_admin: "+919", admins: [{name: "Uma", phone: "+91", super: true, added_at: "2026-10-05T05:00:00+00:00"},
+                                          {name: "Ravi", phone: "+92", super: false, added_at: "2026-10-05T05:00:00+00:00"}]}
+          : {visits: [waitingRow(1), waitingRow(2, "escalated"), waitingRow(3, "approved")], next: null});
+      },
+    });
+    win.eval('localStorage.setItem("adminkey","k")');
+    win.eval("render(); refresh()");
+    return {win, posts, reads: () => reads, byId: id => win.document.getElementById(id)};
+  };
+  const boss = make(true);
+  await tick(); await tick();
+  const boxes = () => [...boss.byId("list").querySelectorAll("[data-pick-ref]")];
+  ok("only waiting rows get a tick box", boxes().map(b => b.dataset.pickRef).join() === "VR-10001,VR-10002");
+  ok("the header says super admin", boss.byId("you").textContent.includes("(super admin)"));
+  ok("nothing chosen: the buttons wait", boss.byId("bulk-yes").disabled && !boss.byId("bulk").hidden);
+  boss.byId("pick-all").click();
+  ok("Select all picks the waiting rows on screen", boxes().every(b => b.checked)
+     && boss.byId("bulk-yes").textContent === "Approve 2");
+  boss.byId("bulk-yes").click();
+  ok("it asks first, with the count", boss.byId("over").textContent.includes("Approve 2 requests?")
+     && boss.posts.length === 0);
+  boss.byId("sure-yes").click();
+  await tick(); await tick(); await tick();
+  ok("it sends the references and the decision", boss.posts.at(-1)[0] === "/api/admin/decide"
+     && boss.posts.at(-1)[1].references.join() === "VR-10001,VR-10002"
+     && boss.posts.at(-1)[1].decision === "approve");
+  ok("it says what changed and what did not, and why", boss.byId("bulk-note").textContent.includes("Approved 1")
+     && boss.byId("bulk-note").textContent.includes("VR-10002: Already approved."));
+  boss.byId("tabs").querySelector('[data-section="admins"]').click();
+  ok("a super admin can make another admin super", !!boss.byId("a-table").querySelector('[data-super="+92"]'));
+  ok("but not change their own role", !boss.byId("a-table").querySelector('[data-super="+91"]'));
+
+  console.log("admin page: a regular admin sees no bulk controls, and keeps the key");
+  const plain = make(false, 409);
+  await tick(); await tick();
+  ok("no tick boxes and no bulk buttons", !plain.byId("list").querySelector("[data-pick-ref]")
+     && plain.byId("bulk").hidden);
+  ok("a super admin's row offers them nothing", plain.byId("a-table").textContent
+     .includes("Only a super admin can change this.") && !plain.byId("a-table").querySelector('[data-id="+91"]'));
+  plain.win.eval('picked.add("VR-10001")');
+  const asking = plain.win.eval('bulkDecide("approve")');
+  plain.byId("sure-yes").click();
+  await asking;
+  await tick();
+  ok("a 409 shows the reason and keeps the key", plain.win.eval('localStorage.getItem("adminkey")') === "k"
+     && plain.byId("bulk-note").textContent.includes("Only a super admin"));
+}
+
+void boardChecks().then(officeFormChecks).then(bulkChecks).then(tagChecks).then(worstCaseChecks).then(blacklistChecks).then(staffGateChecks).then(teamChecks).then(staleGateChecks).then(stalePollChecks).then(staleApproverChecks).then(offlinePassChecks).then(approverChecks).then(guardChecks).then(forgotChecks).then(visitorAutoChecks).then(wrongKeyChecks).then(adminChecks).then(downloadChecks).then(() => {
   console.log();
   console.log(failures ? `${failures} check(s) FAILED` : "all form checks passed");
   process.exit(failures ? 1 : 0);

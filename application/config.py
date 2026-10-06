@@ -46,6 +46,8 @@ ADMIN_PHONE = os.getenv("ADMIN_PHONE", "").strip() or MAIN_APPROVER
 
 # Same list as REASONS in static/app.js. "Other" also covers typed-in reasons.
 REASONS = ("See a student", "See an office", "Delivery", "Event", "Other")
+# With this reason the visitor picks an office, which has its own approvers.
+OFFICE_REASON = "See an office"
 
 
 def _approvers():
@@ -120,6 +122,8 @@ TEMPLATE_LANGUAGE = os.getenv("TEMPLATE_LANGUAGE", "en").strip()
 # Plain text when Meta refuses the template. Only while Meta reviews one: it hides failures.
 TEMPLATE_FALLBACK = _flag("TEMPLATE_FALLBACK")
 ESCALATE_MINUTES = _int("ESCALATE_MINUTES", 15)
+# The staff entry message. Empty sends plain text, which reaches only staff active in the last 24 h.
+STAFF_ENTRY_TEMPLATE = os.getenv("STAFF_ENTRY_TEMPLATE", "").strip()
 
 # Auto-approve a working-hours request after this many minutes. 0 = off.
 AUTO_APPROVE_MINUTES = _int("AUTO_APPROVE_MINUTES", 30)

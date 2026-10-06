@@ -20,7 +20,7 @@ message template.
 1. On https://developers.facebook.com, create an app and add WhatsApp to it.
 2. Open WhatsApp, then API Setup. Copy the Phone number ID. This is
    `META_PHONE_NUMBER_ID`.
-3. On the same page, add each approver and guard phone number to the
+3. On the same page, add each approver, guard and allow list phone number to the
    recipient list. A Meta test number sends only to numbers on that list,
    and the list holds 5 numbers at most. If more people must get messages,
    add the campus's own WhatsApp number first, see step 7.
@@ -129,6 +129,10 @@ does not have them.
 8. Add the guards on the admin page's Guards tab, and give each guard the
    key that shows. Give `<address>` to visitors, the gate key to the gate
    desk, and the admin key to the admin.
+9. Add the offices on the Offices tab, the staff on the Allow list tab, and
+   any other admins on the Admins tab.
+10. Create the `staff_entry` template, and set `STAFF_ENTRY_TEMPLATE`. See
+    "The allow list entry template".
 
 ## Settings
 
@@ -167,6 +171,7 @@ These have a default. Set the ones that apply to you.
 | `REQUEST_TEMPLATE`       | The approval template. Default `visit_request`               |
 | `TEMPLATE_LANGUAGE`      | The language code of that template. Default `en`             |
 | `TEMPLATE_FALLBACK`      | `true` sends plain text when the template fails. Off         |
+| `STAFF_ENTRY_TEMPLATE`   | The allow list entry template. Unset sends plain text        |
 | `PYTHON_VERSION`         | The Python that Render uses. `render.yaml` sets `3.14.3`     |
 | `ALLOW_UNSIGNED_WEBHOOK` | `true` runs without `META_APP_SECRET`. Your own machine only |
 
@@ -196,7 +201,10 @@ and pass. The pages read them from the server, so the text always matches.
 Each reason on the form has a main approver and a backup approver. The
 reasons are `See a student`, `See an office`, `Delivery`, `Event` and `Other`.
 They are the same list as `REASONS` in `config.py` and `static/app.js`. A
-reason that the visitor types in counts as `Other`.
+reason that the visitor types in counts as `Other`. `See an office` has no
+pair of its own: each office has its own pair on the Offices tab, and an
+office visit with no office goes to the pair for `Other`. `APPROVERS` may
+name `See an office`, but the app does not use it.
 
 Every reason uses `MAIN_APPROVER` and `BACKUP_APPROVER`, unless `APPROVERS`
 names it. `APPROVERS` is JSON, and it names only the reasons that differ:
@@ -271,6 +279,26 @@ that the request went out.
 
 If you make a new Meta app or WhatsApp account, create the template again
 with the same name and body.
+
+## The allow list entry template
+
+When a guard records an allow list entry, the person gets a WhatsApp message.
+Most of them do not write to the app's number every day, so the message must
+be a template to arrive. Create it in WhatsApp Manager with the name
+`staff_entry`, the category Utility, the language `en`, and this body:
+
+```
+Campus entry recorded for {{1}} at {{2}} by {{3}}.
+
+If this was not you, tell the campus admin.
+```
+
+`{{1}}` is the person's name, `{{2}}` is the time, and `{{3}}` is the
+guard. Meta refuses a body that starts or ends with a value, so keep the
+fixed words around them. When Meta approves it, set `STAFF_ENTRY_TEMPLATE=staff_entry` on
+Render. Until then, the app sends the same text as plain text, which arrives
+only if the person wrote to the app's number in the last 24 hours. A failed
+message never stops the entry, and the log names the code.
 
 ## Run it on your own machine
 

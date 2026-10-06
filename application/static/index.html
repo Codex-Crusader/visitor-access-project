@@ -77,9 +77,12 @@ a.btn{display:block;text-align:center;text-decoration:none}
 label{display:block;font-weight:650;font-size:.84rem;letter-spacing:.02em;margin:20px 0 7px;color:var(--ink)}
 input,select{width:100%;padding:14px;border:1px solid var(--line);border-radius:12px;background:var(--mute);
  font:inherit;color:inherit;-webkit-appearance:none;appearance:none;transition:border-color .12s,background .12s}
-input:focus{background:var(--paper);border-color:var(--brand2);box-shadow:0 0 0 3px rgba(39,89,156,.12)}
-input.bad{border-color:var(--stop);background:var(--stopBg)}
-input.bad:focus{border-color:var(--stop);background:var(--stopBg);box-shadow:0 0 0 3px rgba(153,39,36,.14)}
+/* appearance:none drops the arrow, so the list draws its own. */
+select{padding-right:40px;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='9'%3E%3Cpath d='M1 1l6 6 6-6' fill='none' stroke='%235A6979' stroke-width='2'/%3E%3C/svg%3E");
+ background-repeat:no-repeat;background-position:right 15px center}
+input:focus,select:focus{background-color:var(--paper);border-color:var(--brand2);box-shadow:0 0 0 3px rgba(39,89,156,.12)}
+input.bad,select.bad{border-color:var(--stop);background-color:var(--stopBg)}
+input.bad:focus,select.bad:focus{border-color:var(--stop);background-color:var(--stopBg);box-shadow:0 0 0 3px rgba(153,39,36,.14)}
 .bad-note{color:var(--stop);font-size:.85rem;margin-top:7px;font-weight:600}
 .steps{display:flex;gap:6px;margin-bottom:6px}
 .steps i{height:4px;flex:1;background:var(--line);border-radius:3px;transition:background .2s}

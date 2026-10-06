@@ -12,6 +12,7 @@ new copy, read [setup.md](setup.md). For security and privacy, read
 | Visitor  | The web page on a phone    | Asks to come in, and shows the pass       |
 | Approver | WhatsApp                   | Says yes or no to each request            |
 | Guard    | The gate page, or WhatsApp | Records each entry and exit               |
+| Allowed  | Their 7-digit code         | Enter without a request (allow list)      |
 | Admin    | The admin page             | Reads every request and downloads the log |
 
 ## Visitor
@@ -19,13 +20,15 @@ new copy, read [setup.md](setup.md). For security and privacy, read
 1. Open `<address>` on your phone.
 2. Tap Request a Visit.
 3. Fill in your name, phone number and address, then tap Continue.
-4. Pick the reason for the visit, and type the person you visit. Add the
-   people who come with you. Tap Review.
-5. Read the details, then tap Send request. Keep the page open.
-6. Wait for the decision. The page shows it a few seconds after the reply.
-7. If the request is approved, tap Open pass, and show the entry code to the
+4. Pick the reason for the visit, and type the person you visit. For See an
+   office, pick the office from the list.
+5. To add the people who come with you, tap Add a person and type a name.
+   Tap Add another person for each next name, up to 10 people. Tap Review.
+6. Read the details, then tap Send request. Keep the page open.
+7. Wait for the decision. The page shows it a few seconds after the reply.
+8. If the request is approved, tap Open pass, and show the entry code to the
    guard.
-8. After the guard lets you in, the pass shows a different code, the exit
+9. After the guard lets you in, the pass shows a different code, the exit
    code. Show it to the guard when you leave.
 
 After the exit, the pass closes and both codes stop working. If the page says
@@ -48,9 +51,10 @@ You get a WhatsApp message with the visitor's details and a reference such as
 1. To approve, reply `YES VR-40221`.
 2. To decline, reply `NO VR-40221`.
 
-If only one request waits for you, `YES` or `NO` alone is enough. If the
-reference has a typing mistake, the app answers "No request has reference"
-and decides nothing. Send any other message to see the requests that wait
+Small letters work, and so do the marks a phone adds: `yes vr-40221`,
+`Yes VR-40221.` and `No, VR-40221` all work. If only one request waits for
+you, `YES` or `NO` alone is enough. If the reference has a typing mistake,
+the app answers "No request has reference" and decides nothing. Send any other message to see the requests that wait
 for you.
 
 If you do not answer in 15 minutes, the backup approver gets the same
@@ -85,14 +89,14 @@ WhatsApp delivers it only if the guard wrote to the app's number in the last
      key?". The app sends the key to the gate desk WhatsApp. If it does not
      arrive, send `KEY` from the gate desk phone to the app's WhatsApp
      number.
-3. Type the code on the visitor's pass, and tap Check pass. Small letters and
+3. Type the code on the visitor's pass, and tap Check. Small letters and
    spaces are correct, for example `kt 4821`.
 4. If the pass is approved, tap "Take a photo of the visitor". The phone
    camera opens. Take the photo of the visitor's face.
 5. Make sure that the photo on the screen shows the visitor, then tap Record
    entry. Record entry does not work without a photo. To take the photo
    again, tap "Take the photo again".
-6. When the visitor leaves, type the exit code, tap Check pass, then tap
+6. When the visitor leaves, type the exit code, tap Check, then tap
    Record exit.
 7. Tap Next visitor to clear the screen.
 
@@ -143,15 +147,50 @@ WhatsApp stays in the guard's chat.
 | Take a photo of the visitor first | Tap "Take a photo of the visitor". If the page has no photo button, reload the page        |
 | Wrong gate key                    | With your own key: send `KEY` from your phone. With the shared key: tap "Forgot gate key?" |
 
+### The allow list
+
+People on the admin page's allow list, such as staff and faculty, do not send
+a request. Each one has a 7-digit allow list code.
+
+1. The person says their code to you.
+2. On WhatsApp, send the code, for example `4569918`. You can also send
+   `IN 4569918`. The entry is recorded at once.
+3. On the gate page, type the code and tap Check. The page shows the name.
+   Tap Record entry.
+4. Read the name in the reply. If it is not the person in front of you, do
+   not let them in, and tell the admin.
+
+The person gets a WhatsApp message about the entry, with the time and your
+name. The reply tells you if that message could not be sent. The admin page
+shows each entry and the guard who recorded it. The app records no exit for
+the allow list.
+
+If the same code comes again within 2 minutes, from you or from another
+guard, the reply says "Already recorded" with the first time. Nothing new is
+recorded, and no second message is sent. One guard can try 30 codes in a
+minute. After that, the reply says to wait a minute.
+
+### The blacklist
+
+If the gate page or the WhatsApp reply says "On the blacklist", do not let
+the person in, and tell the admin. This also applies to a pass that was
+approved before the admin added the number. On the gate page, a banned
+visitor in the Expected or Inside now list shows in red, with "On the
+blacklist". A banned visitor who is inside can still leave.
+
 ## Admin
 
 1. Open `<address>/admin`.
-2. Type the admin key. It is different from the gate key. If you do not know
-   it, tap "Forgot admin key?". The app sends the key to `ADMIN_PHONE` on
-   WhatsApp. If it does not arrive, send `KEY` from that phone to the app's
-   WhatsApp number.
-3. The page has three tabs: Visits, Approver numbers and Guards. Visits
-   opens first.
+2. Type your admin key. It is different from the gate key.
+   - The main admin uses `ADMIN_KEY`. If you do not know it, tap "Forgot
+     admin key?". The app sends it to `ADMIN_PHONE` on WhatsApp. If it does
+     not arrive, send `KEY` from that phone to the app's WhatsApp number.
+   - Another admin added you: use the key they gave you. Or send `KEY` from
+     your own WhatsApp to the app's number. The app replies with a new admin
+     key of your own, and your old key stops.
+3. The page has seven tabs: Visits, Allow list, Offices, Approvers, Guards,
+   Admins and Blacklist. Visits opens first. The line under the title names
+   who is signed in.
 4. On the Visits tab, tap a tile to show only the requests with that status.
    Waiting means pending or with the backup approver.
 5. Use the search box to find a name, phone number, reference or the person
@@ -165,13 +204,57 @@ WhatsApp stays in the guard's chat.
    Entered and Exited name the guard who recorded them. "Gate desk (shared
    key)" means that someone used the shared `GATE_KEY`.
 8. Show more loads the next 50 requests.
-9. Use Download CSV to save the whole log. Only the admin page can download
-   it, because it holds every visitor's personal details.
+9. Use Download log to save everything as one ZIP file. See "Where the data
+   lives". Only the admin page can download it, because it holds every
+   visitor's personal details and photo.
+
+The admin page works on a phone and on a computer. On a phone, the tabs and
+the tiles scroll sideways, and each table row shows as a card.
+
+### How the app knows who you are
+
+The app has no sign-in sessions. Each page keeps your key in the browser on
+that device, and sends it with every call. The server finds the person who
+owns that key, and the log names that person. So:
+
+1. Each guard and each added admin must use their own key on their own
+   device. The log then names them.
+2. Anyone who types the shared `GATE_KEY` shows as "Gate desk (shared key)",
+   and anyone who types `ADMIN_KEY` shows as the main admin. The app cannot
+   tell those people apart.
+3. On a shared device, tap Change key when you finish. Otherwise the next
+   person works under your name.
+
+### Approve or decline many requests at once
+
+A super admin can decide many waiting requests on the Visits tab. The main
+admin is always a super admin. A super admin can make another admin one, on
+the Admins tab.
+
+1. On the Visits tab, tap the Waiting tile.
+2. Tick the requests, or tap "Select all waiting on screen". It picks only
+   the requests on screen. Tap Show more first to load more of them.
+3. Tap Approve or Decline, then confirm in the "Are you sure?" box. One call
+   takes 100 requests at most.
+
+Each request is checked on its own, the same way as a `YES` on WhatsApp. The
+app skips a request that someone decided meanwhile, one that expired, or one
+whose number is on the blacklist. The note then names each skipped request
+and why. Each guard gets one WhatsApp message that lists all the approved
+visitors, not one message for each. The Visits tab shows "Approved by" and
+the admin's name, and the change log keeps a line with every reference.
+
+### Delete something
+
+Each Delete button on the Allow list, Offices, Guards, Admins and Blacklist
+tabs opens a box that asks "Are you sure?". Tap Delete to delete, or Cancel
+to keep it.
 
 ### Change the approvers
 
-1. Tap the Approver numbers tab.
-2. Tap Change on the reason.
+1. Tap the Approvers tab.
+2. Tap Change on the reason. See an office is not on this tab, because each
+   office has its own two numbers on the Offices tab.
 3. Type the approver's number and the backup's number. Write each one with
    `+` and the country code, like `+919876543210`. Both are required, and
    they must be different.
@@ -181,6 +264,137 @@ The change works at once. New requests go to the new numbers. The old numbers
 can no longer decide that reason's requests, also the requests already sent
 to them. While the app uses Meta's test number, also add each new number to
 the recipient list in Meta's API Setup page.
+
+### Manage the offices
+
+A visitor who picks the reason See an office then picks an office from a
+list. The request goes to that office's own approver, and to its backup if
+nobody answers in `ESCALATE_MINUTES`.
+
+1. Tap the Offices tab.
+2. Type the office's name, the approver's number and the backup's number.
+   Write each number with `+` and the country code. The two numbers must be
+   different. You can also give a tag, see "Tags on long lists".
+3. Tap Add office. Visitors can pick it at once.
+
+To change an office's numbers, delete the office and add it again with the
+same name. When you delete an office, its open requests go to the approvers
+for Other on the Approvers tab. With no offices, the visitor types the
+office's name, and the request goes to the approvers for Other.
+
+### Tags on long lists
+
+The Offices and Allow list tabs can hold hundreds of rows, so each office and
+each person can have one tag, such as a building or a department. The two
+lists have their own tags.
+
+1. To give a tag when you add a row, tap a tag under the Tag box, or type a
+   new one. Leave it empty for no tag. A tag typed in another case, such as
+   `physics` for `Physics`, joins the tag in use.
+2. To move one row to another tag, tap Tag on that row. An allow list
+   person keeps their code.
+3. Above each list, the chips show All, each tag with its count, and No tag.
+   Tap one to see only those rows. Under All, the rows sit under a heading
+   for each tag.
+4. The search box finds a name, a number, a code or a tag.
+5. To rename a tag for every row at once, tap that tag's chip, then Rename
+   this tag. A name that is in use already joins the two tags. An empty name
+   removes the tag from those rows.
+
+On the visitor page, the office list shows the offices under their tags. The
+offices with no tag come last, under Other offices. Every tag change goes into
+the admin change log.
+
+### Manage the allow list
+
+1. Tap the Allow list tab.
+2. Type the person's name and WhatsApp number. You can also give a tag, see
+   "Tags on long lists".
+3. Tap Add to the allow list and make a code.
+4. Tell the person the 7-digit code that shows. The list also shows it.
+
+Recent entries shows the last 100 entries and the guard who recorded each
+one. Download log saves all of them. Delete takes a person off the list, and
+their code stops at once. Their past entries stay until `RETAIN_DAYS` ends.
+A number on the blacklist cannot be on the allow list. While the app uses
+Meta's test number, also add each number to the recipient list in Meta's API
+Setup page.
+
+The entry message needs the template in "The allow list entry template" in
+[setup.md](setup.md). Without it, WhatsApp delivers the message only if the
+person wrote to the app's number in the last 24 hours.
+
+### Manage the blacklist
+
+A number on the blacklist cannot request a visit, and the gate refuses its
+passes, also a pass approved before. Its allow list code stops too. The
+visitor page says only "This number cannot request a visit. Call the gate
+desk.". It does not say why.
+
+When you add a number, its waiting requests are declined at once, and the
+Visits tab shows "Declined by the blacklist". No approver or automatic
+approval can approve them later, and the guards get no "Approved visitor"
+message. A pass that was already approved stays approved, but the gate
+refuses it.
+
+1. Tap the Blacklist tab.
+2. Type the name and the phone number. The reason is for the admins, and you
+   may leave it empty.
+3. Tap Add to the blacklist.
+
+You can also open a visit on the Visits tab and tap "Blacklist this number".
+The app compares the last 10 digits, so `98765 43210` and `+919876543210` are
+the same number. Delete takes a number off the blacklist.
+
+The blacklist knows only phone numbers. It cannot stop a person who uses
+another phone, or who comes as a guest on someone else's request.
+
+Each time the blacklist stops someone, the admin page records it:
+
+1. A request from the visitor page.
+2. A pass checked at the gate with its entry code, on the gate page or on
+   WhatsApp. A tap on a name in the gate lists is not counted, because the
+   person need not be at the gate.
+3. An allow list code, on the gate page or on WhatsApp.
+
+Blocked attempts on the Blacklist tab shows the last 100, with the time, the
+name, the number, what happened and the guard. For 24 hours after an
+attempt, a red alert shows at the top of every tab, and the Blacklist tab
+shows the count. The page does not refresh by itself, so tap Refresh to see
+new attempts. A page that refreshes by itself would keep the database awake
+and use up Neon's free hours.
+
+### Manage the admins
+
+`ADMIN_PHONE` is the main admin. It uses `ADMIN_KEY` and cannot be deleted.
+You add the other admins on the admin page.
+
+1. Tap the Admins tab.
+2. Type the admin's name and WhatsApp number.
+3. Tap Add admin and make a key.
+4. Give the key that shows to that admin. The page shows it only once. If
+   you cannot give it in person, the new admin sends `KEY` from their own
+   WhatsApp to the app's number, and gets a key of their own.
+
+Every admin sees and changes everything on the admin page. New key makes a
+new key and stops the old one. An added admin who loses their key sends `KEY`
+from their phone to the app's WhatsApp number. Nobody can delete themselves.
+A guard's number cannot be an admin, and an admin's number cannot be a guard.
+
+A super admin also has a Make super admin and a Remove super admin button
+on each other admin's row. Nobody can change their own role. Only a super
+admin can make a new key for, delete, or change a super admin, so a regular
+admin cannot take a super admin's place.
+
+Recent changes on the Admins tab lists who changed what: each guard, admin,
+office, allow list or blacklist entry added or deleted, each approver change,
+each new key, and each key sent by "Forgot key?" or `KEY`. It never shows a
+key. Download log saves all of it as `admin-changes.csv`.
+
+Read it when something looks wrong. Anyone who holds an admin's unlocked
+phone can send `KEY` and get a new admin key. If a change shows "KEY on
+WhatsApp from" a number at a time that person did not use it, delete that
+admin, or tap New key, at once.
 
 ### Manage the guards
 
@@ -198,11 +412,11 @@ A guard can then use the gate page with their own key, and `IN`, `OUT` and
 the photo from their own WhatsApp number.
 
 1. To give a guard a new key, tap New key. The old key stops at once.
-2. To take a guard off, tap Remove, then Remove again. Their key and their
-   WhatsApp commands stop at once. The log keeps their name on the visits
-   that they recorded.
+2. To take a guard off, tap Delete, then Delete in the "Are you sure?" box.
+   Their key and their WhatsApp commands stop at once. The log keeps their
+   name on the visits that they recorded.
 
-The app refuses the gate desk number and `ADMIN_PHONE` as a guard. While the
+The app refuses the gate desk number and every admin's number as a guard. While the
 app uses Meta's test number, also add each guard's number to the recipient
 list in Meta's API Setup page.
 
@@ -225,13 +439,15 @@ job has its own word.
 | `IN KT-4821`   | With the entry code: asks for a photo of the visitor                                                            |
 | a photo        | Records the entry for the last `IN`                                                                             |
 | `OUT RM-0937`  | With the exit code: records the exit                                                                            |
-| `KEY`          | From `GUARD` or `ADMIN_PHONE`: sends back that number's key. From another guard: makes a new key for that guard |
+| `4569918`      | From a guard, with an allow list code: records the entry at once. `IN 4569918` does the same                   |
+| `KEY`          | From `GUARD` or `ADMIN_PHONE`: sends back that number's key. From an added guard or admin: makes a new key      |
 | anything else  | Sends back the requests that wait for you                                                                       |
 
-A reference can also be typed as `VR40221`, `VR 40221` or `40221`. A
+Any case works, and commas, full stops, `!` and `?` are ignored. A
+reference can also be typed as `VR40221`, `VR 40221` or `40221`. A
 reference made before 6 October 2026 has four digits, such as `VR-4022`, and
-it still works. The app ignores every number that is not an approver, a guard
-or `ADMIN_PHONE`.
+it still works. The app ignores every number that is not an approver of a
+reason or an office, a guard or an admin.
 
 ## Forgotten keys
 
@@ -440,23 +656,59 @@ The visits live in the Neon database. They stay when Render deploys a new
 version. The app deletes each visit `RETAIN_DAYS` after the request, 90 days
 by default, as the privacy screen promises.
 
-The CSV from Download CSV on the admin page is the only copy that you
-control. Download it before a large change, and on a fixed day each week. Neon can restore the
+Download log on the admin page saves the only copy that you control. Save it
+before a large change, and on a fixed day each week. Neon can restore the
 database to an earlier time, under Backup & Restore in the Neon console. On
 the free plan, that window is only 6 hours (the project's "History
 retention"). A mistake found the next day cannot be undone there.
 
-The CSV has one row for each visit, with these columns:
+Download log saves one ZIP file. Unzip it first: a file inside a ZIP does
+not show its photos. It holds:
 
-```
-reference, name, phone, address, reason, visiting, guests, status,
-created_at, escalated_at, decided_at, decided_by, entered_at, exited_at, photo_at,
-entered_by, exited_by
-```
+1. `visits.html`: open it in a browser. Each visit shows with its gate photo
+   beside the details, newest first. It works with no internet.
+2. `visits.csv`: one row for each visit, for a spreadsheet.
+3. `allow-list-entries.csv`: each allow list entry and the guard who
+   recorded it.
+4. `blocked-attempts.csv`: each time the blacklist stopped someone. The same
+   person stopped the same way again within 10 minutes is one row.
+5. `admin-changes.csv`: who changed what.
+6. `photos/`: one JPEG for each photo taken on the gate page, named by the
+   reference, such as `photos/VR-40221.jpg`.
+7. `README.txt`: what each file holds.
 
-Times are UTC. A visit that never entered has empty `entered_at` and
-`exited_at`. `photo_at` is the time of the entry photo, from the gate page
-or from WhatsApp. The CSV never holds the photo itself.
+The files are made for people to read:
+
+1. Each column has a plain heading, such as "Requested" or "Decided by".
+2. Times are campus time (`WORK_TIMEZONE`, `Asia/Kolkata` by default), as
+   `2026-10-06 16:05`. The heading names the time zone. A spreadsheet reads
+   them as dates, so you can sort and filter them.
+3. Status is a word, such as Waiting, Approved or Left.
+4. "Decided by" names the approver and their number, the admin who decided
+   on the admin page, "Approved by itself", or "The blacklist".
+5. A number with `+`, such as `+919876543210`, shows as written, not as
+   `9.19E+11`.
+6. Each CSV starts with a mark that tells Excel the file is UTF-8, so names
+   with accents show correctly.
+7. An empty cell means "not yet" or "none". A visit that never entered has
+   empty Entered and Exited cells.
+
+`visits.csv` has these columns: Reference, Name, Phone, Address, Reason,
+Office, Visiting, People with them, Status, Requested, Sent to backup,
+Decided, Decided by, Entered, Entered by, Exited, Exited by, Photo taken and
+Photo file. Photo file names the photo in the `photos` folder. It is empty for
+a photo sent on WhatsApp, because that photo stays in the guard's chat. The
+Visits page in `visits.html` says so too.
+
+A CSV file holds text only, so the photos are separate files in the same ZIP.
+A photo written into a CSV cell is about 47,000 characters, and Excel cuts a
+cell at 32,767, so the picture breaks. The server sends the ZIP piece by
+piece, so a large log does not fill the server's memory. A test with 2,000
+photos sent 71 MB and used about 5 MB of memory.
+
+The app deletes each record after `RETAIN_DAYS`, but a downloaded ZIP keeps
+its copy. Keep the ZIP files on a locked device, and delete old ones as the
+campus's own rules say.
 
 ## The free plans
 

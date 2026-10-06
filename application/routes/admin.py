@@ -1,59 +1,27 @@
 """The admin page's calls, and the forgotten-key messages."""
 
 import base64
-import csv
-import io
 import logging
-from datetime import datetime, timezone
 
-from flask import Blueprint, Response, jsonify, request
+from flask import Blueprint, Response, jsonify, request, stream_with_context
 
 import access
+import audit
 import checks
 import config
 import db
 import entries
+import export
 import limits
+import notify
 import people
 import visits
 import whatsapp
+from routes import team
 
 # The same logger as app.logger, so every message reaches one place.
 log = logging.getLogger("app")
 bp = Blueprint("admin", __name__)
-
-
-# The whole history, with every personal detail. Only the admin can download it.
-EXPORT_COLUMNS = (
-    "reference", "name", "phone", "address", "reason", "visiting", "guests",
-    "status", "created_at", "escalated_at", "decided_at", "decided_by",
-    "entered_at", "exited_at", "photo_at", "entered_by", "exited_by",
-)
-
-# Spreadsheets run a cell starting with these as a formula. A leading quote stops that.
-FORMULA_START = ("=", "+", "-", "@", "\t", "\r")
-
-
-def safe_cell(value):
-    text = "" if value is None else str(value)
-    return "'" + text if text.startswith(FORMULA_START) else text
-
-
-def visit_log():
-    buffer = io.StringIO()
-    writer = csv.writer(buffer)
-    writer.writerow(EXPORT_COLUMNS)
-    for visit in visits.all_visits():
-        row = dict(visit)
-        row["guests"] = ", ".join(row["guests"])
-        writer.writerow([safe_cell(row.get(c)) for c in EXPORT_COLUMNS])
-
-    stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    return Response(
-        buffer.getvalue(),
-        mimetype="text/csv",
-        headers={"Content-Disposition": f'attachment; filename="visits-{stamp}.csv"'},
-    )
 
 
 # The status filters on the admin page. "waiting" is both open statuses.
@@ -89,8 +57,58 @@ def admin_visits():
     rows, cursor = visits.admin_page(ADMIN_FILTERS[status], search, after, ADMIN_PAGE)
     table = people.approver_table()
     for visit in rows:
-        visit["approvers"] = list(people.approvers_for(table, visit["reason"]))
+        visit["approvers"] = list(people.approvers_for(table, visit))
     return jsonify(visits=rows, next="|".join(cursor) if cursor else None)
+
+
+BULK_LIMIT = 100
+DECISIONS = {"approve": db.APPROVED, "decline": db.DECLINED}
+
+
+@bp.post("/api/admin/decide")
+def bulk_decide():
+    """A super admin approves or declines many waiting requests at once.
+
+    Each one goes through the same statement as a YES, so a request that was decided meanwhile,
+    expired, or has a blacklisted number is skipped, with the reason."""
+    refused = access.admin_refusal() or access.super_refusal()
+    if refused:
+        return refused
+    payload = request.get_json(silent=True) or {}
+    status = DECISIONS.get(payload.get("decision"))
+    given = payload.get("references")
+    if status is None or not isinstance(given, list) or not given:
+        return jsonify(error="Choose the requests, and approve or decline."), 400
+    references = list(dict.fromkeys(
+        whatsapp.normalize_reference(str(ref)) or str(ref).upper() for ref in given))
+    if len(references) > BULK_LIMIT:
+        return jsonify(error=f"Choose {BULK_LIMIT} requests at most at once."), 400
+
+    me = access.admin_caller()
+    done, skipped = [], []
+    for reference in references:
+        decided = visits.decide(reference, status, db.BY_ADMIN, me)
+        if decided:
+            done.append(decided)
+        else:
+            skipped.append({"reference": reference, "why": why_not_decided(reference, status)})
+    if status == db.APPROVED:
+        notify.tell_guards_many(done)
+    if done:
+        audit.record(me, f"{'Approved' if status == db.APPROVED else 'Declined'} {len(done)}"
+                     " requests at once", ", ".join(v["reference"] for v in done))
+    return jsonify(decided=[v["reference"] for v in done], skipped=skipped)
+
+
+def why_not_decided(reference, status):
+    visit = visits.get(reference)
+    if visit is None:
+        return "No request has this reference."
+    if visit["status"] == db.EXPIRED:
+        return "Expired."
+    if visit["status"] in db.OPEN_STATUSES and status == db.APPROVED:
+        return "The number is on the blacklist."
+    return f"Already {visit['status']}."
 
 
 @bp.get("/api/admin/photo/<reference>")
@@ -111,14 +129,14 @@ def admin_photo(reference):
 
 @bp.get("/api/admin/summary")
 def admin_summary():
-    """Counts by status, and who approves each reason."""
+    """Counts by status, who approves each reason, and the lists of people and offices."""
     refused = access.admin_refusal()
     if refused:
         return refused
     return jsonify(
         counts=visits.status_counts(),
         approvers=approver_rows(people.approver_table()),
-        **guard_list(),
+        **team.lists(),
         escalate_minutes=config.ESCALATE_MINUTES,
         auto_approve_minutes=config.AUTO_APPROVE_MINUTES,
         work_hours=[config.WORK_START, config.WORK_END],
@@ -130,10 +148,7 @@ def admin_summary():
 
 def approver_rows(table):
     return [{"reason": reason, "main": main, "backup": backup}
-            for reason, (main, backup) in table.items()]
-
-
-PHONE_HINT = "Type the {who}'s number with + and the country code, like +919876543210."
+            for reason, (main, backup) in table["reasons"].items()]
 
 
 @bp.post("/api/admin/approvers")
@@ -144,89 +159,24 @@ def set_approvers():
         return refused
     payload = request.get_json(silent=True) or {}
     reason = payload.get("reason")
-    if reason not in config.REASONS:
+    # Each office has its own pair, on the Offices tab.
+    if reason not in config.REASONS or reason == config.OFFICE_REASON:
         return jsonify(error="Unknown reason"), 400
     main = checks.clean_phone(payload.get("main"))
     backup = checks.clean_phone(payload.get("backup"))
     problems = {}
     if not main:
-        problems["main"] = PHONE_HINT.format(who="approver")
+        problems["main"] = team.PHONE_HINT.format(who="approver")
     if not backup:
-        problems["backup"] = PHONE_HINT.format(who="backup")
+        problems["backup"] = team.PHONE_HINT.format(who="backup")
     if main and backup and whatsapp.same_number(main, backup):
         problems["backup"] = "The backup must be a different number from the approver."
     if problems:
         return jsonify(error="Check the numbers.", fields=problems), 400
     people.save_approvers(reason, main, backup)
+    audit.record(access.admin_caller(), "Changed the approvers",
+                 f"{reason}: {main}, backup {backup}")
     return jsonify(approvers=approver_rows(people.approver_table()))
-
-
-GUARD_NAME_LENGTH = 60
-
-
-def guard_list():
-    """The gate desk number, set on the server, and the guards added here."""
-    return {"gate_desk": config.GUARD, "guards": people.guards()}
-
-
-@bp.post("/api/admin/guards")
-def add_guard():
-    """Add a guard. The answer holds their new gate key, which is shown only this once."""
-    refused = access.admin_refusal()
-    if refused:
-        return refused
-    payload = request.get_json(silent=True) or {}
-    raw_name = str(payload.get("name") or "")
-    name = checks.clean_text(raw_name) if len(raw_name) <= GUARD_NAME_LENGTH else None
-    phone = checks.clean_phone(payload.get("phone"))
-    problems = {}
-    if not name:
-        problems["name"] = f"Type the guard's name, {GUARD_NAME_LENGTH} letters at most."
-    if not phone:
-        problems["phone"] = PHONE_HINT.format(who="guard")
-    elif whatsapp.same_number(phone, config.GUARD):
-        problems["phone"] = "This is the gate desk number. It is a guard already."
-    elif whatsapp.same_number(phone, config.ADMIN_PHONE):
-        problems["phone"] = "This is the admin number. A guard must not get the admin key."
-    if problems:
-        return jsonify(error="Check the guard's details.", fields=problems), 400
-    key = people.add_guard(name, phone)
-    if key is None:
-        return jsonify(error="Check the guard's details.",
-                       fields={"phone": "This number is a guard already."}), 400
-    return jsonify(key=key, name=name, **guard_list())
-
-
-def guard_from_payload():
-    """The +number of an existing guard from the call's JSON, or None."""
-    phone = checks.clean_phone((request.get_json(silent=True) or {}).get("phone"))
-    return phone if phone and people.guard_by_phone(phone) else None
-
-
-@bp.post("/api/admin/guards/new-key")
-def renew_guard_key():
-    """Give a guard a new gate key. Their old key stops at once."""
-    refused = access.admin_refusal()
-    if refused:
-        return refused
-    phone = guard_from_payload()
-    key = people.renew_guard_key(phone) if phone else None
-    if key is None:
-        return jsonify(error="No guard has that number."), 404
-    return jsonify(key=key, name=people.guard_by_phone(phone)["name"], **guard_list())
-
-
-@bp.post("/api/admin/guards/remove")
-def remove_guard():
-    """Remove a guard. Their key and their WhatsApp commands stop at once."""
-    refused = access.admin_refusal()
-    if refused:
-        return refused
-    phone = guard_from_payload()
-    if phone is None:
-        return jsonify(error="No guard has that number."), 404
-    people.remove_guard(phone)
-    return jsonify(**guard_list())
 
 
 FORGOT_PER_HOUR = 3
@@ -251,6 +201,8 @@ def forgot_key(which):
     except Exception as failure:
         log.error("Could not send the %s key: %s", which, failure)
         return jsonify(error="Could not send the key. Try again in a minute."), 502
+    audit.record("Forgot key button", f"Sent the shared {which} key",
+                 f"to the number that ends in {whatsapp.digits(phone)[-4:]}")
     return jsonify(sent_to=whatsapp.digits(phone)[-4:])
 
 
@@ -260,4 +212,26 @@ def admin_export_csv():
     refused = access.admin_refusal()
     if refused:
         return refused
-    return visit_log()
+    return Response(
+        export.csv_text(export.VISIT_COLUMNS, export.visit_rows()),
+        mimetype="text/csv; charset=utf-8",
+        headers={"Content-Disposition":
+                 f'attachment; filename="{export.file_name("visits", "csv")}"'},
+    )
+
+
+@bp.get("/api/admin/export.zip")
+def admin_export_zip():
+    """The visit log, the allow list entries and every gate page photo, in one ZIP."""
+    refused = access.admin_refusal()
+    if refused:
+        return refused
+    response = Response(
+        stream_with_context(export.zip_parts()),
+        mimetype="application/zip",
+        headers={"Content-Disposition":
+                 f'attachment; filename="{export.file_name("visit-log", "zip")}"'},
+    )
+    # Faces and personal details: no browser or proxy keeps a copy.
+    response.headers["Cache-Control"] = "no-store"
+    return response

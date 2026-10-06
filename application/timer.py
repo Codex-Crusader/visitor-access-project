@@ -41,7 +41,7 @@ def escalate_due():
         if visit["status"] != db.PENDING:
             continue  # expired: nobody needs to be asked now
         try:
-            approvers = people.approvers_for(table, visit["reason"])
+            approvers = people.approvers_for(table, visit)
             notify.log_template_problem(whatsapp.notify_backup(visit, approvers))
         except Exception as failure:
             log.error("Could not ask the backup approver about %s: %s",
@@ -59,7 +59,7 @@ def auto_approve_due():
             continue
         body = whatsapp.auto_approved_body(done, config.AUTO_APPROVE_MINUTES)
         # Plain text: lost to an approver quiet for 24 hours. The approval stands.
-        approvers = people.approvers_for(table, done["reason"])
+        approvers = people.approvers_for(table, done)
         for phone in dict.fromkeys(approvers):
             notify.reply_to(phone, body)
         notify.tell_guards(done, skip=approvers)

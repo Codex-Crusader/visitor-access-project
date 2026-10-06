@@ -8,6 +8,7 @@ from datetime import datetime, timedelta
 
 from psycopg import errors
 
+import blacklist
 import config
 import db
 
@@ -44,7 +45,7 @@ def new_gate_code():
 
 
 @db.writes
-def create(fields, guests, auto_approve_at=None):
+def create(fields, guests, auto_approve_at=None, office=None):
     """Insert a visit and its two codes. Retries when a code is already taken."""
     for _ in range(CODE_ATTEMPTS):
         # Five digits: 90,000 references. Older visits keep their four-digit one.
@@ -57,8 +58,8 @@ def create(fields, guests, auto_approve_at=None):
                 )
                 row = conn.execute(
                     "INSERT INTO visits (reference, token, name, phone, address,"
-                    " reason, visiting, guests, status, created_at, auto_approve_at)"
-                    " VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING *",
+                    " reason, visiting, guests, status, created_at, auto_approve_at, office)"
+                    " VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING *",
                     (
                         reference,
                         secrets.token_urlsafe(16),
@@ -71,6 +72,7 @@ def create(fields, guests, auto_approve_at=None):
                         db.PENDING,
                         db.now(),
                         auto_approve_at,
+                        office,
                     ),
                 ).fetchone()
             return to_dict(row)
@@ -154,14 +156,17 @@ def all_visits():
     """Every visit, oldest first, with its photo time. For the CSV export."""
     with db.connect() as conn:
         rows = conn.execute(
-            "SELECT visits.*, photos.taken_at AS photo_at FROM visits"
+            "SELECT visits.*, photos.taken_at AS photo_at,"
+            " photos.image IS NOT NULL AS photo_stored FROM visits"
             " LEFT JOIN photos ON photos.reference = visits.reference"
             " ORDER BY visits.created_at"
         ).fetchall()
     return [to_dict(row) for row in rows]
 
 
-BOARD_FIELDS = "reference, name, visiting, guests, status, created_at, decided_at, entered_at"
+# The phone is read only to check the blacklist. The gate route drops it.
+BOARD_FIELDS = ("reference, name, phone, visiting, guests, status, created_at, decided_at,"
+                " entered_at")
 
 
 @db.cached
@@ -190,7 +195,7 @@ def at_gate():
 
 # Never SELECT *: the token is the visitor's private link.
 ADMIN_FIELDS = (
-    "visits.reference, name, phone, address, reason, visiting, guests, status,"
+    "visits.reference, name, phone, address, reason, office, visiting, guests, status,"
     " created_at, escalated_at, decided_at, decided_by, decided_phone, auto_approve_at,"
     " entered_at, entered_by, exited_at, exited_by"
 )
@@ -298,11 +303,15 @@ def mark_escalated(reference):
 
 @db.writes
 def decide(reference, status, by, phone=None):
-    """Record a decision. Returns the visit, or None if it was decided or expired."""
+    """Record a decision. Returns the visit, or None if it was decided, expired, or is an
+    approval for a number on the blacklist."""
+    # In the UPDATE, so a YES or an automatic approval that races the ban loses.
+    listed = blacklist.not_listed("visits.phone") if status == db.APPROVED else ""
     with db.connect() as conn:
         row = conn.execute(
             "UPDATE visits SET status = %s, decided_at = %s, decided_by = %s, decided_phone = %s"
-            " WHERE reference = %s AND status IN (%s, %s) AND created_at >= %s RETURNING *",
+            " WHERE reference = %s AND status IN (%s, %s) AND created_at >= %s" + listed
+            + " RETURNING *",
             (status, db.now(), by, phone, reference, *db.OPEN_STATUSES, pass_cutoff()),
         ).fetchone()
     return to_dict(row) if row is not None else None
@@ -331,7 +340,7 @@ def expire_old():
 
 @db.writes
 def purge_old():
-    """Delete visits after the retention period. Returns how many went."""
+    """Delete visits, entries and blocked attempts after the retention period. Returns visits."""
     cutoff = db.ago(config.RETAIN_DAYS)
     with db.connect() as conn:
         # Photos and codes go first, with the same cutoff, in the same transaction.
@@ -346,4 +355,7 @@ def purge_old():
         ).rowcount
         conn.execute("DELETE FROM seen_messages WHERE seen < %s", (db.ago(1),))
         conn.execute("DELETE FROM photo_waits WHERE asked < %s", (db.ago(1),))
+        conn.execute("DELETE FROM staff_entries WHERE entered_at < %s", (cutoff,))
+        conn.execute("DELETE FROM blocked_attempts WHERE at < %s", (cutoff,))
+        conn.execute("DELETE FROM admin_changes WHERE at < %s", (cutoff,))
     return removed

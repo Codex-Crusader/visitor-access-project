@@ -1,4 +1,4 @@
-"""The people who approve requests and the guards at the gate."""
+"""The people who approve requests, the offices, and the guards and admins with keys."""
 
 import hashlib
 import secrets
@@ -9,87 +9,35 @@ import db
 
 @db.read
 def approver_table():
-    """Each reason's (main, backup): the admin page's choice, else the settings."""
+    """{"reasons": {reason: (main, backup)}, "offices": {name: (main, backup)}}.
+
+    A reason uses the admin page's choice, else the settings. "See an office" has no pair of
+    its own: offices have theirs, and a visit with no office goes to the pair for Other."""
     with db.connect() as conn:
         rows = conn.execute("SELECT reason, main, backup FROM approvers").fetchall()
-    table = dict(config.APPROVERS)
-    table.update({row["reason"]: (row["main"], row["backup"])
-                  for row in rows if row["reason"] in table})
-    return table
+        offices = conn.execute("SELECT name, main, backup FROM offices ORDER BY name").fetchall()
+    reasons = dict(config.APPROVERS)
+    reasons.update({row["reason"]: (row["main"], row["backup"])
+                    for row in rows if row["reason"] in reasons})
+    reasons.pop(config.OFFICE_REASON, None)
+    return {"reasons": reasons,
+            "offices": {row["name"]: (row["main"], row["backup"]) for row in offices}}
 
 
-def approvers_for(table, reason):
-    """(main, backup) for a visit's reason. A typed-in reason counts as the reason Other."""
-    return table.get(reason, table["Other"])
+def approvers_for(table, visit):
+    """(main, backup) for a visit: its office's pair, else its reason's, else the pair for Other.
+
+    A typed-in reason, and an office visit whose office is gone, go to Other."""
+    office = table["offices"].get(visit.get("office") or "")
+    if office:
+        return office
+    return table["reasons"].get(visit["reason"], table["reasons"]["Other"])
 
 
-def key_hash(key):
-    return hashlib.sha256(key.encode()).hexdigest()
-
-
-@db.cached
-@db.read
-def _guard_table():
-    """Every guard added on the admin page, by name. A short list, so it is read whole."""
-    with db.connect() as conn:
-        rows = conn.execute(
-            "SELECT name, phone, key_hash, added_at FROM guards ORDER BY name"
-        ).fetchall()
-    return [dict(row) for row in rows]
-
-
-def guards():
-    """The guards added on the admin page, by name. Never their key hash."""
-    return [{key: g[key] for key in ("name", "phone", "added_at")} for g in _guard_table()]
-
-
-def guard_by_phone(phone):
-    """The guard with this +number, as {name, phone}, or None."""
-    found = [g for g in _guard_table() if g["phone"] == phone]
-    return {"name": found[0]["name"], "phone": phone} if found else None
-
-
-def guard_by_key(key):
-    """The guard whose own gate key this is, as {name, phone}, or None."""
-    wanted = key_hash(key)
-    found = [g for g in _guard_table() if g["key_hash"] == wanted]
-    return {"name": found[0]["name"], "phone": found[0]["phone"]} if found else None
-
-
-def new_key():
-    return secrets.token_urlsafe(18)
-
-
-@db.writes
-def add_guard(name, phone):
-    """Add a guard. Returns their new gate key, or None when the number is already a guard."""
-    key = new_key()
-    with db.connect() as conn:
-        added = conn.execute(
-            "INSERT INTO guards (phone, name, key_hash, added_at) VALUES (%s, %s, %s, %s)"
-            " ON CONFLICT (phone) DO NOTHING",
-            (phone, name, key_hash(key), db.now()),
-        ).rowcount
-    return key if added == 1 else None
-
-
-@db.writes
-def renew_guard_key(phone):
-    """Give a guard a new gate key. The old one stops at once. None when no such guard."""
-    key = new_key()
-    with db.connect() as conn:
-        changed = conn.execute(
-            "UPDATE guards SET key_hash = %s WHERE phone = %s", (key_hash(key), phone)
-        ).rowcount
-    return key if changed == 1 else None
-
-
-@db.writes
-def remove_guard(phone):
-    """Remove a guard. Their key and their WhatsApp commands stop at once."""
-    with db.connect() as conn:
-        conn.execute("DELETE FROM guards WHERE phone = %s", (phone,))
-        conn.execute("DELETE FROM photo_waits WHERE guard = %s", (phone.lstrip("+"),))
+def every_approver(table):
+    """Every approver number, for reasons and offices, with repeats."""
+    pairs = [*table["reasons"].values(), *table["offices"].values()]
+    return [phone for pair in pairs for phone in pair]
 
 
 def save_approvers(reason, main, backup):
@@ -101,3 +49,145 @@ def save_approvers(reason, main, backup):
             " backup = EXCLUDED.backup, changed_at = EXCLUDED.changed_at",
             (reason, main, backup, db.now()),
         )
+
+
+@db.cached
+@db.read
+def office_names():
+    """The office names, for the visitor's list. Never a number."""
+    with db.connect() as conn:
+        rows = conn.execute("SELECT name FROM offices ORDER BY name").fetchall()
+    return [row["name"] for row in rows]
+
+
+@db.cached
+@db.read
+def offices():
+    """Every office with its numbers and tag, by tag then name. For the admin page."""
+    with db.connect() as conn:
+        rows = conn.execute(
+            "SELECT name, main, backup, tag, added_at FROM offices ORDER BY tag, name"
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def office_groups():
+    """The visitor's list: [{tag, offices}], tags A to Z, the untagged offices last."""
+    groups = {}
+    for office in sorted(offices(), key=lambda o: (o["tag"] == "", o["tag"], o["name"])):
+        groups.setdefault(office["tag"], []).append(office["name"])
+    return [{"tag": tag, "offices": names} for tag, names in groups.items()]
+
+
+@db.writes
+def add_office(name, main, backup, tag=""):
+    """Add an office. False when an office has that name, in any case."""
+    with db.connect() as conn:
+        return conn.execute(
+            "INSERT INTO offices (name, main, backup, added_at, tag) VALUES (%s, %s, %s, %s, %s)"
+            " ON CONFLICT DO NOTHING",
+            (name, main, backup, db.now(), tag),
+        ).rowcount == 1
+
+
+@db.writes
+def remove_office(name):
+    """Remove an office. Its open requests go to the approvers for Other. False if not found."""
+    with db.connect() as conn:
+        return conn.execute("DELETE FROM offices WHERE name = %s", (name,)).rowcount == 1
+
+
+def key_hash(key):
+    return hashlib.sha256(key.encode()).hexdigest()
+
+
+def new_key():
+    return secrets.token_urlsafe(18)
+
+
+# The two tables of people with their own key. Fixed names, so they go into SQL safely.
+GUARDS = "guards"
+ADMINS = "admins"
+KEY_TABLES = (GUARDS, ADMINS)
+
+
+@db.cached
+@db.read
+def _key_table(table):
+    """Every guard or admin added on the admin page, by name. A short list, so it is read whole."""
+    assert table in KEY_TABLES
+    # Only an admin can be a super admin.
+    extra = ", super" if table == ADMINS else ""
+    with db.connect() as conn:
+        rows = conn.execute(
+            f"SELECT name, phone, key_hash, added_at{extra} FROM {table} ORDER BY name"
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def _shown(table, row, fields=("name", "phone")):
+    """A row without its key hash. An admin's row says whether they are a super admin."""
+    return {key: row[key] for key in (*fields, *(("super",) if table == ADMINS else ()))}
+
+
+def holders(table):
+    """The guards or admins added on the admin page, by name. Never their key hash."""
+    return [_shown(table, g, ("name", "phone", "added_at")) for g in _key_table(table)]
+
+
+def holder_by_phone(table, phone):
+    """The guard or admin with this +number, as {name, phone} and super for an admin, or None."""
+    found = [g for g in _key_table(table) if g["phone"] == phone]
+    return _shown(table, found[0]) if found else None
+
+
+def holder_by_key(table, key):
+    """The guard or admin whose own key this is, as holder_by_phone() gives it, or None."""
+    wanted = key_hash(key)
+    found = [g for g in _key_table(table) if g["key_hash"] == wanted]
+    return _shown(table, found[0]) if found else None
+
+
+@db.writes
+def set_super(phone, flag):
+    """Make an added admin a super admin, or not. False when no such admin."""
+    with db.connect() as conn:
+        return conn.execute(
+            "UPDATE admins SET super = %s WHERE phone = %s", (bool(flag), phone)
+        ).rowcount == 1
+
+
+@db.writes
+def add_holder(table, name, phone):
+    """Add a guard or admin. Returns their new key, or None when the number is in the table."""
+    assert table in KEY_TABLES
+    key = new_key()
+    with db.connect() as conn:
+        added = conn.execute(
+            f"INSERT INTO {table} (phone, name, key_hash, added_at) VALUES (%s, %s, %s, %s)"
+            " ON CONFLICT (phone) DO NOTHING",
+            (phone, name, key_hash(key), db.now()),
+        ).rowcount
+    return key if added == 1 else None
+
+
+@db.writes
+def renew_key(table, phone):
+    """Give a guard or admin a new key. The old one stops at once. None when no such person."""
+    assert table in KEY_TABLES
+    key = new_key()
+    with db.connect() as conn:
+        changed = conn.execute(
+            f"UPDATE {table} SET key_hash = %s WHERE phone = %s", (key_hash(key), phone)
+        ).rowcount
+    return key if changed == 1 else None
+
+
+@db.writes
+def remove_holder(table, phone):
+    """Remove a guard or admin. Their key and their WhatsApp commands stop at once."""
+    assert table in KEY_TABLES
+    with db.connect() as conn:
+        conn.execute(f"DELETE FROM {table} WHERE phone = %s", (phone,))
+        if table == GUARDS:
+            conn.execute("DELETE FROM photo_waits WHERE guard = %s", (phone.lstrip("+"),))

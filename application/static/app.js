@@ -1,4 +1,6 @@
 const REASONS = ["See a student", "See an office", "Delivery", "Event", "Other"];
+// With this reason the visitor picks an office from the list the server sends.
+const OFFICE = "See an office";
 // Gap between status checks: often while waiting, less once approved or inside.
 const POLL_GAP = {pending:5000, escalated:5000, approved:10000, inside:30000};
 const POLL_SLOWEST = 60000;   // slowest gap after repeated failures
@@ -6,8 +8,8 @@ const POLL_TIMEOUT = 10000;   // give up on one status check
 const SEND_TIMEOUT = 75000;   // a sleeping free server can take ~50s to wake
 const LIVE_VIEWS = ["status", "home", "inout"];
 const MAX_GUESTS = 10;        // the server keeps no more than this
-const S = {s:"home", f:{name:"",phone:"",address:"",reason:"",other:"",visiting:"",guest:""}, g:[], e:{}, adding:0,
-  visit:null, cfg:{gate_desk_phone:"",escalate_minutes:15,retain_days:90,pass_hours:48}, err:"", hist:[], sheet:0,
+const S = {s:"home", f:{name:"",phone:"",address:"",reason:"",other:"",office:"",visiting:"",guest:""}, g:[], e:{}, adding:0,
+  visit:null, cfg:{gate_desk_phone:"",escalate_minutes:15,retain_days:90,pass_hours:48,offices:[]}, err:"", hist:[], sheet:0,
   wait:POLL_GAP.pending, down:0, seen:"", timer:0, busy:0};
 
 const el = i=>document.getElementById(i);
@@ -37,6 +39,16 @@ const T={home:["",0],step1:["Request a Visit",1],step2:["Request a Visit",1],rev
 const word=()=>({pending:"Not approved yet",escalated:"Not approved yet",approved:"Approved",expired:"Pass expired",
   declined:"Declined",inside:"Inside campus",closed:"Visit complete"}[st()]||"");
 const reasonText=()=>S.f.reason==="Other"?(S.f.other.trim()||"Other"):S.f.reason;
+// True when the visitor picks an office from a list. With no offices set up, they type the place.
+const officeList=()=>S.f.reason===OFFICE&&(S.cfg.offices||[]).length>0;
+const visitingText=()=>officeList()?S.f.office:S.f.visiting;
+const officeOption=o=>`<option value="${x(o)}"${o===S.f.office?" selected":""}>${x(o)}</option>`;
+// Grouped by tag when the server sends groups. One group with no tag needs no heading.
+const officeOptions=()=>{
+  const groups=S.cfg.office_groups||[];
+  if(!groups.length||(groups.length===1&&!groups[0].tag))return S.cfg.offices.map(officeOption).join("");
+  return groups.map(g=>`<optgroup label="${x(g.tag||"Other offices")}">${g.offices.map(officeOption).join("")}</optgroup>`).join("");
+};
 const ICONS={
  check:'<path d="M20 6 9 17l-5-5"/>',
  clock:'<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
@@ -46,14 +58,17 @@ const fact=(k,v)=>`<div><span>${k}</span><b>${x(v||"—")}</b></div>`;
 // mark() adds the aria attributes after render, so the template stays valid HTML.
 const flag=k=>S.e[k]?"bad":"";
 const note=k=>S.e[k]?`<div class="bad-note" id="e_${k}">${x(S.e[k])}</div>`:"";
-// A + button opens a box for one name. The server keeps ten guests, so the + goes at ten.
-const guestBox=()=>S.adding
-  ?`<div class="add-row"><input id="f_guest" class="${flag("guest")}" value="${x(S.f.guest)}"
+// A + button opens a box for one name, and stays under it for the next person.
+// The server keeps ten guests, so the + goes at ten, counting the name in the box.
+const guestBox=()=>{
+  const box=S.adding
+    ?`<div class="add-row"><input id="f_guest" class="${flag("guest")}" value="${x(S.f.guest)}"
       oninput="set('guest',this.value)" placeholder="Their name" aria-label="Name of the person with you" enterkeyhint="done">
       </div>${note("guest")}`
-  :S.g.length<MAX_GUESTS
-    ?`<button type="button" class="add-person" id="more" onclick="openAdd()"><span class="plus" aria-hidden="true">+</span>Add a person</button>`
     :"";
+  const room=S.g.length+(S.adding?1:0)<MAX_GUESTS;
+  return box+(room?`<button type="button" class="add-person" id="more" onclick="openAdd()"><span class="plus" aria-hidden="true">+</span>${S.adding?"Add another person":"Add a person"}</button>`:"");
+};
 const gate=()=>S.cfg.gate_desk_phone?`<a class="btn plain" href="tel:${x(S.cfg.gate_desk_phone)}">Call gate desk</a>`:"";
 
 const offlineNote=()=>S.down
@@ -110,12 +125,19 @@ function view(){
     ${note("reason")}
     ${S.f.reason==="Other"?`<input id="f_other" style="margin-top:10px" class="${flag("other")}" value="${x(S.f.other)}" oninput="set('other',this.value)" placeholder="Say briefly why">
       ${note("other")}`:""}
-    <label for="f_visiting">Who are you visiting?</label>
-    <input id="f_visiting" class="${flag("visiting")}" value="${x(S.f.visiting)}" oninput="set('visiting',this.value)" placeholder="Student name or roll number">
+    ${officeList()?`<label for="f_office">Which office?</label>
+    <select id="f_office" class="${flag("office")}" onchange="set('office',this.value)">
+      <option value="">Choose an office</option>
+      ${officeOptions()}
+    </select>
+    ${note("office")}
+    <p class="sm">The office's own approver gets your request.</p>`
+    :`<label for="f_visiting">${S.f.reason===OFFICE?"Which office?":"Who are you visiting?"}</label>
+    <input id="f_visiting" class="${flag("visiting")}" value="${x(S.f.visiting)}" oninput="set('visiting',this.value)" placeholder="${S.f.reason===OFFICE?"Office name":"Student name or roll number"}">
     ${note("visiting")}
     ${S.e.visiting===STAFF
       ?`<p class="sm">Staff no longer approve visits. Give the student name or the roll number.</p>`
-      :`<p class="sm">We pick the approver for you.</p>`}
+      :`<p class="sm">We pick the approver for you.</p>`}`}
     <label>Anyone with you?</label>
     ${S.g.map((g,i)=>`<div class="guest">${x(g)}<button onclick="drop(${i})">Remove</button></div>`).join("")}
     ${guestBox()}
@@ -125,7 +147,7 @@ function view(){
   case "review": return `${S.err?`<div class="state bad">${ico("cross")}<div><h3>Not sent</h3><p>${x(S.err)}</p></div></div>`:""}
     <div class="facts">
       ${fact("Name",S.f.name)}${fact("Phone",S.f.phone)}${fact("Address",S.f.address)}
-      ${fact("Reason",reasonText())}${fact("Visiting",S.f.visiting)}${S.g.length?fact("With you",S.g.join(", ")):""}
+      ${fact("Reason",reasonText())}${fact(S.f.reason===OFFICE?"Office":"Visiting",visitingText())}${S.g.length?fact("With you",S.g.join(", ")):""}
     </div>
     <p class="sm">No answer in ${S.cfg.escalate_minutes} minutes, and it moves to a backup approver. You do not fill this in again.</p>
     <button class="btn" onclick="send()">Send request</button>
@@ -186,14 +208,15 @@ function view(){
     <p class="sm">At the gate, the guard takes one photo of you before letting
     you in, on the gate desk page or on the campus guards' WhatsApp. A photo on
     the gate desk page is kept by this app with your visit, and only the campus
-    admin can see it. A photo on WhatsApp stays in that WhatsApp chat. No ID
-    number, no vehicle number.</p>
+    admins can see it. The admins can download it with the visit log, and the
+    campus then keeps that copy. A photo on WhatsApp stays in that WhatsApp chat.
+    No ID number, no vehicle number.</p>
     <p class="sm">When your visit is approved, the campus guards get a WhatsApp
     message with your name, your guests, the reason and who you are visiting.
     Not your phone number or address. That message stays in their WhatsApp chats.</p>
     <p class="sm">The campus keeps your request, the gate desk photo, and the times you entered and left,
-    for ${S.cfg.retain_days===1?"one day":S.cfg.retain_days+" days"}. After that it is
-    deleted automatically.
+    for ${S.cfg.retain_days===1?"one day":S.cfg.retain_days+" days"}. After that this app
+    deletes it automatically. A copy that an admin downloaded before then is kept by the campus.
     The gate desk can see these details while your visit is open. Once you
     check out, the gate desk sees only the times you came and went.</p>
     <p class="sm">This phone keeps a copy of your pass, so it opens without a
@@ -214,7 +237,7 @@ const STAFF="Name a student, not a staff member.";
 // Whole words only, so a student named Sirisha or Madhuri is not refused.
 const STAFF_WORDS=/\b(prof|professor|dr|sir|madam|ma'am)\b/i;
 const STEP1=["name","phone","address"];
-const STEP2=["reason","other","visiting","guest"];
+const STEP2=["reason","other","office","visiting","guest"];
 // Line breaks and invisible characters would forge lines in the approver's message.
 const NOT_TEXT=/[\p{C}\p{Zl}\p{Zp}]/u;
 const tidy=t=>String(t||"").trim().replace(/\s+/g," ");
@@ -294,11 +317,15 @@ function n2(){
     if(other)found.other=other;
   }
 
-  if(!tidy(S.f.visiting))found.visiting="Name the student you are visiting.";
+  if(officeList()){
+    if(!S.cfg.offices.includes(S.f.office))found.office="Choose the office you are visiting.";
+  }
+  else if(!tidy(S.f.visiting))found.visiting=S.f.reason===OFFICE?"Name the office you are visiting.":"Name the student you are visiting.";
   else{
     const who=needed("visiting","This");
     if(who)found.visiting=who;
-    else if(STAFF_WORDS.test(S.f.visiting))found.visiting=STAFF;
+    // An office visit may name a staff member. Only a student visit may not.
+    else if(S.f.reason!==OFFICE&&STAFF_WORDS.test(S.f.visiting))found.visiting=STAFF;
   }
 
   // A name typed but not added yet still counts.
@@ -317,12 +344,21 @@ function n2(){
 function pick(r){
   S.f.reason=r;
   delete S.e.reason;
+  delete S.e.office;
+  if(r!==OFFICE)S.f.office="";
   if(r!=="Other")S.f.other="";
   else delete S.e.other;
   render();
   if(r==="Other"){const i=el("f_other");if(i)i.focus()}
 }
 function openAdd(){
+  // A name in the open box is kept first, so each + adds one more person.
+  if(S.adding&&tidy(S.f.guest)){
+    const bad=needed("guest","That name");
+    if(bad){settle(["guest"],{guest:bad});return}
+    S.g.push(tidy(S.f.guest));
+    S.f.guest="";
+  }
   S.adding=1;
   render();
   const box=el("f_guest");
@@ -372,7 +408,7 @@ function saved(){
 }
 
 // A refused request, with the HTTP status the server gave.
-class Refused extends Error{constructor(message,status){super(message);this.status=status}}
+class Refused extends Error{constructor(message,status,data={}){super(message);this.status=status;this.data=data}}
 const unknown=err=>err instanceof Refused&&err.status===404;
 
 // Give up on a stalled request instead of hanging forever.
@@ -383,7 +419,7 @@ async function load(url,options={},ms=POLL_TIMEOUT){
   try{
     const r=await fetch(url,{...options,signal:stop.signal});
     const data=await r.json().catch(()=>({}));
-    if(!r.ok)throw new Refused(data.error||`Request failed (${r.status})`,r.status);
+    if(!r.ok)throw new Refused(data.error||`Request failed (${r.status})`,r.status,data);
     return data;
   }finally{clearTimeout(timer)}
 }
@@ -393,12 +429,23 @@ async function send(){
   try{
     S.visit=await load("/api/requests",{method:"POST",headers:{"Content-Type":"application/json"},
       body:JSON.stringify({name:S.f.name,phone:S.f.phone,address:S.f.address,
-        reason:reasonText(),visiting:S.f.visiting,guests:S.g})},SEND_TIMEOUT);
+        reason:reasonText(),visiting:visitingText(),office:officeList()?S.f.office:"",guests:S.g})},SEND_TIMEOUT);
     S.err="";
     keep(S.visit);
     S.hist=["home"];
     go("status",0);
   }catch(err){
+    // The office list on this page was old. Take the server's list and ask again.
+    if(err instanceof Refused&&Array.isArray(err.data.offices)){
+      S.cfg.offices=err.data.offices;
+      S.cfg.office_groups=err.data.office_groups||[];
+      S.f.office="";
+      S.err="";
+      S.hist=["home","step1"];
+      go("step2",0);
+      settle(STEP2,officeList()?{office:err.message}:{visiting:err.message});
+      return;
+    }
     S.err=err.message;
     S.hist=["home"];
     go("review",0);

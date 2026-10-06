@@ -12,6 +12,7 @@ import re
 import subprocess
 import sys
 import time
+import zipfile
 from datetime import datetime, timedelta, timezone
 
 import psycopg
@@ -42,6 +43,7 @@ import app as application
 import config
 import db
 import access
+import blacklist
 from routes import admin as admin_routes
 import checks
 import limits
@@ -49,8 +51,11 @@ import pages
 import timer
 from routes import webhook as webhook_routes
 import entries
+import export
 import migrations
 import people
+import staff
+import tags
 import visits
 import whatsapp
 
@@ -60,7 +65,7 @@ whatsapp.send = lambda to, body: sent.append((to, body))
 templates = []
 
 
-def fake_template(to, values):
+def fake_template(to, values, name=None):
     templates.append((to, values))
     sent.append((to, "\n".join(values)))
 
@@ -615,8 +620,9 @@ waiting_one = new_request()
 assert waiting_one["reference"] not in expected_refs + inside_refs  # pending
 # The board carries what the list shows, and nothing it does not.
 shown = board["expected"][0]
-assert set(shown) == {"reference", "name", "visiting", "guests", "status",
+assert set(shown) == {"reference", "name", "visiting", "guests", "status", "blacklisted",
                     "created_at", "decided_at", "entered_at", "expires_at"}, set(shown)
+assert "phone" not in shown, "the board never sends the phone"
 # The board is the one list every guard sees. It must hold no gate code.
 board_text = client.get("/api/gate/board", headers=KEY).get_data(as_text=True)
 assert not any(c in board_text for c in (entry_of(live), exit_of(live),
@@ -679,7 +685,7 @@ with db.connect() as conn:
 db.forget_cache()
 due = visits.due_for_escalation()
 assert [v["reference"] for v in due] == [b["reference"]], due
-whatsapp.notify_backup(due[0], people.approvers_for(people.approver_table(), due[0]["reason"]))
+whatsapp.notify_backup(due[0], people.approvers_for(people.approver_table(), due[0]))
 visits.mark_escalated(b["reference"])
 after = client.get(f"/api/visit/{b['token']}").get_json()
 assert after["status"] == "escalated" and after["escalated_at"]
@@ -844,7 +850,7 @@ while True:
         # The token is the visitor's private status link. It never leaves.
         assert "token" not in row, row
         table = people.approver_table()
-        assert row["approvers"] == list(people.approvers_for(table, row["reason"]))
+        assert row["approvers"] == list(people.approvers_for(table, row))
     seen += [row["reference"] for row in page["visits"]]
     cursor = page["next"]
     if not cursor:
@@ -866,7 +872,8 @@ assert client.get("/api/admin/visits?after=x", headers=ADMIN).status_code == 400
 
 summary = client.get("/api/admin/summary", headers=ADMIN).get_json()
 assert sum(summary["counts"].values()) == total
-assert [a["reason"] for a in summary["approvers"]] == list(config.REASONS)
+assert [a["reason"] for a in summary["approvers"]] == [
+    r for r in config.REASONS if r != config.OFFICE_REASON], "offices have their own pairs"
 assert client.get("/api/admin/export.csv", headers=ADMIN).status_code == 200
 # No list, summary or export holds a gate code. Only the visitor's pass does.
 live_codes = (entry_of(live), exit_of(live))
@@ -977,39 +984,56 @@ assert "attachment" in dump.headers["Content-Disposition"]
 
 import csv as _csv
 import io as _io
-rows = list(_csv.DictReader(_io.StringIO(dump.get_data(as_text=True))))
-head = rows[0].keys()
-for column in ("reference", "name", "status", "entered_at", "exited_at"):
-    assert column in head, column
 
-# The visitor who went in and out must carry both times.
-done = [r for r in rows if r["reference"] == ref2]
+
+def csv_rows(text):
+    """The rows of a CSV the app made. It starts with the UTF-8 mark, for Excel."""
+    assert text.startswith("﻿"), "Excel needs the mark to read every letter"
+    return list(_csv.DictReader(_io.StringIO(text[1:])))
+
+
+ZONE = config.WORK_TIMEZONE.key
+rows = csv_rows(dump.get_data(as_text=True))
+head = list(rows[0].keys())
+assert head[:5] == ["Reference", "Name", "Phone", "Address", "Reason"], head
+assert f"Entered ({ZONE})" in head and "Decided by" in head, head
+
+# The visitor who went in and out must carry both times, as campus time.
+done = [r for r in rows if r["Reference"] == ref2]
 assert len(done) == 1, done
-assert done[0]["status"] == "closed"
-assert done[0]["entered_at"] and done[0]["exited_at"], done[0]
-# Guests come out readable, not as JSON.
-assert done[0]["guests"] == "Ravi Rao", done[0]["guests"]
+assert done[0]["Status"] == "Left"
+stored = visits.get(ref2)
+assert done[0][f"Entered ({ZONE})"] == datetime.fromisoformat(stored["entered_at"]).astimezone(
+    config.WORK_TIMEZONE).strftime("%Y-%m-%d %H:%M"), done[0]
+assert done[0][f"Exited ({ZONE})"], done[0]
+# Guests come out readable, not as JSON. Who decided is named, not a code word.
+assert done[0]["People with them"] == "Ravi Rao", done[0]
+assert done[0]["Decided by"] == f"Approver {stored['decided_phone']}", done[0]["Decided by"]
 # The log says when the gate photo was taken, on the web gate as on WhatsApp.
-assert done[0]["photo_at"] == done[0]["entered_at"], done[0]
-photographed = next(r for r in rows if r["reference"] == code)
-assert photographed["photo_at"] == photographed["entered_at"], photographed
+assert done[0][f"Photo taken ({ZONE})"] == done[0][f"Entered ({ZONE})"], done[0]
+photographed = next(r for r in rows if r["Reference"] == code)
+assert photographed[f"Photo taken ({ZONE})"] == photographed[f"Entered ({ZONE})"], photographed
 # A visit that never entered has empty times rather than the word None.
-never = next(r for r in rows if r["status"] == "declined")
-assert never["entered_at"] == "" and never["exited_at"] == ""
+never = next(r for r in rows if r["Status"] == "Declined")
+assert never[f"Entered ({ZONE})"] == "" and never[f"Exited ({ZONE})"] == ""
+assert "None" not in dump.get_data(as_text=True)
 
 # The export quotes cells that spreadsheets would run as formulas.
 attack = dict(payload, name="=HYPERLINK(\"http://evil.test\",\"click\")",
               address="+1+1", reason="@SUM(1:9)", visiting="-2+3")
 assert client.post("/api/requests", json=attack).status_code == 201
 armed = client.get("/api/admin/export.csv", headers=ADMIN).get_data(as_text=True)
-row = next(r for r in _csv.DictReader(_io.StringIO(armed))
-           if r["name"].endswith('click")'))
-for column in ("name", "address", "reason", "visiting"):
+row = next(r for r in csv_rows(armed) if r["Name"].endswith('click")'))
+for column in ("Name", "Address", "Reason", "Visiting"):
     assert row[column].startswith("'"), (column, row[column])
 # The text itself is kept, only disarmed.
-assert row["name"] == "'=HYPERLINK(\"http://evil.test\",\"click\")"
+assert row["Name"] == "'=HYPERLINK(\"http://evil.test\",\"click\")"
 # Ordinary values are left exactly as they were.
-assert not row["reference"].startswith("'")
+assert not row["Reference"].startswith("'")
+# A checked +number shows as text, never as 9.19E+11 or with a quote. Anything else is disarmed.
+assert export.safe_cell("+919876543210") == '="+919876543210"'
+assert export.safe_cell('+91"),HYPERLINK("x').startswith("'")
+assert export.safe_cell("+1+1") == "'+1+1"
 print("  formula cells disarmed in the export")
 print(f"  {len(rows)} visits exported with entry and exit times")
 
@@ -1115,7 +1139,8 @@ try:
     counted_code = entry_of(counted)
     for label, call, most in (
         ("status check", lambda: client.get(f"/api/visit/{counted['token']}"), 1),
-        ("pass lookup", lambda: client.get(f"/api/pass/{counted_code}", headers=KEY), 1),
+        # 2: the pass, and the blacklist, which stays in memory until the next write.
+        ("pass lookup", lambda: client.get(f"/api/pass/{counted_code}", headers=KEY), 2),
         ("entry", lambda: client.post(f"/api/pass/{counted_code}/entry",
                                       headers=KEY, json=PHOTO), 2),
     ):
@@ -1124,7 +1149,7 @@ try:
         assert len(trips) <= most, (label, len(trips))
 
     # Repeated page reads cost no database trip until a write.
-    ravi_key = people.add_guard("Cache Guard", "+919800000777")
+    ravi_key = people.add_holder(people.GUARDS, "Cache Guard", "+919800000777")
     status = lambda: client.get(f"/api/visit/{counted['token']}")  # noqa: E731
     gate_board = lambda: client.get("/api/gate/board", headers={"X-Gate-Key": ravi_key})  # noqa: E731
     for label, call in (("status check", status), ("board with a guard's key", gate_board)):
@@ -1138,9 +1163,9 @@ try:
     assert status().get_json()["status"] == "closed", "a write is seen at once"
     assert len(trips) == 1, len(trips)
     trips.clear()
-    # Every write clears the whole cache, so the guard list is read again too.
-    assert gate_board().status_code == 200 and len(trips) == 2, len(trips)
-    people.remove_guard("+919800000777")
+    # Every write clears the whole cache, so the guard list and the blacklist are read again too.
+    assert gate_board().status_code == 200 and len(trips) == 3, len(trips)
+    people.remove_holder(people.GUARDS, "+919800000777")
     # An unknown token is never kept, so a scanner cannot fill the memory.
     for _ in range(2):
         trips.clear()
@@ -1161,22 +1186,25 @@ print("  status check 1, pass lookup 1, entry 2; a repeated poll 0 until the nex
 
 print("every write to a cached table clears the cache")
 # A new write function that forgets @writes fails here, not as stale pages later.
+# {table} is the guards or admins table in people.py.
 CACHED_TABLES = re.compile(
-    r"\b(INSERT INTO|UPDATE|DELETE FROM)\s+(visits|guards|photos|gate_codes)\b")
+    r"\b(INSERT INTO|UPDATE|DELETE FROM)\s+"
+    r"((visits|guards|admins|offices|staff|blacklist|photos|gate_codes)\b|\{table\})")
 forgot = []
-for module in ("db.py", "visits.py", "entries.py", "people.py"):
+for module in ("db.py", "visits.py", "entries.py", "people.py", "staff.py", "blacklist.py",
+               "tags.py"):
     with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), module),
               encoding="utf-8") as db_file:
         db_source = db_file.read()
     for node in ast.parse(db_source).body:
         if isinstance(node, ast.FunctionDef) and node.name != "migrate":
-            # @writes in db.py, @db.writes in the other three.
+            # @writes in db.py, @db.writes in the others.
             names = [getattr(d, "id", "") or getattr(d, "attr", "") for d in node.decorator_list]
             body = ast.get_source_segment(db_source, node) or ""
             if CACHED_TABLES.search(body) and "writes" not in names:
                 forgot.append(f"{module}: {node.name}")
 assert not forgot, f"these change cached tables without @writes: {forgot}"
-print("  every function that changes visits, guards, photos or codes has @writes")
+print("  every function that changes a cached table has @writes")
 
 print("a dropped connection is retried for reads, never for writes")
 tries = []
@@ -1637,6 +1665,671 @@ assert visits.get(by_page["reference"])["entered_by"] == RAVI_LABEL, "the log ke
 assert client.post("/api/admin/guards/remove", json={"phone": RAVI_PHONE},
                    headers=ADMIN).status_code == 404
 print("  KEY and the admin each make a new key, the old one stops, removal ends access")
+
+print("an office has its own two approvers, and the visitor picks it from a list")
+limits.forget_hits()
+OFFICE_MAIN, OFFICE_BACKUP = "+919700000001", "+919700000002"
+ACCOUNTS = {"name": "Accounts", "main": OFFICE_MAIN, "backup": OFFICE_BACKUP}
+
+
+def add_office(body, with_key=None):
+    return client.post("/api/admin/offices", json=body, headers=with_key or ADMIN)
+
+
+assert add_office(ACCOUNTS, with_key=KEY).status_code == 403, "the gate key adds no office"
+bad = add_office({"name": "", "main": "1", "backup": "1"})
+assert bad.status_code == 400 and set(bad.get_json()["fields"]) == {"name", "main", "backup"}
+same = add_office({**ACCOUNTS, "backup": OFFICE_MAIN})
+assert "different" in same.get_json()["fields"]["backup"], same.get_json()
+made = add_office(ACCOUNTS)
+listed_offices = [{k: o[k] for k in ACCOUNTS} for o in made.get_json()["offices"]]
+assert made.status_code == 200 and listed_offices == [ACCOUNTS], made.get_json()
+assert made.get_json()["offices"][0]["tag"] == "", "no tag given, no tag kept"
+assert add_office({**ACCOUNTS, "name": "accounts"}).status_code == 400, "one name, in any case"
+shown = client.get("/api/config").get_json()
+assert shown["offices"] == ["Accounts"] and OFFICE_MAIN not in str(shown), "names only"
+
+office_visit = {**payload, "reason": config.OFFICE_REASON, "visiting": "x", "office": "accounts"}
+assert client.post("/api/requests", json={**office_visit, "office": "Canteen"}).status_code == 400
+assert client.post("/api/requests", json={**office_visit, "office": ""}).status_code == 400
+to_office = client.post("/api/requests", json=office_visit).get_json()
+assert to_office["office"] == "Accounts" and to_office["visiting"] == "Accounts", to_office
+assert templates[-1][0] == OFFICE_MAIN, templates[-1]
+assert "Accounts" in templates[-1][1], "the approver reads which office"
+# Only the office's own approvers decide. They approve no reason, and still reach the app.
+assert "another approver" in say(APPROVER, f"YES {to_office['reference']}")
+assert "is now approved" in say(OFFICE_MAIN[1:], f"YES {to_office['reference']}")
+assert visits.get(to_office["reference"])["decided_phone"] == OFFICE_MAIN
+assert "another approver" in say(OFFICE_MAIN[1:], f"YES {new_request()['reference']}")
+# Escalation goes to the office's backup. The admin list names the office's pair.
+late_office = client.post("/api/requests", json=office_visit).get_json()
+with db.connect() as conn:
+    conn.execute("UPDATE visits SET created_at = %s WHERE reference = %s",
+                 (db.ago(1 / 24), late_office["reference"]))
+db.forget_cache()
+timer.escalate_due()
+assert templates[-1][0] == OFFICE_BACKUP, templates[-1]
+row = client.get(f"/api/admin/visits?q={late_office['reference']}", headers=ADMIN).get_json()
+assert row["visits"][0]["approvers"] == [OFFICE_MAIN, OFFICE_BACKUP], row
+assert row["visits"][0]["office"] == "Accounts"
+assert "office" in client.get("/api/admin/export.csv", headers=ADMIN).get_data(as_text=True)
+# A deleted office stops at once. Its open request goes to the reason's approvers.
+removed = client.post("/api/admin/offices/remove", json={"name": "Accounts"}, headers=ADMIN)
+assert removed.status_code == 200 and removed.get_json()["offices"] == []
+say(OFFICE_BACKUP[1:], f"YES {late_office['reference']}")
+assert visits.get(late_office["reference"])["status"] == "escalated", "the old office cannot decide"
+assert "is now approved" in say(APPROVER, f"YES {late_office['reference']}")
+assert client.post("/api/admin/offices/remove", json={"name": "Accounts"},
+                   headers=ADMIN).status_code == 404
+# With no offices, the reason works as before, with the place typed in.
+typed = client.post("/api/requests", json={**payload, "reason": config.OFFICE_REASON,
+                                           "visiting": "Library"})
+assert typed.status_code == 201 and typed.get_json()["office"] is None, typed.get_json()
+print("  routing, deciding, escalation and the fallback after a delete all follow the office")
+
+print("more admins, each with their own key, and none of them a guard")
+MEERA_PHONE, SUNIL_PHONE = "+919600000001", "+919600000002"
+
+
+def add_admin(admin_name, admin_phone, with_key=None):
+    return client.post("/api/admin/admins", json={"name": admin_name, "phone": admin_phone},
+                       headers=with_key or ADMIN)
+
+
+assert add_admin("Meera", MEERA_PHONE, with_key=KEY).status_code == 403
+assert add_admin("Main", config.ADMIN_PHONE).status_code == 400, "the main admin is one already"
+assert add_admin("Desk", config.GUARD).status_code == 400, "a guard must not get the admin key"
+summary = client.get("/api/admin/summary", headers=ADMIN).get_json()
+assert summary["you"] == access.MAIN_ADMIN and summary["main_admin"] == config.ADMIN_PHONE
+added = add_admin("Meera", MEERA_PHONE)
+assert added.status_code == 200, added.get_json()
+MEERA = {"X-Admin-Key": added.get_json()["key"]}
+summary = client.get("/api/admin/summary", headers=MEERA).get_json()
+assert summary["you"] == f"Meera {MEERA_PHONE}", summary["you"]
+assert [a["phone"] for a in summary["admins"]] == [MEERA_PHONE] and "key_hash" not in str(summary)
+assert add_admin("Meera again", MEERA_PHONE).status_code == 400
+assert client.post("/api/admin/guards", json={"name": "Meera", "phone": MEERA_PHONE},
+                   headers=ADMIN).status_code == 400, "an admin's number is no guard"
+assert client.post("/api/admin/guards", json={"name": "Sunil", "phone": SUNIL_PHONE},
+                   headers=MEERA).status_code == 200, "an added admin adds guards"
+assert add_admin("Sunil", SUNIL_PHONE).status_code == 400, "a guard's number is no admin"
+assert client.get("/api/admin/summary",
+                  headers={"X-Admin-Key": GATE_KEY_TEXT}).status_code == 403
+assert client.post("/api/admin/admins/remove", json={"phone": MEERA_PHONE},
+                   headers=MEERA).status_code == 409, "nobody deletes themselves"
+# KEY on WhatsApp gives an added admin a new key of their own.
+key_reply = say(MEERA_PHONE[1:], "KEY")
+assert "admin key" in key_reply and ADMIN_KEY_TEXT not in key_reply, key_reply
+MEERA2 = {"X-Admin-Key": key_reply.split("\n")[1]}
+assert client.get("/api/admin/summary", headers=MEERA).status_code == 403, "the old key stops"
+assert client.get("/api/admin/summary", headers=MEERA2).status_code == 200
+gone = client.post("/api/admin/admins/remove", json={"phone": MEERA_PHONE}, headers=ADMIN)
+assert gone.status_code == 200 and gone.get_json()["admins"] == []
+assert client.get("/api/admin/summary", headers=MEERA2).status_code == 403
+client.post("/api/admin/guards/remove", json={"phone": SUNIL_PHONE}, headers=ADMIN)
+print("  own key, KEY renews it, no guard overlap, no self-delete, delete stops it")
+
+print("staff enter with their 7-digit code, and the log names the guard")
+DEV_PHONE = "+919500000001"
+
+
+def add_staff(staff_name, staff_phone, with_key=None):
+    return client.post("/api/admin/staff", json={"name": staff_name, "phone": staff_phone},
+                       headers=with_key or ADMIN)
+
+
+assert add_staff("Dr Dev", DEV_PHONE, with_key=KEY).status_code == 403
+bad = add_staff("", "12")
+assert bad.status_code == 400 and set(bad.get_json()["fields"]) == {"name", "phone"}
+made = add_staff("Dr Dev", DEV_PHONE).get_json()
+dev_code = made["code"]
+assert re.fullmatch(r"[1-9]\d{6}", dev_code), dev_code
+assert [p["code"] for p in made["staff"]] == [dev_code]
+again = add_staff("Dev again", DEV_PHONE)
+assert again.status_code == 400, (again.status_code, again.get_data(as_text=True))
+assert whatsapp.read_reply(dev_code) == ("staff", None, dev_code)
+assert whatsapp.read_reply(f"in {dev_code[:3]} {dev_code[3:]}") == ("staff", None, dev_code)
+assert whatsapp.read_reply("40221")[0] == "lookup", "a reference is still a reference"
+
+sent.clear()
+client.post("/webhook/whatsapp", json=inbound(STRANGER, dev_code))
+assert not sent and not staff.recent_entries(), "a stranger's code records nothing"
+entry_reply = say(APPROVER, dev_code)
+assert entry_reply.startswith("Entry recorded: Dr Dev"), entry_reply
+assert "message about this entry was sent" in entry_reply, entry_reply
+to_dev = [body for to, body in sent if to == DEV_PHONE]
+assert len(to_dev) == 1 and "Campus entry recorded for Dr Dev" in to_dev[0], to_dev
+assert staff.recent_entries()[0]["entered_by"] == f"Gate desk {config.GUARD}"
+# A second send of the same code within 2 minutes records and sends nothing more.
+again_reply = say(APPROVER, f"IN {dev_code[:3]} {dev_code[3:]}")
+assert again_reply.startswith("Already recorded: Dr Dev"), again_reply
+assert len([to for to, _ in sent if to == DEV_PHONE]) == 1 and len(staff.recent_entries()) == 1
+
+
+def later():
+    """Moves every allow list entry 3 minutes back, past the repeat window."""
+    with db.connect() as conn:
+        conn.execute("UPDATE staff_entries SET entered_at = %s", (db.ago(3 / 1440),))
+
+
+later()
+assert say(APPROVER, f"IN {dev_code[:3]} {dev_code[3:]}").startswith("Entry recorded")
+later()
+unknown_code = "1000000" if dev_code != "1000000" else "1000001"
+assert "No one on the allow list" in say(APPROVER, unknown_code)
+
+# The gate page sees the name, never the number, and records who let them in.
+assert client.get(f"/api/staff/{dev_code}").status_code == 403
+seen = client.get(f"/api/staff/{dev_code}", headers=KEY).get_json()
+assert seen == {"code": dev_code, "name": "Dr Dev", "tag": "", "blacklisted": False}, seen
+assert client.get(f"/api/staff/{unknown_code}", headers=KEY).status_code == 404
+by_page = client.post(f"/api/staff/{dev_code}/entry", headers=KEY)
+assert by_page.status_code == 200 and DEV_PHONE not in by_page.get_data(as_text=True)
+assert by_page.get_json()["new"] is True and by_page.get_json()["told"] is True
+assert staff.recent_entries()[0]["entered_by"] == access.DESK_KEY
+double = client.post(f"/api/staff/{dev_code}/entry", headers=KEY).get_json()
+assert double["new"] is False and double["entered_at"] == by_page.get_json()["entered_at"]
+later()
+# With a template set, the message goes as that template. A failed message keeps the entry.
+config.STAFF_ENTRY_TEMPLATE = "staff_entry"
+try:
+    client.post(f"/api/staff/{dev_code}/entry", headers=KEY)
+    assert templates[-1][0] == DEV_PHONE and templates[-1][1][0] == "Dr Dev", templates[-1]
+finally:
+    config.STAFF_ENTRY_TEMPLATE = ""
+later()
+real_send = whatsapp.send
+
+
+def fails_for_dev(to, body):
+    """Meta refuses the message to the staff member. The guard's reply still goes out."""
+    if to == DEV_PHONE:
+        broken()
+    real_send(to, body)
+
+
+whatsapp.send = fails_for_dev
+try:
+    before = len(staff.recent_entries())
+    failed_send = client.post(f"/api/staff/{dev_code}/entry", headers=KEY)
+    assert failed_send.status_code == 200 and failed_send.get_json()["told"] is False
+    assert len(staff.recent_entries()) == before + 1
+    later()
+    assert "could not be sent" in say(APPROVER, dev_code), "the guard is told the truth"
+finally:
+    whatsapp.send = real_send
+later()
+summary = client.get("/api/admin/summary", headers=ADMIN).get_json()
+assert access.DESK_KEY in [e["entered_by"] for e in summary["staff_entries"]]
+# The ZIP holds every entry with its guard, and disarms a name that looks like a formula.
+sneaky_code = add_staff("=HYPERLINK(1)", "+919500000002").get_json()["code"]
+say(APPROVER, sneaky_code)
+allow_csv = zipfile.ZipFile(io.BytesIO(client.get("/api/admin/export.zip", headers=ADMIN)
+                                       .get_data())).read("allow-list-entries.csv").decode()
+allow_rows = csv_rows(allow_csv)
+assert list(allow_rows[0]) == [heading for heading, _ in export.ALLOW_COLUMNS], allow_rows[0]
+assert len(allow_rows) == len(staff.all_entries()), "every entry, not only the last 100"
+assert '="+919500000001"' in [r["WhatsApp number"] for r in allow_rows], "shown as text"
+assert f"Gate desk {config.GUARD}" in allow_csv and access.DESK_KEY in allow_csv
+assert "'=HYPERLINK(1)" in allow_csv, "a formula name gets a quote in front"
+client.post("/api/admin/staff/remove", json={"code": sneaky_code}, headers=ADMIN)
+# A sleeping database leaves the visitor page its settings, with no office list.
+real_names = people.office_names
+people.office_names = broken
+try:
+    with contextlib.redirect_stderr(io.StringIO()):
+        shown = client.get("/api/config")
+    assert shown.status_code == 200 and shown.get_json()["offices"] == [], shown.get_json()
+finally:
+    people.office_names = real_names
+assert summary["staff"][0]["code"] == dev_code
+
+# Deleted, the code stops at once. The entries stay until the retention period ends.
+gone = client.post("/api/admin/staff/remove", json={"code": dev_code}, headers=ADMIN)
+assert gone.status_code == 200 and gone.get_json()["staff"] == []
+assert "No one on the allow list" in say(APPROVER, dev_code)
+assert staff.recent_entries(), "the log keeps the entries"
+with db.connect() as conn:
+    conn.execute("UPDATE staff_entries SET entered_at = %s", (db.ago(2),))
+visits.purge_old()
+assert not staff.recent_entries(), "old staff entries are deleted"
+print("  a guard's code records at once, staff told, the page sees no number, delete stops it")
+
+print("the ZIP holds the log, a file for each gate page photo, and streams")
+limits.forget_hits()
+assert client.get("/api/admin/export.zip", headers=KEY).status_code == 403
+shot = approved()
+assert client.post(f"/api/pass/{entry_of(shot)}/entry", headers=KEY, json=PHOTO).status_code == 200
+by_phone_photo = approved()
+say(APPROVER, f"IN {entry_of(by_phone_photo)}")
+snap(APPROVER)
+download = client.get("/api/admin/export.zip", headers=ADMIN)
+assert download.headers["Content-Type"] == "application/zip"
+assert "visit-log-" in download.headers["Content-Disposition"]
+assert download.headers["Cache-Control"] == "no-store"
+assert download.is_streamed, "the ZIP streams, so photos never sit in memory together"
+archive = zipfile.ZipFile(io.BytesIO(download.get_data()))
+assert archive.testzip() is None, "every file in the ZIP reads back whole"
+log_rows = {row["Reference"]: row for row in csv_rows(archive.read("visits.csv").decode())}
+photo_name = log_rows[shot["reference"]]["Photo file"]
+assert photo_name == f"photos/{shot['reference']}.jpg", photo_name
+assert is_clean_photo(archive.read(photo_name)), "the stored, cleaned JPEG"
+assert log_rows[by_phone_photo["reference"]]["Photo file"] == "", "a WhatsApp photo is not stored"
+# The page shows each visit beside its photo, and escapes every value.
+page = archive.read("visits.html").decode()
+assert f'src="{photo_name}"' in page and shot["reference"] in page
+assert "Photo in the guard's WhatsApp chat" in page
+assert "=HYPERLINK(&quot;http://evil.test&quot;" in page and "<script" not in page
+assert "visits.html" in archive.read("README.txt").decode()
+stored = [n for n in archive.namelist() if n.startswith("photos/")]
+with db.connect() as conn:
+    kept = conn.execute("SELECT COUNT(*) AS n FROM photos WHERE image IS NOT NULL").fetchone()["n"]
+assert len(stored) == kept, (len(stored), kept)
+# Photos come in batches of 50 by reference: none twice, none missed.
+real_batch = entries.PHOTO_BATCH
+entries.PHOTO_BATCH = 2
+try:
+    batched = [reference for reference, _ in entries.stored_photos()]
+finally:
+    entries.PHOTO_BATCH = real_batch
+assert batched == sorted(set(batched)) and len(batched) == kept, batched
+print(f"  {kept} photos, each named in visits.csv, a WhatsApp photo left empty")
+
+print("a blacklisted number cannot ask, cannot enter, and the gate is told")
+limits.forget_hits()
+assert blacklist.phone_key("98765 43210") == blacklist.phone_key("+919876543210") == "9876543210"
+assert blacklist.phone_key("12345") is None
+
+
+def add_black(black_phone, black_name="Kiran", reason="Damaged property", with_key=None):
+    return client.post("/api/admin/blacklist", headers=with_key or ADMIN,
+                       json={"phone": black_phone, "name": black_name, "reason": reason})
+
+
+before_ban = approved()
+waiting_ban = new_request()
+assert add_black("+919876543210", with_key=KEY).status_code == 403
+bad = add_black("123", "", "line\nbreak")
+assert bad.status_code == 400 and set(bad.get_json()["fields"]) == {"phone", "name", "reason"}
+listed_now = add_black("+91 98765 43210")
+assert listed_now.status_code == 200, listed_now.get_json()
+assert [b["phone_key"] for b in listed_now.get_json()["blacklist"]] == ["9876543210"]
+assert add_black("9876543210").status_code == 400, "one number once"
+# The form's 10 digits match the +91 number. The page gets a neutral answer.
+refused_request = client.post("/api/requests", json=payload)
+assert refused_request.status_code == 403, refused_request.get_json()
+assert "cannot request a visit" in refused_request.get_json()["error"]
+assert "blacklist" not in refused_request.get_data(as_text=True).lower(), "it does not say why"
+# A pass approved before the ban: the gate sees it, and the entry is refused everywhere.
+seen_pass = client.get(f"/api/pass/{entry_of(before_ban)}", headers=KEY).get_json()
+assert seen_pass["blacklisted"] is True
+refused_entry = client.post(f"/api/pass/{entry_of(before_ban)}/entry", headers=KEY, json=PHOTO)
+assert refused_entry.status_code == 409 and "blacklist" in refused_entry.get_json()["error"]
+assert "blacklist" in say(APPROVER, f"IN {entry_of(before_ban)}")
+assert "blacklist" in say(APPROVER, entry_of(before_ban)), "a lookup says so too"
+# Banned between IN and the photo: the database statement itself refuses.
+client.post("/api/admin/blacklist/remove", json={"phone": "9876543210"}, headers=ADMIN)
+say(APPROVER, f"IN {entry_of(before_ban)}")
+add_black("9876543210")
+assert "blacklist" in snap(APPROVER)
+assert visits.get(before_ban["reference"])["status"] == "approved"
+with db.connect() as conn:
+    conn.execute("DELETE FROM blacklist")
+assert entries.check_in(before_ban["reference"], "test", JPEG) is not None, "off the list, it works"
+add_black("9876543210")
+say(APPROVER, f"YES {waiting_ban['reference']}")
+assert entries.check_in(waiting_ban["reference"], "test", JPEG) is None, "the UPDATE checks too"
+# The blacklist wins over the allow list.
+allowed_phone = "+919876543210"
+assert "blacklist" in add_staff("Kiran", allowed_phone).get_json()["fields"]["phone"]
+client.post("/api/admin/blacklist/remove", json={"phone": "9876543210"}, headers=ADMIN)
+kiran_code = add_staff("Kiran", allowed_phone).get_json()["code"]
+add_black("9876543210")
+assert "blacklist" in say(APPROVER, kiran_code)
+assert client.post(f"/api/staff/{kiran_code}/entry", headers=KEY).status_code == 409
+assert client.get(f"/api/staff/{kiran_code}", headers=KEY).get_json()["blacklisted"] is True
+# Off the list again, everything works.
+gone = client.post("/api/admin/blacklist/remove", json={"phone": "+919876543210"}, headers=ADMIN)
+assert gone.status_code == 200 and gone.get_json()["blacklist"] == []
+assert client.post("/api/admin/blacklist/remove", json={"phone": "9876543210"},
+                   headers=ADMIN).status_code == 404
+assert client.post("/api/requests", json=payload).status_code == 201
+client.post("/api/admin/staff/remove", json={"code": kiran_code}, headers=ADMIN)
+print("  no request, no entry by page, WhatsApp, photo or allow list code; lookups say so")
+
+print("each time the blacklist stops someone, the admin page shows it")
+limits.forget_hits()
+with db.connect() as conn:
+    conn.execute("DELETE FROM blocked_attempts")
+caught = approved()
+caught_code = add_staff("Kiran", "+919876543210").get_json()["code"]
+add_black("9876543210")
+
+
+def attempts():
+    return client.get("/api/admin/summary", headers=ADMIN).get_json()["blocked"]
+
+
+assert client.post("/api/requests", json=payload).status_code == 403
+first = attempts()[0]
+assert first["what"] == blacklist.ASKED and first["by_whom"] == blacklist.VISITOR_PAGE
+assert attempts()[0]["name"] == payload["name"] and attempts()[0]["phone"] == payload["phone"]
+# A board tap by reference is not an attempt. The entry code is: the person is at the gate.
+client.get(f"/api/pass/{caught['reference']}", headers=KEY)
+assert len(attempts()) == 1, "a board tap records nothing"
+
+
+def older():
+    """Moves every blocked attempt 11 minutes back, past the repeat window."""
+    with db.connect() as conn:
+        conn.execute("UPDATE blocked_attempts SET at = %s", (db.ago(11 / 1440),))
+
+
+client.get(f"/api/pass/{entry_of(caught)}", headers=KEY)
+assert attempts()[0]["what"] == blacklist.AT_GATE and attempts()[0]["by_whom"] == access.DESK_KEY
+assert attempts()[0]["detail"] == caught["reference"]
+# The same person again within 10 minutes is one attempt, so hammering does not fill the list.
+client.post(f"/api/pass/{entry_of(caught)}/entry", headers=KEY, json=PHOTO)
+say(APPROVER, f"IN {entry_of(caught)}")
+assert len(attempts()) == 2, [a["what"] for a in attempts()]
+older()
+say(APPROVER, f"IN {entry_of(caught)}")
+assert attempts()[0]["by_whom"] == f"Gate desk {config.GUARD}", "WhatsApp names the guard"
+older()
+say(APPROVER, entry_of(caught))
+say(APPROVER, caught["reference"])
+assert len(attempts()) == 4, "lookup by entry code counts, by reference does not"
+say(APPROVER, caught_code)
+older()
+client.get(f"/api/staff/{caught_code}", headers=KEY)
+older()
+client.post(f"/api/staff/{caught_code}/entry", headers=KEY)
+assert [a["what"] for a in attempts()[:3]] == [blacklist.ALLOW_CODE] * 3
+assert attempts()[0]["detail"] == caught_code
+assert len(attempts()) == 7, [a["what"] for a in attempts()]
+# The log download holds them all. The retention period deletes them.
+attempt_csv = zipfile.ZipFile(io.BytesIO(client.get("/api/admin/export.zip", headers=ADMIN)
+                                         .get_data())).read("blocked-attempts.csv").decode()
+assert len(csv_rows(attempt_csv)) == 7, attempt_csv
+with db.connect() as conn:
+    conn.execute("UPDATE blocked_attempts SET at = %s", (db.ago(2),))
+visits.purge_old()
+assert attempts() == []
+client.post("/api/admin/blacklist/remove", json={"phone": "9876543210"}, headers=ADMIN)
+client.post("/api/admin/staff/remove", json={"code": caught_code}, headers=ADMIN)
+print("  request, gate page, WhatsApp IN, entry code lookup and allow list code each recorded")
+
+print("worst cases: a ban while a request waits, an old office list, who changed what")
+limits.forget_hits()
+# A ban while requests wait: they are declined at once, and nothing approves them later.
+waiting_a, waiting_b = new_request(), new_request()
+already_ok = approved()
+with db.connect() as conn:
+    conn.execute("UPDATE visits SET auto_approve_at = %s WHERE reference = %s",
+                 ("2020-01-01T00:00:00+00:00", waiting_b["reference"]))
+banned_now = add_black("+91 98765 43210").get_json()
+assert set(banned_now["declined"]) >= {waiting_a["reference"], waiting_b["reference"]}
+assert already_ok["reference"] not in banned_now["declined"], "an approved pass stays approved"
+assert visits.get(waiting_a["reference"])["status"] == "declined"
+assert visits.get(waiting_a["reference"])["decided_by"] == db.BY_BLACKLIST
+timer.auto_approve_due()
+assert visits.get(waiting_b["reference"])["status"] == "declined", "the timer approves nothing"
+# A YES racing the ban: the request is still open, but the approval statement refuses it.
+with db.connect() as conn:
+    conn.execute("DELETE FROM blacklist")
+db.forget_cache()
+racing = new_request()
+with db.connect() as conn:
+    conn.execute("INSERT INTO blacklist (phone_key, phone, name, reason, added_at)"
+                 " VALUES ('9876543210', '+91 98765 43210', 'Kiran', '', %s)", (db.now(),))
+db.forget_cache()
+assert "on the blacklist" in say(APPROVER, f"YES {racing['reference']}")
+assert visits.get(racing["reference"])["status"] == "pending"
+assert visits.decide(racing["reference"], db.DECLINED, db.BY_MAIN) is not None, "NO still works"
+# The gate board marks a banned visitor, and never sends the phone.
+board_now = client.get("/api/gate/board", headers=KEY).get_json()
+marked = [v for v in board_now["expected"] if v["reference"] == already_ok["reference"]]
+assert marked and marked[0]["blacklisted"] is True and "phone" not in marked[0], marked
+client.post("/api/admin/blacklist/remove", json={"phone": "9876543210"}, headers=ADMIN)
+
+# An office deleted after the page loaded: the answer carries the list as it is now.
+add_office(ACCOUNTS)
+add_office({**ACCOUNTS, "name": "Library"})
+client.post("/api/admin/offices/remove", json={"name": "Accounts"}, headers=ADMIN)
+stale = client.post("/api/requests", json={**office_visit, "office": "Accounts"})
+assert stale.status_code == 400 and stale.get_json()["offices"] == ["Library"], stale.get_json()
+assert "not on the list now" in stale.get_json()["error"]
+client.post("/api/admin/offices/remove", json={"name": "Library"}, headers=ADMIN)
+
+# Every admin change is logged under the admin who made it, and never holds a key.
+with db.connect() as conn:
+    conn.execute("DELETE FROM admin_changes")
+made_admin = add_admin("Asha", "+919600000009").get_json()
+ASHA = {"X-Admin-Key": made_admin["key"]}
+client.post("/api/admin/guards", json={"name": "Mohan", "phone": "+919600000010"}, headers=ASHA)
+client.post("/api/admin/guards/new-key", json={"phone": "+919600000010"}, headers=ASHA)
+client.post("/api/admin/approvers", headers=ASHA,
+            json={"reason": "Event", "main": "+919600000011", "backup": "+919600000012"})
+say("919600000009", "KEY")
+client.post("/api/admin/guards/remove", json={"phone": "+919600000010"}, headers=ADMIN)
+client.post("/api/admin/admins/remove", json={"phone": "+919600000009"}, headers=ADMIN)
+log_rows = client.get("/api/admin/summary", headers=ADMIN).get_json()["changes"]
+seen_actions = [(c["by_whom"], c["action"]) for c in reversed(log_rows)]
+assert seen_actions == [
+    (access.MAIN_ADMIN, "Added an admin"),
+    ("Asha +919600000009", "Added a guard"),
+    ("Asha +919600000009", "Made a new gate key"),
+    ("Asha +919600000009", "Changed the approvers"),
+    ("KEY on WhatsApp from +919600000009", "Made a new admin key"),
+    (access.MAIN_ADMIN, "Deleted a guard"),
+    (access.MAIN_ADMIN, "Deleted an admin"),
+], seen_actions
+log_text = str(log_rows)
+assert made_admin["key"] not in log_text and ADMIN_KEY_TEXT not in log_text, "no key in the log"
+changes_csv = zipfile.ZipFile(io.BytesIO(client.get("/api/admin/export.zip", headers=ADMIN)
+                                         .get_data())).read("admin-changes.csv").decode()
+assert "Made a new admin key" in changes_csv
+
+# A stolen gate key cannot list the allow list: 30 codes a minute for each key.
+limits.forget_hits()
+tries = [client.get(f"/api/staff/{1000000 + n}", headers=KEY).status_code for n in range(35)]
+assert tries.count(429) == 5 and 404 in tries, tries
+limits.forget_hits()
+print("  bans decline waiting requests, YES cannot race a ban, offices refresh, changes logged")
+
+print("tags divide the offices and the allow list, and change without losing a code")
+limits.forget_hits()
+
+
+def tag_office(office_name, office_tag, n):
+    return add_office({"name": office_name, "main": f"+91970000{n:04d}",
+                       "backup": f"+91971000{n:04d}", "tag": office_tag})
+
+
+assert tag_office("Fees", "Admin Block", 1).status_code == 200
+assert tag_office("Exams", "admin block", 2).status_code == 200
+assert tag_office("Library", "", 3).status_code == 200
+by_name = {o["name"]: o["tag"] for o in client.get("/api/admin/summary", headers=ADMIN)
+           .get_json()["offices"]}
+assert by_name == {"Fees": "Admin Block", "Exams": "Admin Block", "Library": ""}, \
+    "a tag typed in another case joins the one in use"
+bad_tag = tag_office("Gym", "x" * 41, 4)
+assert bad_tag.status_code == 400 and "tag" in bad_tag.get_json()["fields"]
+assert tag_office("Gym", "Sports\nBlock", 4).status_code == 400, "one line only"
+# The visitor's list: grouped by tag, the untagged last. The flat list stays for old pages.
+shown = client.get("/api/config").get_json()
+assert shown["office_groups"] == [{"tag": "Admin Block", "offices": ["Exams", "Fees"]},
+                                  {"tag": "", "offices": ["Library"]}], shown["office_groups"]
+assert shown["offices"] == ["Exams", "Fees", "Library"]
+# Retag one row, then rename a tag on every row at once.
+assert client.post("/api/admin/offices/tag", json={"name": "Library", "tag": "Academic"},
+                   headers=KEY).status_code == 403
+moved = client.post("/api/admin/offices/tag", json={"name": "Library", "tag": "academic"},
+                    headers=ADMIN)
+assert moved.status_code == 200 and moved.get_json()["tag"] == "academic"
+assert client.post("/api/admin/offices/tag", json={"name": "Nope", "tag": "x"},
+                   headers=ADMIN).status_code == 404
+renamed = client.post("/api/admin/tags/rename", headers=ADMIN,
+                      json={"list": "offices", "old": "Admin Block", "new": "Main Building"})
+assert renamed.status_code == 200
+assert {o["name"]: o["tag"] for o in renamed.get_json()["offices"]} == {
+    "Fees": "Main Building", "Exams": "Main Building", "Library": "academic"}
+merged = client.post("/api/admin/tags/rename", headers=ADMIN,
+                     json={"list": "offices", "old": "academic", "new": "MAIN BUILDING"})
+assert {o["tag"] for o in merged.get_json()["offices"]} == {"Main Building"}, \
+    "a rename to a tag in use joins the two"
+assert client.post("/api/admin/tags/rename", headers=ADMIN,
+                   json={"list": "offices", "old": "Gone", "new": "x"}).status_code == 404
+assert client.post("/api/admin/tags/rename", headers=ADMIN,
+                   json={"list": "guards", "old": "x", "new": "y"}).status_code == 400
+cleared = client.post("/api/admin/tags/rename", headers=ADMIN,
+                      json={"list": "offices", "old": "Main Building", "new": ""})
+assert {o["tag"] for o in cleared.get_json()["offices"]} == {""}, "renamed to empty: no tag"
+# The allow list: a new tag keeps the person's code, and the gate sees the tag.
+physics = client.post("/api/admin/staff", headers=ADMIN, json={
+    "name": "Dr Iyer", "phone": "+919400000001", "tag": "Physics"}).get_json()
+assert physics["tag"] == "Physics"
+iyer_code = physics["code"]
+retagged = client.post("/api/admin/staff/tag", json={"code": iyer_code, "tag": "Visiting Faculty"},
+                       headers=ADMIN).get_json()
+iyer = [p for p in retagged["staff"] if p["code"] == iyer_code]
+assert iyer and iyer[0]["tag"] == "Visiting Faculty", "same code, new tag"
+assert client.get(f"/api/staff/{iyer_code}", headers=KEY).get_json()["tag"] == "Visiting Faculty"
+assert tags.existing("staff") == ["Visiting Faculty"], "each list has its own tags"
+assert "Visiting Faculty" not in tags.existing("offices")
+summary_now = client.get("/api/admin/summary", headers=ADMIN).get_json()
+logged = [c["action"] for c in summary_now["changes"]]
+assert "Changed an allow list tag" in logged and "Renamed an office tag" in logged, logged
+for office_name in ("Fees", "Exams", "Library"):
+    client.post("/api/admin/offices/remove", json={"name": office_name}, headers=ADMIN)
+client.post("/api/admin/staff/remove", json={"code": iyer_code}, headers=ADMIN)
+print("  same tag in any case, retag keeps the code, rename and join, grouped visitor list")
+
+print("a blacklisted number never blocks the approval of another number")
+limits.forget_hits()
+add_black("9123400000")
+other_number = new_request()
+approved_reply = say(APPROVER, f"YES {other_number['reference']}")
+assert "is now approved" in approved_reply, "the approval checks the visit's own number"
+with db.connect() as conn:
+    conn.execute("DELETE FROM blacklist")
+db.forget_cache()
+
+print("approvals on WhatsApp in any case, with the marks a phone adds")
+limits.forget_hits()
+small_yes, small_no, dotted = new_request(), new_request(), new_request()
+assert "is now approved" in say(APPROVER, f"yes {small_yes['reference'].lower()}")
+assert "is now declined" in say(APPROVER, f"No, {small_no['reference']}.")
+assert "is now approved" in say(APPROVER, f"Yes {dotted['reference']}.")
+assert visits.get(dotted["reference"])["status"] == "approved"
+only_one = new_request()
+for other in visits.open_requests():
+    if other["reference"] != only_one["reference"]:
+        visits.decide(other["reference"], db.DECLINED, db.BY_MAIN)
+say(APPROVER, "Yes, but wait")
+assert visits.get(only_one["reference"])["status"] == "pending", \
+    "words that are not a reference never decide the one waiting request"
+assert "is now approved" in say(APPROVER, "yes!"), "YES alone still decides the only one"
+print("  yes, Yes., No, and yes! all read; stray words never decide")
+
+print("a super admin approves or declines many requests at once")
+limits.forget_hits()
+with db.connect() as conn:
+    conn.execute("DELETE FROM admins")
+db.forget_cache()
+plain = add_admin("Ravi", "+919600000020").get_json()
+RAVI_ADMIN = {"X-Admin-Key": plain["key"]}
+boss = add_admin("Uma", "+919600000021").get_json()
+UMA = {"X-Admin-Key": boss["key"]}
+# Only a super admin makes a super admin. Nobody changes their own role.
+assert client.post("/api/admin/admins/super", json={"phone": "+919600000021", "super": True},
+                   headers=RAVI_ADMIN).status_code == 409, "409, so the page keeps Ravi's key"
+promoted = client.post("/api/admin/admins/super", json={"phone": "+919600000021", "super": True},
+                       headers=ADMIN)
+assert promoted.status_code == 200
+assert {a["phone"]: a["super"] for a in promoted.get_json()["admins"]} == {
+    "+919600000020": False, "+919600000021": True}
+assert client.get("/api/admin/summary", headers=UMA).get_json()["super"] is True
+assert client.get("/api/admin/summary", headers=RAVI_ADMIN).get_json()["super"] is False
+assert client.post("/api/admin/admins/super", json={"phone": "+919600000021", "super": False},
+                   headers=UMA).status_code == 409, "not on yourself"
+# A regular admin cannot take a super admin's place with a new key, nor delete them.
+for path in ("/api/admin/admins/new-key", "/api/admin/admins/remove"):
+    refused_super = client.post(path, json={"phone": "+919600000021"}, headers=RAVI_ADMIN)
+    assert refused_super.status_code == 409, (path, refused_super.status_code)
+assert client.get("/api/admin/summary", headers=UMA).status_code == 200, "Uma's key still works"
+assert client.post("/api/admin/admins/new-key", json={"phone": "+919600000020"},
+                   headers=UMA).status_code == 200, "a super admin renews a regular admin"
+RAVI_ADMIN = {"X-Admin-Key": client.post("/api/admin/admins/new-key", headers=UMA,
+                                         json={"phone": "+919600000020"}).get_json()["key"]}
+
+# The bulk call: only for a super admin, and each request is checked on its own.
+for other in visits.open_requests():
+    visits.decide(other["reference"], db.DECLINED, db.BY_MAIN)
+wave = [new_request() for _ in range(3)]
+done_before = approved()
+late_one = new_request()
+made_hours_ago(late_one, config.PASS_HOURS + 1)
+banned_one = client.post("/api/requests", json={**payload, "phone": "9123456780"}).get_json()
+add_black("9123456780")
+blocked_one = client.post("/api/requests", json={**payload, "phone": "9123456781"}).get_json()
+with db.connect() as conn:
+    conn.execute("INSERT INTO blacklist (phone_key, phone, name, reason, added_at)"
+                 " VALUES ('9123456781', '9123456781', 'X', '', %s)", (db.now(),))
+db.forget_cache()
+asked = [v["reference"] for v in wave] + [done_before["reference"], late_one["reference"],
+                                          banned_one["reference"], blocked_one["reference"],
+                                          "VR-00000"]
+assert client.post("/api/admin/decide", json={"references": asked, "decision": "approve"},
+                   headers=RAVI_ADMIN).status_code == 409
+assert client.post("/api/admin/decide", json={"references": asked, "decision": "maybe"},
+                   headers=UMA).status_code == 400
+assert client.post("/api/admin/decide", json={"references": ["VR-1"] * 2 + [
+    f"VR-{n}" for n in range(10000, 10101)], "decision": "approve"},
+    headers=UMA).status_code == 400, "100 at most"
+sent.clear()
+bulk = client.post("/api/admin/decide", json={"references": asked, "decision": "approve"},
+                   headers=UMA)
+assert bulk.status_code == 200, bulk.get_json()
+assert bulk.get_json()["decided"] == [v["reference"] for v in wave], bulk.get_json()
+why = {s["reference"]: s["why"] for s in bulk.get_json()["skipped"]}
+assert why == {done_before["reference"]: "Already approved.",
+               late_one["reference"]: "Expired.",
+               banned_one["reference"]: "Already declined.",
+               blocked_one["reference"]: "The number is on the blacklist.",
+               "VR-00000": "No request has this reference."}, why
+decided_now = visits.get(wave[0]["reference"])
+assert decided_now["decided_by"] == db.BY_ADMIN
+assert decided_now["decided_phone"] == "Uma +919600000021"
+visitor_text = client.get(f"/api/visit/{wave[0]['token']}").get_data(as_text=True)
+assert "decided_by" not in visitor_text and "Uma" not in visitor_text, "the visitor never sees who"
+# Each guard hears once, with the whole list, and never a gate code.
+to_desk = [body for to, body in sent if whatsapp.same_number(to, config.GUARD)]
+assert len(to_desk) == 1 and all(v["reference"] in to_desk[0] for v in wave), to_desk
+wave_codes = [code for v in wave for code in visits.codes_of(v["reference"]).values()]
+assert not any(code in to_desk[0] for code in wave_codes)
+# Bulk decline, and the change log names the admin.
+second = [new_request() for _ in range(2)]
+declined_all = client.post("/api/admin/decide", headers=UMA,
+                           json={"references": [v["reference"] for v in second],
+                                 "decision": "decline"}).get_json()
+assert declined_all["skipped"] == [] and all(
+    visits.get(v["reference"])["status"] == "declined" for v in second)
+log_now = client.get("/api/admin/summary", headers=ADMIN).get_json()["changes"]
+assert log_now[0]["action"] == "Declined 2 requests at once" and log_now[0]["by_whom"] == \
+    "Uma +919600000021"
+assert log_now[1]["action"] == "Approved 3 requests at once"
+# A long list is split under WhatsApp's limit.
+many = [{**wave[0], "reference": f"VR-{n}", "name": "A long visitor name " * 3, "guests": []}
+        for n in range(10000, 10100)]
+bodies = whatsapp.guard_list_bodies(many)
+assert len(bodies) > 1 and all(len(b) < 4096 for b in bodies)
+assert sum(b.count("VR-") for b in bodies) == 100, "every visitor named once"
+with db.connect() as conn:
+    conn.execute("DELETE FROM blacklist")
+    conn.execute("DELETE FROM admins")
+db.forget_cache()
+print("  only a super admin, each request checked alone, guards told once, all logged")
 
 # Last, because it closes the database for the rest of this process.
 print("on exit, the timer stops and the database closes before Python shuts down")

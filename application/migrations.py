@@ -111,6 +111,83 @@ ALTER TABLE photos ADD COLUMN image BYTEA;
 -- version, which always writes media_id, keeps working while Render deploys.
 ALTER TABLE photos ALTER COLUMN media_id DROP NOT NULL;
 """,
+    # 6: offices with their own approvers, more admins, the allow list and the blacklist.
+    """
+-- The offices a visitor picks under "See an office". Each has two approvers.
+-- tag groups the offices on the admin page and in the visitor's list. Empty is no tag.
+CREATE TABLE offices (
+  name     TEXT PRIMARY KEY,
+  main     TEXT NOT NULL,
+  backup   TEXT NOT NULL,
+  added_at TEXT NOT NULL,
+  tag      TEXT NOT NULL DEFAULT ''
+);
+-- "Accounts" and "accounts" are one office.
+CREATE UNIQUE INDEX offices_name_lower ON offices (lower(name));
+-- The office the visitor picked. Empty for other reasons and before this step.
+ALTER TABLE visits ADD COLUMN office TEXT;
+
+-- Admins added on the admin page, each with their own key. Only its hash is kept.
+-- super: may approve and decline requests in bulk. The main admin is always one.
+CREATE TABLE admins (
+  phone    TEXT PRIMARY KEY,
+  name     TEXT NOT NULL,
+  key_hash TEXT NOT NULL UNIQUE,
+  added_at TEXT NOT NULL,
+  super    BOOLEAN NOT NULL DEFAULT FALSE
+);
+
+-- The allow list: staff and faculty who enter without a request. A guard sends their 7-digit code.
+CREATE TABLE staff (
+  code     TEXT PRIMARY KEY,
+  name     TEXT NOT NULL,
+  phone    TEXT NOT NULL UNIQUE,
+  added_at TEXT NOT NULL,
+  tag      TEXT NOT NULL DEFAULT ''
+);
+
+-- Each staff entry. Name, number and guard are kept as they were at the gate.
+CREATE TABLE staff_entries (
+  id         BIGSERIAL PRIMARY KEY,
+  code       TEXT NOT NULL,
+  name       TEXT NOT NULL,
+  phone      TEXT NOT NULL,
+  entered_at TEXT NOT NULL,
+  entered_by TEXT NOT NULL
+);
+CREATE INDEX staff_entries_entered ON staff_entries (entered_at);
+
+-- Numbers that may not request a visit or enter. phone_key is the last 10 digits.
+CREATE TABLE blacklist (
+  phone_key TEXT PRIMARY KEY,
+  phone     TEXT NOT NULL,
+  name      TEXT NOT NULL,
+  reason    TEXT NOT NULL,
+  added_at  TEXT NOT NULL
+);
+
+-- Each time the blacklist stopped someone, for the admin page.
+CREATE TABLE blocked_attempts (
+  id      BIGSERIAL PRIMARY KEY,
+  phone   TEXT NOT NULL,
+  name    TEXT NOT NULL,
+  what    TEXT NOT NULL,
+  detail  TEXT NOT NULL,
+  by_whom TEXT NOT NULL,
+  at      TEXT NOT NULL
+);
+CREATE INDEX blocked_attempts_at ON blocked_attempts (at);
+
+-- Who changed a list, a number or a key on the admin page or by KEY. Never the key itself.
+CREATE TABLE admin_changes (
+  id      BIGSERIAL PRIMARY KEY,
+  at      TEXT NOT NULL,
+  by_whom TEXT NOT NULL,
+  action  TEXT NOT NULL,
+  detail  TEXT NOT NULL
+);
+CREATE INDEX admin_changes_at ON admin_changes (at);
+""",
 ]
 
 # Advisory lock id, so two starting instances never run a step twice.
