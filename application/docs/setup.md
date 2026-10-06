@@ -51,8 +51,26 @@ and into a `.env` file on your own machine. Never put it in git or in a chat.
 
 ## Step 3: The code on GitHub
 
-Put the code in a GitHub repository. The `.gitignore` file keeps `.env` out
-of the repository.
+The app is in the `application/` folder of the project repository,
+https://github.com/Codex-Crusader/visitor-access-project. The file
+`render.yaml` is at the top of the repository, next to that folder. Keep
+this layout. Render looks for the app in `application/`, and the setup
+fails if the app is at the top.
+
+1. Sign in to GitHub with the campus account.
+2. Open https://github.com/new/import, and type the project repository's
+   address. Pick the campus account as the owner, and pick Private. The
+   copy then belongs to the campus, and it stays when the original changes
+   or goes away.
+3. In the copy, make sure that `render.yaml` and the `application/` folder
+   are at the top.
+
+If you got the code as files and not as a link, make a new private
+repository. Upload the files so that `render.yaml` and the `application/`
+folder are at the top.
+
+The `.gitignore` file keeps `.env` out of the repository. The copy holds no
+key or password. Those go only into Render, in step 4.
 
 ## Step 4: The app on Render
 
@@ -61,6 +79,8 @@ its region, its commands, and the settings that have a fixed value. Render
 reads it as a Blueprint, so you type only the values that are yours.
 
 1. On https://render.com, click New, then Blueprint, and pick the repository.
+   The first time, Render asks to connect your GitHub account. Give it
+   access to the campus copy from step 3.
 2. Render shows the service from `render.yaml` and asks for each value that
    the file leaves empty. Type them. "Settings" below says what each one is.
 3. Click Apply. When Render says Live, it shows the app's address at the top
