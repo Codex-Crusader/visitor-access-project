@@ -1,6 +1,6 @@
-"""The admin's downloads: the visit log as CSV, and a ZIP with every log, the photos, and a page
-that shows each visit beside its photo. The ZIP streams, so thousands of photos never sit in
-memory at once. Times are campus time, and every column has a plain heading."""
+"""The admin's downloads: the visit log as a ZIP with the photos and a page that shows each
+visit beside its photo, and the staff entry log as its own CSV. The ZIP streams, so thousands of
+photos never sit in memory at once. Times are campus time, and every column has a plain heading."""
 
 import csv
 import html
@@ -19,11 +19,11 @@ import visits
 ZONE = config.WORK_TIMEZONE.key
 
 
-def local(stamp):
+def local(stamp, shape="%Y-%m-%d %H:%M"):
     """A stored UTC time as campus time, as 2026-10-06 16:05. A spreadsheet reads it as a date."""
     if not stamp:
         return ""
-    return datetime.fromisoformat(stamp).astimezone(config.WORK_TIMEZONE).strftime("%Y-%m-%d %H:%M")
+    return datetime.fromisoformat(stamp).astimezone(config.WORK_TIMEZONE).strftime(shape)
 
 
 STATUS_WORDS = {
@@ -67,8 +67,10 @@ ZIP_VISIT_COLUMNS = (
     *VISIT_COLUMNS,
     ("Photo file", lambda v: photo_file(v["reference"]) if v["photo_stored"] else ""),
 )
+# The date in its own column, so a spreadsheet filter shows one day's entries.
 ALLOW_COLUMNS = (
-    (f"Entered ({ZONE})", lambda e: local(e["entered_at"])), ("Name", "name"),
+    (f"Date ({ZONE})", lambda e: local(e["entered_at"], "%Y-%m-%d")),
+    (f"Time ({ZONE})", lambda e: local(e["entered_at"], "%H:%M")), ("Name", "name"),
     ("Allow list code", "code"), ("WhatsApp number", "phone"), ("Recorded by", "entered_by"),
 )
 BLOCKED_COLUMNS = (
@@ -109,13 +111,20 @@ def csv_text(columns, rows):
     return buffer.getvalue()
 
 
+def staff_entries_csv():
+    """Every staff entry still kept, oldest first, one row each."""
+    return csv_text(ALLOW_COLUMNS, staff.all_entries())
+
+
 def visit_rows():
     """Every visit, oldest first."""
     return visits.all_visits()
 
 
 def file_name(name, extension):
-    stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    """The name with the campus date, the same date as the rows. Not UTC: at 02:00 in India it is
+    still yesterday in UTC."""
+    stamp = datetime.now(config.WORK_TIMEZONE).strftime("%Y-%m-%d")
     return f"{name}-{stamp}.{extension}"
 
 
@@ -123,10 +132,12 @@ README = """The visit log from the campus visitor access app, downloaded {stamp}
 
 visits.html            Open it in a browser: each visit with its gate photo.
 visits.csv             Every visit, one row each. "Photo file" names its photo.
-allow-list-entries.csv Every allow list entry, and the guard who recorded it.
 blocked-attempts.csv   Each time the blacklist stopped someone.
 admin-changes.csv      Who changed what on the admin page, or by KEY.
 photos/                The photos taken on the gate page, named by reference.
+
+The staff entry log, each allow list entry and the guard who recorded it, is
+a separate file: staff-entries-<date>.csv. Download log saves both files.
 
 Times are campus time, {zone}. A photo sent on WhatsApp is not here: it stays
 in the guard's WhatsApp chat. This copy holds personal details and faces.
@@ -203,7 +214,6 @@ def zip_parts():
         archive.writestr("README.txt", README.format(stamp=stamp, zone=ZONE))
         archive.writestr("visits.html", visits_page(rows, stamp))
         archive.writestr("visits.csv", csv_text(ZIP_VISIT_COLUMNS, rows))
-        archive.writestr("allow-list-entries.csv", csv_text(ALLOW_COLUMNS, staff.all_entries()))
         archive.writestr("blocked-attempts.csv",
                          csv_text(BLOCKED_COLUMNS, blacklist.all_attempts()))
         archive.writestr("admin-changes.csv", csv_text(CHANGE_COLUMNS, audit.everything()))

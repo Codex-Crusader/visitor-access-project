@@ -143,7 +143,33 @@ def admin_summary():
         work_days=[config.WEEKDAYS[day] for day in sorted(config.WORK_DAYS)],
         retain_days=config.RETAIN_DAYS,
         pass_hours=config.PASS_HOURS,
+        setup_gaps=setup_gaps(),
     )
+
+
+# The example number in the setup guide. Nobody answers it.
+EXAMPLE_DESK_PHONE = "+912200000000"
+
+
+def setup_gaps():
+    """Server settings still at a demo value. Warnings only: the app runs, but not as it should."""
+    gaps = []
+    if whatsapp.same_number(config.GATE_DESK_PHONE, EXAMPLE_DESK_PHONE):
+        gaps.append(f"GATE_DESK_PHONE is the example number {EXAMPLE_DESK_PHONE}. Call gate desk"
+                    " on the visitor page dials a number that nobody answers.")
+    if access.admin_phone_is_guard():
+        gaps.append("ADMIN_PHONE is a guard's number, so Forgot admin key? is off."
+                    " Set it to the admin's own WhatsApp number.")
+    elif not config.ADMIN_PHONE_SET:
+        gaps.append("ADMIN_PHONE is not set, so Forgot admin key? sends the admin key to"
+                    " MAIN_APPROVER. Set it to the admin's own WhatsApp number.")
+    if not config.STAFF_ENTRY_TEMPLATE:
+        gaps.append("STAFF_ENTRY_TEMPLATE is not set, so most staff get no WhatsApp message about"
+                    " their entry. Get the staff_entry template approved, then set it.")
+    if config.TEMPLATE_FALLBACK:
+        gaps.append("TEMPLATE_FALLBACK is on. It hides a template that Meta refuses."
+                    " Turn it off when Meta approves the visit_request template.")
+    return gaps
 
 
 def approver_rows(table):
@@ -222,9 +248,25 @@ def admin_export_csv():
     )
 
 
+@bp.get("/api/admin/staff-entries.csv")
+def admin_staff_entries_csv():
+    """The staff entry log: each allow list entry and the guard who recorded it."""
+    refused = access.admin_refusal()
+    if refused:
+        return refused
+    response = Response(
+        export.staff_entries_csv(),
+        mimetype="text/csv; charset=utf-8",
+        headers={"Content-Disposition":
+                 f'attachment; filename="{export.file_name("staff-entries", "csv")}"'},
+    )
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
+
 @bp.get("/api/admin/export.zip")
 def admin_export_zip():
-    """The visit log, the allow list entries and every gate page photo, in one ZIP."""
+    """The visit log and every gate page photo, in one ZIP. Staff entries are a separate file."""
     refused = access.admin_refusal()
     if refused:
         return refused

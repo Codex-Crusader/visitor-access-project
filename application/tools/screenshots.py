@@ -56,9 +56,11 @@ BASE = f"http://127.0.0.1:{PORT}"
 GATE_KEY, ADMIN_KEY = "demo-gate-key-long-enough", "demo-admin-key-long-enough"
 APPROVER = "919000000001"
 PHONE = {"viewport": {"width": 428, "height": 1000}, "device_scale_factor": 2,
-         "is_mobile": True, "has_touch": True, "locale": "en-IN", "timezone_id": "Asia/Kolkata"}
+         "is_mobile": True, "has_touch": True, "locale": "en-IN", "timezone_id": "Asia/Kolkata",
+         "reduced_motion": "reduce"}
+# Reduced motion: no picture catches a colour change halfway.
 DESKTOP = {"viewport": {"width": 1100, "height": 900}, "device_scale_factor": 2,
-           "locale": "en-IN", "timezone_id": "Asia/Kolkata"}
+           "locale": "en-IN", "timezone_id": "Asia/Kolkata", "reduced_motion": "reduce"}
 
 
 def no_network(*_args, **_kwargs):
@@ -99,28 +101,59 @@ def move_back(reference, minutes):
     db.forget_cache()
 
 
-def add_visits():
-    """Five visits, one in each state the admin page counts."""
-    guard = client.post("/api/admin/guards", headers={"X-Admin-Key": ADMIN_KEY},
+ADMIN = {"X-Admin-Key": ADMIN_KEY}
+# Made-up offices, people and numbers only: no real person is in a picture.
+OFFICES = [("Admissions Office", "+919000000011", "Main Building"),
+           ("Accounts Office", "+919000000012", "Main Building"),
+           ("Library", "+919000000013", "Library Block")]
+STAFF = [("Dr Anita Rao", "+919000000021", "Faculty"),
+         ("Prof Vikram Joshi", "+919000000022", "Faculty"),
+         ("Sunita Pawar", "+919000000023", "Staff"),
+         ("Ganesh More", "+919000000024", "Staff")]
+
+
+def add_team():
+    """Offices, an allow list with tags, and a blacklisted number. Returns the staff codes."""
+    for name, phone, tag in OFFICES:
+        client.post("/api/admin/offices", headers=ADMIN,
+                    json={"name": name, "main": phone, "backup": "", "tag": tag})
+    codes = {}
+    for name, phone, tag in STAFF:
+        made = client.post("/api/admin/staff", headers=ADMIN,
+                           json={"name": name, "phone": phone, "tag": tag}).get_json()
+        codes[name] = made["code"]
+    client.post("/api/admin/blacklist", headers=ADMIN,
+                json={"name": "Blocked Visitor", "phone": "+919000000099",
+                      "reason": "Made-up entry for the pictures"})
+    return codes
+
+
+def add_visits(codes):
+    """Five visits, one in each state the admin page counts, and two staff entries."""
+    guard = client.post("/api/admin/guards", headers=ADMIN,
                         json={"name": "Suresh", "phone": "+919000000005"}).get_json()
     suresh = {"X-Gate-Key": guard["key"]}
+    for name in ("Prof Vikram Joshi", "Sunita Pawar"):
+        client.post(f"/api/staff/{codes[name]}/entry", headers=suresh)
     photo = grey_photo()
     made_up = [
         ("Kavita Shah", "9820011223", "Delivery", "Main office", [], "closed", 180),
         ("Arjun Mehta", "9820044556", "See a student", "2024SEPVUGP0017", ["Neha Mehta"],
          "inside", 95),
         ("Farah Khan", "9820077889", "Event", "Music society", [], "declined", 70),
-        ("Rohan Iyer", "9820022334", "See an office", "Admissions office", [], "approved", 40),
+        ("Rohan Iyer", "9820022334", "See an office", "Accounts Office", [], "approved", 40),
         ("Priya Desai", "9820055667", "See a student", "2023SEPVUGP0042", ["Anil Desai"],
          "pending", 5),
     ]
     for name, phone, reason, visiting, guests, state, minutes in made_up:
+        office = visiting if reason == "See an office" else ""
         made = client.post("/api/requests", json={
             "name": name, "phone": phone, "address": "Karjat, Raigad", "reason": reason,
-            "visiting": visiting, "guests": guests}).get_json()
+            "visiting": visiting, "office": office, "guests": guests}).get_json()
         reference = made["reference"]
         if state != "pending":
-            say(APPROVER, f"{'NO' if state == 'declined' else 'YES'} {reference}")
+            decider = "919000000012" if reason == "See an office" else APPROVER
+            say(decider, f"{'NO' if state == 'declined' else 'YES'} {reference}")
         codes = visits.codes_of(reference)
         if state in ("inside", "closed"):
             client.post(f"/api/pass/{codes['entry']}/entry", headers=suresh, json=photo)
@@ -150,7 +183,7 @@ def save(page, folder, name, content="#view *"):
     print("saved", name)
 
 
-def take_pictures(browser, folder):
+def take_pictures(browser, folder, codes):
     visitor = browser.new_context(**PHONE).new_page()
     visitor.goto(BASE + "/")
     visitor.wait_for_selector("text=Request a Visit")
@@ -161,8 +194,8 @@ def take_pictures(browser, folder):
     visitor.fill("#f_phone", "9820088990")
     visitor.fill("#f_address", "Karjat, Raigad")
     visitor.click("text=Continue")
-    visitor.click("#f_reason >> text=See a student")
-    visitor.fill("#f_visiting", "2024SEPVUGP0003")
+    visitor.click("#f_reason >> text=See an office")
+    visitor.select_option("#f_office", "Admissions Office")
     visitor.click("#more")
     visitor.fill("#f_guest", "Nikhil Nair")
     visitor.press("#f_guest", "Enter")
@@ -174,7 +207,7 @@ def take_pictures(browser, folder):
     visitor.wait_for_selector("text=Not approved yet")
     save(visitor, folder, "app-03-waiting.png")
 
-    say(APPROVER, f"YES {newest_reference()}")
+    say("919000000011", f"YES {newest_reference()}")
     visitor.wait_for_selector("h3:has-text('Approved')", timeout=20000)
     visitor.click("text=Open pass")
     visitor.wait_for_selector(".pass b")
@@ -191,6 +224,13 @@ def take_pictures(browser, folder):
     desk.wait_for_selector("text=Let them in")
     save(desk, folder, "app-05-gate.png", "#out *")
 
+    desk.click("text=Next visitor")
+    desk.click("#modes >> text=Staff code")
+    desk.fill("#code", codes["Dr Anita Rao"])
+    desk.click("#look")
+    desk.wait_for_selector("text=On the allow list")
+    save(desk, folder, "app-07-gate-staff.png", "#out *")
+
     admin = browser.new_context(**DESKTOP)
     admin.add_init_script(f"localStorage.setItem('adminkey','{ADMIN_KEY}')")
     board = admin.new_page()
@@ -198,21 +238,26 @@ def take_pictures(browser, folder):
     board.wait_for_selector("text=Meera Nair")
     board.screenshot(path=os.path.join(folder, "app-06-admin.png"), full_page=True)
     print("saved app-06-admin.png")
+    board.click("[role=tab] >> text=Allow list")
+    board.wait_for_selector("text=Dr Anita Rao")
+    board.screenshot(path=os.path.join(folder, "app-08-admin-allow.png"), full_page=True)
+    print("saved app-08-admin-allow.png")
 
 
 def main():
     folder = sys.argv[1] if len(sys.argv) > 1 else "pictures"
     os.makedirs(folder, exist_ok=True)
     db.init()
-    add_visits()
-    # One line per request would hide the six "saved" lines.
+    codes = add_team()
+    add_visits(codes)
+    # One line per request would hide the "saved" lines.
     logging.getLogger("werkzeug").setLevel(logging.WARNING)
     server = make_server("127.0.0.1", PORT, application.app, threaded=True)
     threading.Thread(target=server.serve_forever, daemon=True).start()
     try:
         with sync_playwright() as playwright:
             browser = playwright.chromium.launch(channel="chrome")
-            take_pictures(browser, folder)
+            take_pictures(browser, folder, codes)
             browser.close()
     finally:
         server.shutdown()

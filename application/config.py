@@ -43,6 +43,7 @@ BACKUP_APPROVER = os.getenv("BACKUP_APPROVER", "").strip() or MAIN_APPROVER
 GUARD = os.getenv("GUARD", "").strip() or MAIN_APPROVER
 # Gets the admin key on "Forgot admin key?". The gate key goes to GUARD.
 ADMIN_PHONE = os.getenv("ADMIN_PHONE", "").strip() or MAIN_APPROVER
+ADMIN_PHONE_SET = bool(os.getenv("ADMIN_PHONE", "").strip())
 
 # Same list as REASONS in static/app.js. "Other" also covers typed-in reasons.
 REASONS = ("See a student", "See an office", "Delivery", "Event", "Other")

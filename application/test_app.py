@@ -873,6 +873,23 @@ assert client.get("/api/admin/visits?after=x", headers=ADMIN).status_code == 400
 
 summary = client.get("/api/admin/summary", headers=ADMIN).get_json()
 assert sum(summary["counts"].values()) == total
+# Demo values in the server settings are named for the admin. Fixed, each one goes away.
+gaps = " ".join(summary["setup_gaps"])
+assert "GATE_DESK_PHONE" in gaps and "STAFF_ENTRY_TEMPLATE" in gaps, gaps
+assert "ADMIN_PHONE" not in gaps and "TEMPLATE_FALLBACK" not in gaps, gaps
+real_settings = (config.GATE_DESK_PHONE, config.STAFF_ENTRY_TEMPLATE, config.ADMIN_PHONE_SET)
+config.GATE_DESK_PHONE, config.STAFF_ENTRY_TEMPLATE = "+912212345678", "staff_entry"
+config.ADMIN_PHONE_SET = False
+try:
+    gaps = client.get("/api/admin/summary", headers=ADMIN).get_json()["setup_gaps"]
+    assert len(gaps) == 1 and "ADMIN_PHONE is not set" in gaps[0], gaps
+    config.ADMIN_PHONE_SET = True
+    assert client.get("/api/admin/summary", headers=ADMIN).get_json()["setup_gaps"] == []
+finally:
+    config.GATE_DESK_PHONE, config.STAFF_ENTRY_TEMPLATE, config.ADMIN_PHONE_SET = real_settings
+# A download's name has the campus date, as its rows do, not the UTC date.
+assert export.file_name("x", "csv") == (
+    f"x-{datetime.now(config.WORK_TIMEZONE).strftime('%Y-%m-%d')}.csv")
 assert [a["reason"] for a in summary["approvers"]] == [
     r for r in config.REASONS if r != config.OFFICE_REASON], "offices have their own pairs"
 assert client.get("/api/admin/export.csv", headers=ADMIN).status_code == 200
@@ -1881,13 +1898,23 @@ finally:
 later()
 summary = client.get("/api/admin/summary", headers=ADMIN).get_json()
 assert access.DESK_KEY in [e["entered_by"] for e in summary["staff_entries"]]
-# The ZIP holds every entry with its guard, and disarms a name that looks like a formula.
+# The staff entry log is its own file, for the admin only. It holds every entry with its
+# guard, the date in its own column, and disarms a name that looks like a formula.
 sneaky_code = add_staff("=HYPERLINK(1)", "+919500000002").get_json()["code"]
 say(APPROVER, sneaky_code)
-allow_csv = zipfile.ZipFile(io.BytesIO(client.get("/api/admin/export.zip", headers=ADMIN)
-                                       .get_data())).read("allow-list-entries.csv").decode()
+for wrong in ({}, KEY):
+    assert client.get("/api/admin/staff-entries.csv", headers=wrong).status_code == 403
+staff_log = client.get("/api/admin/staff-entries.csv", headers=ADMIN)
+assert staff_log.headers["Cache-Control"] == "no-store"
+assert 'filename="staff-entries-' in staff_log.headers["Content-Disposition"]
+allow_csv = staff_log.get_data(as_text=True)
 allow_rows = csv_rows(allow_csv)
 assert list(allow_rows[0]) == [heading for heading, _ in export.ALLOW_COLUMNS], allow_rows[0]
+today = datetime.now(config.WORK_TIMEZONE).strftime("%Y-%m-%d")
+assert allow_rows[-1][f"Date ({export.ZONE})"] == today, allow_rows[-1]
+assert re.fullmatch(r"\d\d:\d\d", allow_rows[-1][f"Time ({export.ZONE})"]), allow_rows[-1]
+assert "allow-list-entries.csv" not in zipfile.ZipFile(io.BytesIO(
+    client.get("/api/admin/export.zip", headers=ADMIN).get_data())).namelist(), "a separate log"
 assert len(allow_rows) == len(staff.all_entries()), "every entry, not only the last 100"
 assert '="+919500000001"' in [r["WhatsApp number"] for r in allow_rows], "shown as text"
 assert f"Gate desk {config.GUARD}" in allow_csv and access.DESK_KEY in allow_csv

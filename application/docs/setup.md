@@ -133,6 +133,27 @@ does not have them.
    any other admins on the Admins tab.
 10. Create the `staff_entry` template, and set `STAFF_ENTRY_TEMPLATE`. See
     "The allow list entry template".
+11. Set `GATE_DESK_PHONE` to the gate desk's real phone number. The example
+    number `+912200000000` rings nobody, and visitors see it on Call gate
+    desk.
+12. Delete the demonstration data on the admin page: test offices, test
+    people on the allow list, and approver numbers that belong to the
+    developer.
+13. When each guard has their own key, change `GATE_KEY` to a new random
+    key. Keep the new key in a safe place as a spare.
+14. Plan the backups. The free Neon plan keeps only 6 hours of history. Use
+    Download log each week, and keep both files on a locked device. A paid
+    Neon plan keeps a longer history.
+15. Decide on the Render plan. The free plan sleeps after 15 minutes with no
+    use. After that, the first WhatsApp reply takes about a minute. A paid
+    plan stays awake.
+
+While a server setting still has a demo value, the admin page shows "Before
+real use" at the top, with each setting and what it changes. It names the
+gate desk number, `ADMIN_PHONE`, `STAFF_ENTRY_TEMPLATE` and
+`TEMPLATE_FALLBACK`. The list goes away when each one is set. It cannot see
+the Meta test number or the token's expiry date, so do steps 3 and 4 from
+this list.
 
 ## Settings
 

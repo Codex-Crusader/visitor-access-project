@@ -7,7 +7,9 @@ async function saveFile(r) {
   const named = /filename="([^"]+)"/.exec(r.headers.get("Content-Disposition") || "");
   a.download = named ? named[1] : "visits.csv";
   a.click();
-  URL.revokeObjectURL(a.href);
+  // Later, not at once: a second save right after can lose the first file in some browsers.
+  setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+  return a.download;
 }
 
 // [ok, answer] for a request to send a key. A lost connection is not ok.

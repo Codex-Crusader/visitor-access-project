@@ -218,9 +218,12 @@ blacklist". A banned visitor who is inside can still leave.
    Entered and Exited name the guard who recorded them. "Gate desk (shared
    key)" means that someone used the shared `GATE_KEY`.
 8. Show more loads the next 50 requests.
-9. Use Download log to save everything as one ZIP file. See "Where the data
-   lives". Only the admin page can download it, because it holds every
-   visitor's personal details and photo.
+9. Use Download log to save the two logs: the visit log as a ZIP file, and
+   the staff entry log as a CSV file. See "Where the data lives". Only the
+   admin page can download them, because they hold personal details and
+   photos. The first time, the browser can ask if this site can download
+   more than one file. Allow it. If the browser does not save the second
+   file, use Download staff entries on the Allow list tab.
 
 The admin page works on a phone and on a computer. On a phone, the tabs and
 the tiles scroll sideways, and each table row shows as a card.
@@ -352,7 +355,11 @@ the admin change log.
 4. Tell the person the 7-digit code that shows. The list also shows it.
 
 Recent entries shows the last 100 entries and the guard who recorded each
-one. Download log saves all of them. Delete takes a person off the list, and
+one. The staff entries are a log of their own, separate from the visit log.
+Download staff entries, below the list, saves all of them as
+`staff-entries-<date>.csv`. Download log at the top saves this file and the
+visit log together. The date and the time are in separate columns, so a
+spreadsheet filter on the date shows one day's entries. Delete takes a person off the list, and
 their code stops at once. Their past entries stay until `RETAIN_DAYS` ends.
 A number on the blacklist cannot be on the allow list. While the app uses
 Meta's test number, also add each number to the recipient list in Meta's API
@@ -714,20 +721,21 @@ database to an earlier time, under Backup & Restore in the Neon console. On
 the free plan, that window is only 6 hours (the project's "History
 retention"). A mistake found the next day cannot be undone there.
 
-Download log saves one ZIP file. Unzip it first: a file inside a ZIP does
-not show its photos. It holds:
+Download log saves two files. The first is `staff-entries-<date>.csv`, the
+staff entry log: one row for each allow list entry, with the date, the time,
+the person, their code and number, and the guard who recorded it. The second
+is the visit log, `visit-log-<date>.zip`. Unzip it first: a file inside a
+ZIP does not show its photos. It holds:
 
 1. `visits.html`: open it in a browser. Each visit shows with its gate photo
    beside the details, newest first. It works with no internet.
 2. `visits.csv`: one row for each visit, for a spreadsheet.
-3. `allow-list-entries.csv`: each allow list entry and the guard who
-   recorded it.
-4. `blocked-attempts.csv`: each time the blacklist stopped someone. The same
+3. `blocked-attempts.csv`: each time the blacklist stopped someone. The same
    person stopped the same way again within 10 minutes is one row.
-5. `admin-changes.csv`: who changed what.
-6. `photos/`: one JPEG for each photo taken on the gate page, named by the
+4. `admin-changes.csv`: who changed what.
+5. `photos/`: one JPEG for each photo taken on the gate page, named by the
    reference, such as `photos/VR-40221.jpg`.
-7. `README.txt`: what each file holds.
+6. `README.txt`: what each file holds.
 
 The files are made for people to read:
 

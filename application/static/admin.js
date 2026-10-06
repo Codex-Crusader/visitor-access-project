@@ -96,7 +96,7 @@ function setKey(value) {
 
 function forgetKey(why = "") {
   try { localStorage.removeItem("adminkey"); } catch { /* it was never stored */ }
-  rows = []; next = null; counts = {}; approvers = []; notes = {}; notice = why;
+  rows = []; next = null; counts = {}; approvers = []; notes = {}; notice = why; info = "";
   team = {...EMPTY_TEAM};
   for (const reference in photos) delete photos[reference];
   el("over").innerHTML = "";
@@ -753,8 +753,20 @@ function renderTabs() {
   }
 }
 
+// Server settings still at a demo value. Only the server's host can change them, so it is a
+// closed list with a count, not a box in the way of the daily work.
+function renderGaps(gaps) {
+  if (!el("gaps")) return;
+  el("gaps").innerHTML = gaps.length ? `<details class="note warn"><summary>Before real use:
+      ${gaps.length} server ${gaps.length === 1 ? "setting is" : "settings are"} still a demo value</summary>
+      <ul>${gaps.map(g => `<li>${x(g)}</li>`).join("")}</ul>
+      <p>The host changes these on the server, in the Render Environment page. See Step 7 in
+        docs/setup.md.</p></details>` : "";
+}
+
 function renderNotice() {
-  el("notice").innerHTML = notice ? `<div class="note bad">${x(notice)}</div>` : "";
+  el("notice").innerHTML = (notice ? `<div class="note bad">${x(notice)}</div>` : "")
+    + (info ? `<div class="note good">${x(info)}</div>` : "");
 }
 
 // Asks the server to send the admin key to the admin WhatsApp. The page never sees the key.
@@ -803,7 +815,10 @@ const PANELS = `
     tag above the list to see only that tag, and Rename this tag to rename it for everyone.</p>
   <h2 class="gap">Recent entries</h2>
   <div class="wrap" id="s-entries"></div>
-  <p class="hint">The last 100 entries. Download log at the top saves all of them.</p>
+  <p class="hint">The last 100 entries. Download staff entries saves all of them as a CSV file, with
+    the date in its own column, so a spreadsheet filter shows one day. Download log at the top saves
+    this file and the visit log together.</p>
+  <button id="s-download" class="small edit">Download staff entries</button>
   </section>
   <section id="numbers" role="tabpanel" hidden>
   <h2>Who approves each reason</h2>
@@ -912,6 +927,7 @@ function render() {
     main.innerHTML = `
       <div id="notice"></div>
       <div id="alert"></div>
+      <div id="gaps"></div>
       <div class="tabs" id="tabs" role="tablist">${TABS.map(([name, label]) =>
         `<button role="tab" data-section="${name}" aria-controls="${name}">${label}</button>`).join("")}</div>
       ${PANELS}`;
@@ -949,6 +965,7 @@ function render() {
       renderBulk();
     };
     el("pick-all").onclick = pickAll;
+    el("s-download").onclick = () => void downloadLogs(["staff"]);
     el("bulk-yes").onclick = () => void bulkDecide("approve");
     el("bulk-no").onclick = () => void bulkDecide("decline");
     for (const [kind, {prefix}] of Object.entries(FORMS)) {
@@ -1017,6 +1034,7 @@ async function loadSummary() {
     counts = s.counts;
     approvers = s.approvers;
     for (const name of Object.keys(team)) if (name in s) team[name] = s[name];
+    renderGaps(s.setup_gaps || []);
     if (el("rules")) {
       const auto = s.auto_approve_minutes
         ? ` A request made ${s.work_days.join(", ")}, ${s.work_hours[0]}:00 to ${s.work_hours[1]}:00,`
@@ -1034,6 +1052,7 @@ async function loadSummary() {
 }
 
 function refresh() {
+  info = "";
   void loadSummary();
   void load();
 }
@@ -1052,21 +1071,32 @@ function saveKey() {
   refresh();
 }
 
-// The log as a ZIP: visits.csv, the allow list entries, and the gate page photos.
-async function downloadCsv(url = "/api/admin/export.zip") {
-  try {
-    const r = await fetch(url, {headers: {"X-Admin-Key": key()}});
-    if (r.status === 403) return forgetKey("That admin key is not right. Type it again.");
-    if (r.ok) return await saveFile(r);
-    notice = `Could not download (${r.status})`;
-  } catch (err) {
-    notice = err.message;
+// The two logs: the visits with their photos as a ZIP, and the staff entries as a CSV.
+const LOGS = {visits: "/api/admin/export.zip", staff: "/api/admin/staff-entries.csv"};
+
+// Saves each log in turn. A failed one says so, and the others still save.
+async function downloadLogs(which = ["visits", "staff"]) {
+  const saved = [];
+  const failed = [];
+  for (const log of which) {
+    try {
+      const r = await fetch(LOGS[log], {headers: {"X-Admin-Key": key()}});
+      if (r.status === 403) return forgetKey("That admin key is not right. Type it again.");
+      if (r.ok) saved.push(await saveFile(r));
+      else failed.push(`Could not download (${r.status})`);
+    } catch (err) {
+      failed.push(err.message);
+    }
   }
+  notice = failed.join(" ");
+  info = saved.length > 1
+    ? `Saved ${saved.join(" and ")}. If the browser asks, allow this site to download more than one file.`
+    : saved.length ? `Saved ${saved[0]}.` : "";
   renderNotice();
 }
 
 el("refresh").onclick = refresh;
-el("csv").onclick = () => void downloadCsv();
+el("csv").onclick = () => void downloadLogs();
 el("rekey").onclick = () => forgetKey();
 render();
 if (key()) refresh();

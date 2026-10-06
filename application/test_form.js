@@ -473,7 +473,8 @@ async function adminChecks() {
       calls.push(url);
       const body = url.includes("/summary")
         ? {counts: {pending: 2, inside: 1}, escalate_minutes: 15, retain_days: 90, pass_hours: 48,
-           approvers: [{reason: "Delivery", main: "+911", backup: "+912"}]}
+           approvers: [{reason: "Delivery", main: "+911", backup: "+912"}],
+           setup_gaps: ["GATE_DESK_PHONE is the <example> number."]}
         : url.includes("after=") ? pages.second : pages.first;
       return Promise.resolve({status: 200, ok: true, json: () => Promise.resolve(body)});
     },
@@ -496,6 +497,11 @@ async function adminChecks() {
   ok("the approvers table shows", byId("approvers").innerHTML.includes("+912"));
   ok("the escalation time shows", byId("rules").textContent.includes("15 minutes"));
   ok("the pass time shows", byId("rules").textContent.includes("48 hours"));
+  ok("demo settings show as one closed list, escaped",
+     byId("gaps").querySelector("details:not([open])").textContent.includes("1 server setting is")
+     && byId("gaps").innerHTML.includes("&lt;example&gt;"));
+  admin.eval("renderGaps([])");
+  ok("with none, nothing shows", byId("gaps").innerHTML === "");
   ok("an expired pass has its own pill", admin.eval('STATUS.expired.join()') === "done,Expired");
   ok("a decided request names who decided and the number",
      byId("list").querySelector(".by").textContent === "Approved by the backup approver +912");
@@ -556,13 +562,14 @@ async function downloadChecks() {
   ok("the gate page offers no download of the log", !gate.includes("export.csv")
      && !gate.includes("Download log"));
   const cases = [
-    ["admin.html", "admin.js", "adminkey", "downloadCsv()", "notice"],
+    ["admin.html", "admin.js", "adminkey", "downloadLogs()", "notice"],
   ];
   for (const [page, script, storeKey, start, noticeBox] of cases) {
     console.log(`${page}: the CSV download`);
     const run = async answer => {
       const saved = [];
-      const win = boot(page, script, {fetch: () => answer()});
+      const asked = [];
+      const win = boot(page, script, {fetch: url => { asked.push(url); return answer(url); }});
       win.URL.createObjectURL = () => "blob:log";
       win.URL.revokeObjectURL = () => {};
       win.HTMLAnchorElement.prototype.click = function () { saved.push(this.download); };
@@ -570,14 +577,21 @@ async function downloadChecks() {
       win.eval("render()");
       await win.eval(start);
       const text = (win.document.getElementById(noticeBox) || {innerHTML: ""}).innerHTML;
-      return {saved, text, key: win.eval(`localStorage.getItem("${storeKey}")`)};
+      return {saved, text, asked, key: win.eval(`localStorage.getItem("${storeKey}")`)};
     };
-    const file = {status: 200, ok: true, blob: () => Promise.resolve("a,b"),
-      headers: {get: () => 'attachment; filename="visits-2026-09-29.csv"'}};
-    let got = await run(() => Promise.resolve(file));
-    ok("the file saves under the server's name", got.saved.join() === "visits-2026-09-29.csv");
-    got = await run(() => Promise.resolve({...file, headers: {get: () => null}}));
-    ok("with no name it saves as visits.csv", got.saved.join() === "visits.csv");
+    const named = name => ({status: 200, ok: true, blob: () => Promise.resolve("a,b"),
+      headers: {get: () => `attachment; filename="${name}"`}});
+    const both = url => Promise.resolve(url.endsWith(".zip")
+      ? named("visit-log-2026-10-06.zip") : named("staff-entries-2026-10-06.csv"));
+    let got = await run(both);
+    ok("Download log saves the visit log and the staff entry log",
+       got.saved.join() === "visit-log-2026-10-06.zip,staff-entries-2026-10-06.csv"
+       && got.text.includes("allow this site to download more than one file"));
+    got = await run(url => url.endsWith(".zip") ? Promise.resolve({status: 500, ok: false}) : both(url));
+    ok("one failed file says so, and the other still saves",
+       got.text.includes("Could not download (500)") && got.saved.join() === "staff-entries-2026-10-06.csv");
+    got = await run(() => Promise.resolve({...named(""), headers: {get: () => null}}));
+    ok("with no name it saves as visits.csv", got.saved[0] === "visits.csv");
     got = await run(() => Promise.resolve({status: 500, ok: false}));
     ok("a server error says so", got.text.includes("Could not download (500)") && !got.saved.length);
     got = await run(() => Promise.resolve({status: 403, ok: false}));
@@ -585,6 +599,25 @@ async function downloadChecks() {
     got = await run(() => Promise.reject(new Error("offline now")));
     ok("a lost connection says so", got.text.includes("offline now"));
   }
+  // The Allow list tab saves the staff entry log alone.
+  const asked = [];
+  const win = boot("admin.html", "admin.js", {fetch: url => {
+    asked.push(url);
+    return Promise.resolve(url.includes("staff-entries") ? {status: 200, ok: true,
+      blob: () => Promise.resolve(""), headers: {get: () => 'filename="staff-entries-2026-10-06.csv"'}}
+      : {status: 200, ok: true, json: () => Promise.resolve({})});
+  }});
+  win.URL.createObjectURL = () => "blob:log";
+  win.HTMLAnchorElement.prototype.click = () => {};
+  win.eval('localStorage.setItem("adminkey","k")');
+  win.eval("render()");
+  asked.length = 0;
+  win.document.getElementById("s-download").click();
+  await new Promise(done => setTimeout(done, 20));
+  ok("Download staff entries saves that log only", asked.join() === "/api/admin/staff-entries.csv");
+  ok("the saved note shows", win.eval("info").includes("staff-entries-2026-10-06.csv"));
+  win.eval('forgetKey("gone")');
+  ok("Change key clears the saved note", win.eval("info") === "");
 }
 
 // ------------------------------------------- the pass on a weak signal
