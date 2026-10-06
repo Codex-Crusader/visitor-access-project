@@ -144,8 +144,11 @@ el("f_guest").value = "Ravi Rao";
 el("f_guest").dispatchEvent(new w.Event("input"));
 w.eval('pick("Delivery")');
 ok("a re-render keeps what was typed", el("f_guest").value === "Ravi Rao");
-el("f_guest").dispatchEvent(new w.KeyboardEvent("keydown", {key: "Enter"}));
+const enter = new w.KeyboardEvent("keydown", {key: "Enter", cancelable: true});
+el("f_guest").dispatchEvent(enter);
 ok("Enter adds the person", S.g.join() === "Ravi Rao");
+// Not cancelled, a browser sends the same Enter on to the focused +, and the box opens again.
+ok("Enter is cancelled, so it does not press the +", enter.defaultPrevented);
 ok("the box closes after adding", el("f_guest") === null);
 ok("the + comes back", !!el("more"));
 ok("the focus goes back to the +", w.document.activeElement === el("more"));

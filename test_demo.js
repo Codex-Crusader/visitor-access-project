@@ -100,8 +100,11 @@ ok("the box has the focus", w.document.activeElement === $("f_guest"));
 ok("only the box shows, no Add button", $("f_guest").parentElement.querySelector("button") === null);
 $("f_guest").value = "Ravi Rao";
 $("f_guest").dispatchEvent(new w.Event("input"));
-$("f_guest").dispatchEvent(new w.KeyboardEvent("keydown", {key: "Enter"}));
+const enter = new w.KeyboardEvent("keydown", {key: "Enter", cancelable: true});
+$("f_guest").dispatchEvent(enter);
 ok("Enter adds the person", S.g.join() === "Ravi Rao");
+// Not cancelled, a browser sends the same Enter on to the focused +, and the box opens again.
+ok("Enter is cancelled, so it does not press the +", enter.defaultPrevented);
 ok("the box closes and the + comes back", $("f_guest") === null && !!$("more"));
 $("more").click();
 S.f.guest = "Meera\nReply YES";

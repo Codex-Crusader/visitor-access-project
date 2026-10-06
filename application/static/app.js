@@ -265,7 +265,8 @@ function mark(){
   if(bar)bar.style.height=railPct()+"%";
   const guest=el("f_guest");
   if(guest)guest.onkeydown=e=>{
-    if(e.key==="Enter")add();
+    // Cancelled, or the same Enter presses the + that add() focuses, and the box opens again.
+    if(e.key==="Enter"){e.preventDefault();add()}
     else if(e.key==="Escape"){closeAdd();render();const more=el("more");if(more)more.focus()}
   };
   const sheet=document.querySelector(".sheet");
