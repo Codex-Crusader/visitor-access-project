@@ -17,16 +17,12 @@ log = logging.getLogger("app")
 
 # The shortest gap between background rounds, so a failed send is tried again soon.
 BACKGROUND_SECONDS = 30
-# The longest gap. With nothing due, the timer asks the database once an hour, so
-# Neon can scale to zero in between. The purge runs at least this often.
+# The longest gap, so Neon can scale to zero. The purge runs at least this often.
 IDLE_SECONDS = 3600
 
 
 def auto_approve_time(moment):
-    """When a request made at moment is approved by itself, as UTC text, or None.
-
-    Only a request made in working hours, on the campus clock, gets a time.
-    """
+    """When a request made at moment is approved by itself, as UTC, or None out of hours."""
     if not config.AUTO_APPROVE_MINUTES:
         return None
     local = moment.astimezone(config.WORK_TIMEZONE)
@@ -39,11 +35,7 @@ def auto_approve_time(moment):
 
 
 def escalate_due():
-    """Ask the backup approver about every request nobody answered.
-
-    One failed send must not stop the others, or the purge after them. The
-    failed request stays pending, so the next round tries it again.
-    """
+    """Ask the backup approver about each unanswered request. One failure does not stop the rest."""
     table = people.approver_table()
     for visit in visits.due_for_escalation():
         if visit["status"] != db.PENDING:
@@ -90,17 +82,10 @@ def seconds_to_next_round():
 
 
 def background_loop():
-    """Auto-approve and escalate requests nobody answered, expire old passes,
-    then delete old records.
-
-    The first round runs at once, so requests due while the server slept are
-    handled on wake. After that it sleeps until the next deadline, an hour at
-    most, instead of asking the database every 30 seconds.
-    """
+    """Approve, escalate, expire and purge, then sleep until the next deadline, an hour at most."""
     while True:
         wait = BACKGROUND_SECONDS
-        # The cache follows every write in this process. This also catches any
-        # other change, such as a restore of the database, within the hour.
+        # Also catches changes from outside this process, such as a database restore.
         db.forget_cache()
         try:
             auto_approve_due()

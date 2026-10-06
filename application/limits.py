@@ -8,9 +8,7 @@ from flask import request
 
 import config
 
-# (bucket, caller) -> the times of that caller's allowed calls, oldest first.
-# Times only ever arrive in order, so the old ones are always at the left end
-# and fall off one at a time: a call costs O(1) on average, not O(calls kept).
+# (bucket, caller) -> times of allowed calls, oldest first. O(1) per call on average.
 _hits = {}
 _hits_lock = threading.Lock()
 _last_sweep = [0.0]
@@ -20,15 +18,8 @@ KEEP_SECONDS = 3600  # the longest window any limit uses
 
 
 def caller():
-    """The address to count against.
-
-    On Render, Cloudflare sits in front of Render's own proxies. Cloudflare
-    puts the visitor's address in True-Client-IP and replaces a value the
-    visitor sent. The last X-Forwarded-For entry is one of Render's internal
-    proxies, which changes from call to call, so it counted proxies, not
-    visitors. Without True-Client-IP, that last entry is still the safest:
-    the first one is whatever the visitor chose to send.
-    """
+    """The visitor's address. Behind Render, True-Client-IP from Cloudflare: the last
+    X-Forwarded-For entry is a Render proxy that changes per call, and the first can be forged."""
     if config.BEHIND_PROXY:
         visitor = request.headers.get("True-Client-IP", "").strip()
         if visitor:
@@ -40,12 +31,7 @@ def caller():
 
 
 def _sweep(moment):
-    """Drop callers with no call left inside the longest window.
-
-    This reads the whole table, so it runs at most once a minute, and only
-    when the table is big. Before, a full table was read on every request.
-    The newest time sits at the right end, so each caller costs O(1) to judge.
-    """
+    """Drop callers silent for the longest window. At most once a minute, and only when big."""
     if len(_hits) <= MAX_CALLERS or moment - _last_sweep[0] < SWEEP_SECONDS:
         return
     _last_sweep[0] = moment
@@ -76,11 +62,7 @@ def hit_buckets():
 
 
 def too_many(bucket, limit, seconds, who=None):
-    """True when the caller (or who, when given) is over the limit. Counts every allowed call.
-
-    The check and the count happen under one lock. Two threads can therefore
-    never both see room for one more call and both take it.
-    """
+    """True when the caller, or who, is over the limit. One lock: two threads never both pass."""
     key = (bucket, caller() if who is None else who)
     moment = time.time()
     cutoff = moment - seconds

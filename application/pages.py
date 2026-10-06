@@ -16,11 +16,7 @@ def short_hash(data: bytes):
     return hashlib.sha256(data).hexdigest()[:10]
 
 
-# Each page asks for its scripts with a hash of their content, such as
-# app.js?v=1a2b3c4d5e. A changed script gets a new address, so the browser
-# keeps each version for a year and never asks for it again. The pages are
-# checked on every load, which costs one small round trip that usually
-# answers "not changed".
+# Scripts load as app.js?v=<hash>, kept for a year. The pages are checked on every load.
 SCRIPT_VERSIONS = {path.name: short_hash(path.read_bytes()) for path in STATIC.glob("*.js")}
 SCRIPT_TAG = re.compile(r'<script src="([\w.-]+\.js)"></script>')
 
@@ -45,9 +41,7 @@ def page(name):
     return response.make_conditional(request)
 
 
-# The pages run their buttons from inline onclick attributes and set a few inline
-# styles, so scripts and styles need 'unsafe-inline'. The policy still allows
-# nothing from another site, no plugins, and no framing by another site.
+# Inline onclick and styles need 'unsafe-inline'. Nothing loads from another site.
 CONTENT_POLICY = (
     "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline';"
     " img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none';"

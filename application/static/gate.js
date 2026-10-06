@@ -6,19 +6,13 @@ const PHOTO_SIDE = 640;      // the photo's long side in pixels, about 30-40 KB 
 const PHOTO_QUALITY = 0.6;
 
 const el = i => document.getElementById(i);
-// These are in gate.html from the start, so they are looked up once.
-// The gate key box is built by render(), so that one stays a lookup.
 const out = el("out"), codeBox = el("code"), boardBox = el("board"), tools = el("tools");
-// Built once. Inside the callback it was a new object for every escaped letter.
 const ESC = {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"};
 const x = s => String(s).replace(/[&<>"']/g, c => ESC[c]);
 const hm = t => t ? new Date(t).toLocaleTimeString([], {hour:"2-digit", minute:"2-digit"}) : "—";
 const dayHm = t => t ? new Date(t).toLocaleString([], {weekday:"short", hour:"2-digit", minute:"2-digit"}) : "—";
 
-// The visitor's pass shows an entry code, and after entry an exit code, such
-// as KT-4821. The guard may type it as kt4821 or KT 4821. A reference is
-// VR-40221, or VR-4022 from before references had five digits. WhatsApp
-// accepts the digits alone, so this page does too.
+// A pass code is KT-4821, typed any way. A reference is VR-40221, VR-4022 or the digits alone.
 const PASS_CODE = /^([A-HJ-NP-Z]{2})-?(\d{4})$/;
 const REFERENCE = /^(?:VR-?)?(\d{4,5})$/;
 const tidy = text => {
@@ -30,21 +24,17 @@ const tidy = text => {
 };
 
 let visit = null;
-// The photo of the visitor on screen, as a JPEG data URL. It belongs to this
-// pass only, so every new pass, Next visitor and each entry clears it.
+// The visitor's photo as a JPEG data URL. Belongs to this pass only.
 let photo = "";
 let notice = "";
 let keySent = "";
 let busy = "";
-// The last lists the server sent, when they came, and why the latest refresh
-// failed, if it did. A failed refresh keeps the old lists on screen.
+// The last lists, when they came, and why the last refresh failed. A failure keeps them.
 let board = null;
 let boardAt = null;
 let boardError = "";
-// Each pass lookup, entry and exit takes the next number. A free server that
-// wakes takes up to a minute, and the guard may check another pass meanwhile.
-// An answer that comes back after a newer call started is dropped, so a slow
-// answer never puts back a pass the guard has moved on from.
+// Each lookup, entry and exit takes a number. A slower, older answer is dropped,
+// so it never brings back a pass the guard has left.
 let latest = 0;
 
 function key() {
@@ -56,9 +46,7 @@ function setKey(value) {
   try { localStorage.setItem("gatekey", value); } catch { /* nothing to undo */ }
 }
 
-// A wrong key comes back as its own kind of error, so every caller can send
-// the guard back to the key box. Before, a saved wrong key stayed saved: the
-// lists only said they could not load, and the key box was hidden.
+// A wrong key is its own error, so every caller can send the guard back to the key box.
 class WrongKey extends Error {}
 
 function forgetKey(why = "") {
@@ -103,9 +91,7 @@ function entryStep() {
     ${photo ? "" : `<p class="sub">The entry needs a photo of the visitor.</p>`}`;
 }
 
-// The button needs the code from the visitor's pass: the entry code records
-// the entry, and the exit code the exit. A tap on the board opens the pass by
-// reference, which shows who it is and records nothing.
+// Only the code from the visitor's pass records anything. A board tap shows who it is.
 const NEED = {
   approved: ["entry", null,
              "To record the entry, type the entry code on the visitor's pass."],
@@ -122,8 +108,7 @@ function nextStep(v) {
 const problem = t => banner("bad", "Cannot do that", t);
 const working = t => `<div class="state wait"><span class="spin"></span><div><h2>${x(t)}</h2><p>This can take up to a minute if the server was asleep.</p></div></div>`;
 
-// The try covers the network only. A server that answers and refuses is not a
-// failure of the call, so those two refusals are raised after the try ends.
+// The try covers the network only. A refusal is raised after it.
 async function call(url, options) {
   const stop = new AbortController();
   const timer = setTimeout(() => stop.abort(), CALL_TIMEOUT);
@@ -164,8 +149,7 @@ function section(title, list, empty, line) {
     <div class="list">${list.length ? list.map(line).join("") : `<div class="empty">${empty}</div>`}</div>`;
 }
 
-// The badge in the header: green while the lists are fresh, amber after a
-// failed refresh.
+// Green while the lists are fresh, amber after a failed refresh.
 function renderLive() {
   const live = el("live");
   live.hidden = !key() || (!board && !boardError);
@@ -180,8 +164,7 @@ function renderBoard() {
     return;
   }
   const now = Date.now();
-  // Inside comes first. At the end of the day it is the list that matters:
-  // everyone on it has still to be let out.
+  // Inside first: everyone on it must still be let out.
   boardBox.innerHTML =
     section("Inside now", board.inside, "Nobody is inside.", v => {
       const long = now - new Date(v.entered_at).getTime() > LONG_HOURS * 3600000;
@@ -235,8 +218,7 @@ function render() {
 
   const [tone, title, line] = BANNER[visit.status] || ["wait", visit.status, ""];
 
-  // Once the visit is over the server sends times and nothing else, so the
-  // desk stops showing the visitor's name, phone number and address.
+  // A closed visit comes with times only, so nothing personal shows.
   const closed = visit.status === "closed";
   const details = closed ? "" : `
       ${fact("Name", visit.name)}
@@ -297,8 +279,7 @@ async function takePhoto(file) {
   render();
 }
 
-// Refreshes the two lists. It never touches the pass on screen, so a guard in
-// the middle of an entry is not interrupted.
+// Never touches the pass on screen, so an entry is not interrupted.
 async function loadBoard() {
   if (!key()) return;
   try {
@@ -372,8 +353,7 @@ async function show(key) {
   render();
 }
 
-// A tap on a name in either list shows who it is. The code box stays empty,
-// ready for the code on the visitor's pass, which the buttons need.
+// A board tap shows who it is. The code box stays empty for the pass code.
 function openPass(reference) {
   codeBox.value = "";
   window.scrollTo(0, 0);

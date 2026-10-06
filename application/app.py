@@ -1,9 +1,4 @@
-"""Campus visitor access: web form in, WhatsApp approval out.
-
-This file makes the Flask app, adds the rules every response follows, and
-starts and stops the background timer. The calls each page makes are in
-routes/, and the work behind them is in the modules next to this file.
-"""
+"""Campus visitor access: makes the Flask app, adds the response rules, runs the timer."""
 
 import atexit
 import threading
@@ -66,8 +61,7 @@ def forget_meta_check():
 
 
 def whatsapp_ok():
-    """True when Meta accepts the token. Asked at most once an hour, because the
-    health address is public and must not send a call to Meta on every hit."""
+    """True when Meta accepts the token. Asked at most hourly: the health address is public."""
     with _meta_lock:
         age = time.time() - _meta_check["at"]
         if age < (META_CHECK_SECONDS if _meta_check["ok"] else META_RETRY_SECONDS):
@@ -79,8 +73,7 @@ def whatsapp_ok():
 
 @app.get("/api/health")
 def health():
-    """For the uptime check: 200 when the database answers and Meta accepts the
-    token, else 503. It says which part failed, never why."""
+    """200 when the database and Meta work, else 503. Says which part failed, never why."""
     if limits.too_many("health", 30, 60):
         return jsonify(error="Too many checks. Try again in a minute."), 429
     checks = {"database": db.ping(), "whatsapp": whatsapp_ok()}
@@ -88,24 +81,14 @@ def health():
 
 
 def start_background():
-    """Build the tables, then start the timer. Call it once, in the serving process.
-
-    Importing this module starts nothing. Under gunicorn, gunicorn.conf.py
-    calls this in the worker. A connection opened or a thread started at
-    import would live in the master process instead, see gunicorn.conf.py.
-    """
+    """Build the tables and start the timer, in the serving process. See gunicorn.conf.py."""
     db.init()
     timer.background.start()
     atexit.register(stop_background)
 
 
 def stop_background():
-    """Stop the timer, let its current round finish, then close the database.
-
-    gunicorn.conf.py calls this as the worker exits, and atexit does for
-    python app.py. The timer is stopped first, so it never reaches a closed
-    database halfway through a round. Safe to call more than once.
-    """
+    """Stop the timer after its round, then close the database. Safe to call twice."""
     timer.stopping.set()
     timer.wake.set()
     if timer.background.is_alive():

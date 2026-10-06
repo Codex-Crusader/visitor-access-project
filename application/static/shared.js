@@ -1,7 +1,6 @@
 // Shared by the gate desk and the admin page, which load it before their own script.
 
-// Hands a fetched file to the browser to save. The server names the file
-// with the date, as visits-2026-09-29.csv.
+// Saves a fetched file, named by the server, such as visits-2026-09-29.csv.
 async function saveFile(r) {
   const a = document.createElement("a");
   a.href = URL.createObjectURL(await r.blob());

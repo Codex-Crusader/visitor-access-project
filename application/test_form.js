@@ -1,11 +1,4 @@
-// Checks the two web pages in a real DOM: that Continue and Review refuse a
-// half filled form and turn the field light red, that a field takes one line
-// of plain text and nothing else, and that a closed pass stops showing the
-// visitor.
-//
-// It needs jsdom, which is not part of the app:
-//   npm install jsdom
-//   node test_form.js
+// Checks the three pages in a real DOM. Needs jsdom: npm install, then node test_form.js
 const fs = require("fs");
 const path = require("path");
 const {JSDOM} = require("jsdom");
@@ -19,8 +12,7 @@ function ok(label, condition) {
   else { console.log("  FAIL  " + label); failures++; }
 }
 
-// Runs the page's own script as a real <script>, so its top level const
-// declarations land in the realm's global scope where eval can read them.
+// Runs each script as a real <script>, so its top-level const names are reachable by eval.
 function boot(page, script, stubs) {
   const dom = new JSDOM(read(page), {runScripts: "dangerously", url: "http://localhost/"});
   const w = dom.window;
@@ -28,8 +20,7 @@ function boot(page, script, stubs) {
   w.Element.prototype.scrollIntoView = function () {};
   w.scrollTo = function () {};
   Object.assign(w, stubs);
-  // jsdom does not fetch a <script src>, so each one the page lists runs here,
-  // in the page's order. The page must list the script under test.
+  // jsdom does not fetch a <script src>, so the page's scripts run here, in order.
   const sources = [...w.document.querySelectorAll("script[src]")].map(s => s.getAttribute("src"));
   if (!sources.includes(script)) throw new Error(`${page} does not load ${script}`);
   for (const src of sources) {
@@ -45,8 +36,7 @@ console.log("visitor form: Continue and Review refuse empty fields");
 const w = boot("index.html", "app.js", {
   fetch: () => Promise.reject(new Error("offline in this test")),
 });
-// app.js declares its names with const, so they live in the global lexical
-// scope rather than on window. window.eval reaches them.
+// The script's const names live in the global scope, not on window. eval reaches them.
 const S = w.eval("S");
 const call = name => w.eval(name + "()");
 const el = id => w.document.getElementById(id);
@@ -234,8 +224,7 @@ S.s = "inout"; call("render");
 ok("the pass card is gone", !el("view").innerHTML.includes("VR-4022"));
 ok("the pass card element is gone", !el("view").innerHTML.includes('class="pass'));
 
-// The server sends the entry code while approved and the exit code while
-// inside. The card shows that one code and never the approver's reference.
+// The card shows the one current code, never the reference.
 const card = () => (el("view").querySelector(".pass b") || {textContent: ""}).textContent;
 Object.assign(S.visit, {status: "approved", entry_code: "KT-4821"});
 S.s = "inout"; call("render");
@@ -530,8 +519,6 @@ async function adminChecks() {
 }
 
 // ------------------------------------------------------ the CSV download
-// Only the admin page downloads the log. Each case answers the download with
-// one response and reports what the page did with it.
 async function downloadChecks() {
   const gate = read("gate.html") + read("gate.js");
   ok("the gate page offers no download of the log", !gate.includes("export.csv")
@@ -868,8 +855,7 @@ async function stalePollChecks() {
   await asking;
   ok("the dropped visit stays dropped", v.eval("S.visit") === null);
   ok("and stays off the phone", v.localStorage.getItem("tok") === null);
-  // Before, the late answer failed on the missing visit and counted as no
-  // signal, so the next status screen said "No connection right now".
+  // The late answer must not count as a lost connection.
   ok("a late answer is not taken as a lost connection", v.eval("S.down") === 0);
   v.eval("clearTimeout(S.timer)");
 }

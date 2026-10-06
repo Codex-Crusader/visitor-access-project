@@ -41,17 +41,11 @@ WRONG_KIND = {
              " visitor's pass shows once they are inside.",
 }
 
-# A finished visit keeps its times and loses everything personal. The privacy
-# screen promises the gate desk sees the details while the visit is open, so
-# a dead code must stop answering with a name, a phone number and an address.
-# The CSV export still holds the whole log for whoever runs the campus.
+# A closed pass shows only its times: the gate sees personal details only while it is open.
 CLOSED_PASS = ("reference", "status", "created_at", "decided_at",
                "entered_at", "exited_at", "guests")
 
-# Never sent to the gate. The token is the visitor's private link, and it
-# opens their page, which shows the gate code. The approver's number is for
-# the admin page only, and so are the guards' numbers. The gate does not
-# need the visitor's address.
+# Never sent to the gate. The token opens the visitor's page, which shows the gate code.
 GATE_PRIVATE = ("token", "address", "decided_phone", "entered_by", "exited_by")
 
 
@@ -69,11 +63,7 @@ def typed_pass(visit, code, kind):
 
 @bp.get("/api/pass/<key>")
 def read_pass(key):
-    """A pass by the code the guard typed, or by reference for a tap on the board.
-
-    A reference shows the visitor and records nothing, so the page offers a
-    button only when the guard typed the code from the visitor's pass.
-    """
+    """A pass by its typed code, or by reference from the board. A reference records nothing."""
     if not access.gate_guard():
         return jsonify(error="Wrong gate key"), 403
     code = whatsapp.normalize_gate_code(key)
@@ -90,10 +80,7 @@ def read_pass(key):
 
 @bp.get("/api/gate/board")
 def gate_board():
-    """Who the gate desk expects, and who is inside now.
-
-    Only open visits appear, so this shows nothing the pass lookup would not.
-    """
+    """(expected, inside) for the gate board. Only open visits."""
     guard = access.gate_guard()
     if not guard:
         return jsonify(error="Wrong gate key"), 403
@@ -103,11 +90,7 @@ def gate_board():
 
 @bp.post("/api/pass/<key>/<action>")
 def gate_action(key, action):
-    """Records an entry with the entry code, or an exit with the exit code.
-
-    The reference never records anything. It is on the approver's messages
-    and the gate board, so it proves nothing about who holds the pass.
-    """
+    """Record an entry or exit with its own code. The reference is public, so it records nothing."""
     guard = access.gate_guard()
     if not guard:
         return jsonify(error="Wrong gate key"), 403

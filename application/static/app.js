@@ -1,8 +1,5 @@
 const REASONS = ["See a student", "See an office", "Delivery", "Event", "Other"];
-// The gap between status checks, by status. The visitor waits for the
-// decision, so the page asks often then. Once approved, only the entry
-// changes the page, and inside only the exit, so it asks less and uses
-// less of the visitor's data.
+// Gap between status checks: often while waiting, less once approved or inside.
 const POLL_GAP = {pending:5000, escalated:5000, approved:10000, inside:30000};
 const POLL_SLOWEST = 60000;   // slowest gap after repeated failures
 const POLL_TIMEOUT = 10000;   // give up on one status check
@@ -14,7 +11,6 @@ const S = {s:"home", f:{name:"",phone:"",address:"",reason:"",other:"",visiting:
   wait:POLL_GAP.pending, down:0, seen:"", timer:0, busy:0};
 
 const el = i=>document.getElementById(i);
-// Built once. Inside the callback it was a new object for every escaped letter.
 const ESC={"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"};
 const x=s=>String(s).replace(/[&<>"']/g,c=>ESC[c]);
 const set=(k,v)=>{S.f[k]=v;if(S.e[k]){delete S.e[k];unmark(k)}};
@@ -47,14 +43,10 @@ const ICONS={
  cross:'<circle cx="12" cy="12" r="9"/><path d="M15 9l-6 6M9 9l6 6"/>'};
 const ico=n=>`<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[n]}</svg>`;
 const fact=(k,v)=>`<div><span>${k}</span><b>${x(v||"—")}</b></div>`;
-// The class name goes in the markup. The two aria attributes are added after
-// the markup is in the page, by mark(), because an attribute that appears and
-// disappears cannot be written into a template and still read as valid HTML.
+// mark() adds the aria attributes after render, so the template stays valid HTML.
 const flag=k=>S.e[k]?"bad":"";
 const note=k=>S.e[k]?`<div class="bad-note" id="e_${k}">${x(S.e[k])}</div>`:"";
-// A "+" button first. Pressing it opens a box for one more name. Enter or Done
-// adds the name, closes the box and brings the "+" back. The server keeps ten guests at
-// most, so the "+" goes away at ten rather than letting an eleventh vanish.
+// A + button opens a box for one name. The server keeps ten guests, so the + goes at ten.
 const guestBox=()=>S.adding
   ?`<div class="add-row"><input id="f_guest" class="${flag("guest")}" value="${x(S.f.guest)}"
       oninput="set('guest',this.value)" placeholder="Their name" aria-label="Name of the person with you" enterkeyhint="done">
@@ -69,8 +61,7 @@ const offlineNote=()=>S.down
      and updates by itself once you are back online.${S.seen?` Last updated ${hm(S.seen)}.`:""}</p>`
   : "";
 
-// How far the blue line has run down the tracker. mark() writes it on to the
-// bar after the markup is in the page, so the template holds no computed CSS.
+// How far the tracker's line runs. mark() sets it, so the template has no computed CSS.
 const railPct=()=>{const v=S.visit;return !v?0:v.decided_at?100:v.escalated_at?60:25};
 
 function tracker(){
@@ -217,19 +208,14 @@ function view(){
   return "";
 }
 
-// The server refuses anything empty or over 200 characters, so the form
-// refuses the same things first and says which field is wrong.
+// The same rules as the server, checked first to name the wrong field.
 const MAX=200;
 const STAFF="Name a student, not a staff member.";
 // Whole words only, so a student named Sirisha or Madhuri is not refused.
 const STAFF_WORDS=/\b(prof|professor|dr|sir|madam|ma'am)\b/i;
 const STEP1=["name","phone","address"];
 const STEP2=["reason","other","visiting","guest"];
-// Line breaks, control codes, invisible marks and the overrides that make
-// text run the other way. They are not part of a name or an address, and the
-// approver's WhatsApp message is built out of these fields, so a line break
-// here would let a visitor forge an extra line in it. The server refuses the
-// same set, so this only saves a round trip.
+// Line breaks and invisible characters would forge lines in the approver's message.
 const NOT_TEXT=/[\p{C}\p{Zl}\p{Zp}]/u;
 const tidy=t=>String(t||"").trim().replace(/\s+/g," ");
 
@@ -248,9 +234,7 @@ function unmark(key){
   if(message)message.remove();
 }
 
-// Everything render() cannot put in the markup: attributes that come and go, a
-// height that is a number, and the two handlers that need their own event.
-// The template stays plain HTML, and this finishes the page off.
+// What render() cannot put in the markup: changing attributes, the line height, two handlers.
 function mark(){
   Object.keys(S.f).forEach(k=>{
     const box=el("f_"+k);
@@ -273,8 +257,7 @@ function mark(){
   if(sheet)sheet.onclick=e=>{if(e.target===sheet){S.sheet=0;render()}};
 }
 
-// Every field is checked, so three empty boxes turn red together rather than
-// one at a time. Returns true when the step may go on.
+// Marks every wrong field at once. True when the step may go on.
 function settle(keys,found){
   keys.forEach(k=>delete S.e[k]);
   Object.assign(S.e,found);
@@ -318,8 +301,7 @@ function n2(){
     else if(STAFF_WORDS.test(S.f.visiting))found.visiting=STAFF;
   }
 
-  // A name typed in the open box but not added yet still counts. Pressing
-  // Review must not quietly lose the person.
+  // A name typed but not added yet still counts.
   const typed=S.adding&&tidy(S.f.guest)?needed("guest","That name"):"";
   if(typed)found.guest=typed;
 
@@ -347,8 +329,7 @@ function openAdd(){
   if(box)box.focus();
 }
 function closeAdd(){S.adding=0;S.f.guest="";delete S.e.guest}
-// Adds the name in the box. An empty box just closes again. A name that
-// breaks the field rules turns red and stays, the same as every other field.
+// An empty box just closes. A bad name turns red and stays.
 function add(){
   const v=tidy(S.f.guest);
   if(v){
@@ -365,9 +346,7 @@ function drop(i){S.g.splice(i,1);render()}
 function home(){S.s="home";S.hist=[];S.sheet=0;render();el("view").scrollTop=0}
 function again(){forget();S.g=[];closeAdd();S.e={};S.err="";go("step1",0)}
 
-// The phone keeps the last pass it saw, so the pass opens with a weak signal
-// or none. Only what the pass and status screens draw is kept: no phone
-// number and no address. A closed or unknown pass is forgotten.
+// The last pass stays on the phone for a weak signal. No phone number, no address.
 const PASS_FIELDS=["token","reference","status","name","guests","created_at","decided_at","expires_at",
   "entered_at","exited_at","entry_code","exit_code"];
 function keep(v){
@@ -426,17 +405,13 @@ async function send(){
   }
 }
 
-// One request at a time. The next is scheduled only after this one ends,
-// so a slow connection never stacks up overlapping polls. A hidden page does
-// not ask at all, and the page asks at once when it shows again or the
-// phone comes back online, instead of waiting out a long backoff.
+// One request at a time, never while hidden. Asks again at once when shown or back online.
 async function poll(){
   clearTimeout(S.timer);
   if(S.busy)return;
   if(S.visit&&live()&&!document.hidden){
     S.busy=1;
-    // New request can drop this visit while the answer is on its way. The
-    // answer is then about a visit that is gone, so it changes nothing.
+    // New request may drop this visit meanwhile. Its answer then changes nothing.
     const token=S.visit.token;
     const same=()=>S.visit&&S.visit.token===token;
     try{
@@ -483,8 +458,7 @@ async function start(){
   // No settings mean the built-in defaults, which are good enough to start.
   if(cfg.status==="fulfilled")S.cfg=cfg.value;
   if(tok){
-    // A finished or unknown visit is not reopened. A failed connection keeps
-    // the saved pass, and the poll below tries again.
+    // A finished or unknown visit is not reopened. A failed call keeps the saved pass.
     if(visit.status==="fulfilled"){
       if(visit.value.status==="closed")forget();
       else if(visit.value.status==="expired")forget(visit.value);

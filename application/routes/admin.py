@@ -30,9 +30,7 @@ EXPORT_COLUMNS = (
     "entered_at", "exited_at", "photo_at", "entered_by", "exited_by",
 )
 
-# Excel and Sheets run a cell that opens with one of these as a formula, so a
-# visitor who types =HYPERLINK(...) as their name gets it executed on whoever
-# opens the log. A leading quote makes the cell plain text again.
+# Spreadsheets run a cell starting with these as a formula. A leading quote stops that.
 FORMULA_START = ("=", "+", "-", "@", "\t", "\r")
 
 
@@ -73,11 +71,7 @@ ADMIN_PAGE = 50
 
 @bp.get("/api/admin/visits")
 def admin_visits():
-    """One page of every stored request, newest first.
-
-    The next page is asked for with the cursor this one returned, as
-    ?after=<created_at>|<reference>.
-    """
+    """One page of requests, newest first. The next page: ?after=<created_at>|<reference>."""
     refused = access.admin_refusal()
     if refused:
         return refused

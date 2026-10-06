@@ -73,10 +73,7 @@ def handle_decide(sender, status, reference, table):
 
 
 def handle_gate(guard, sender, action, code):
-    """IN takes the entry code and OUT the exit code, both from the visitor's pass.
-
-    guard is the sender's label from guard_at(), or None.
-    """
+    """IN with the entry code, OUT with the exit code. guard is the sender's label, or None."""
     if not guard:
         return "Only a guard can record entry and exit."
     if code is None:
@@ -93,8 +90,7 @@ def handle_gate(guard, sender, action, code):
         return gate.REFUSALS[action][visit["status"]]
 
     reference = visit["reference"]
-    # Over WhatsApp the entry needs a photo of the visitor. IN only asks for
-    # it. The photo itself lets them in, see handle_photo.
+    # IN only asks for the photo. The photo lets the visitor in, see handle_photo.
     if action == db.ENTRY:
         entries.wait_for_photo(whatsapp.digits(sender), reference)
         return whatsapp.photo_request(visit, code)
@@ -146,8 +142,7 @@ def whatsapp_reply():
         return "", 403
 
     payload = request.get_json(silent=True) or {}
-    # Meta accepts every message first and reports a failed delivery only
-    # here, later. Without this line a lost approval request leaves no trace.
+    # Meta reports failed deliveries only here, so log them.
     for recipient, code, reason in whatsapp.read_failures(payload):
         log.error("WhatsApp could not deliver to %s: error %s, %s",
                          recipient, code, reason)
@@ -162,8 +157,7 @@ def whatsapp_reply():
     if not db.is_new_message(message_id):
         return "", 200
 
-    # The message id is spent from here on, so Meta's retry would be ignored.
-    # A failure must therefore end in a reply that asks for the message again.
+    # The message id is spent now, so a failure must ask for the message again.
     try:
         answer = answer_message(sender, text, photo, table, guard)
     except Exception as failure:
@@ -195,11 +189,7 @@ def answer_message(sender, text, photo, table, guard):
 
 
 def handle_key(sender, guard):
-    """KEY from the gate desk or the admin number gets that number's key.
-
-    A guard added on the admin page gets a new key of their own. Only its hash
-    is stored, so the old one cannot be sent again.
-    """
+    """KEY sends the gate desk or admin its key. An added guard gets a new key of their own."""
     answers = []
     for which in access.FORGOT_KEYS:
         key, phone = access.key_and_phone(which)

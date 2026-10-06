@@ -6,10 +6,7 @@ import visits
 
 @db.writes
 def check_in(reference, by, image):
-    """Let an approved, unexpired visitor in and save the photo. Returns the visit, or None.
-
-    The checks sit in the UPDATE, so of two guards one wins and only that photo is saved.
-    """
+    """Let an approved visitor in and save the photo. The UPDATE decides, so one guard wins."""
     stamp = db.now()
     with db.connect() as conn:
         row = conn.execute(
@@ -54,15 +51,7 @@ def wait_for_photo(guard, reference):
 def enter_with_photo(guard, minutes, media_id, by):
     """Let in the visitor this guard's photo is for. Returns (reference, entered).
 
-    reference is None when no IN from this guard is waiting, or when the IN is
-    older than `minutes`. entered is False unless the pass was approved.
-
-    Every photo ends the wait, so a second photo can never let a second person
-    in on the same IN. Everything happens in one transaction: if any step
-    fails, the wait is still there and the guard can send the photo again.
-    The wait is read and deleted in one statement, so of two photos sent at
-    the same moment, only one gets it.
-    """
+    One statement reads and ends the wait, so one IN never lets in two people."""
     with db.connect() as conn:
         wait = conn.execute(
             "DELETE FROM photo_waits WHERE guard = %s RETURNING reference, asked", (guard,)

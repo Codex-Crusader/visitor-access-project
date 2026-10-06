@@ -1,10 +1,6 @@
-"""Takes the README pictures of the app, with made-up visitors.
+"""Takes the README pictures with made-up visitors. See docs/maintenance.md.
 
-Run it from the app folder with: .venv\\Scripts\\python.exe tools\\screenshots.py [folder]
-It saves six pictures in the folder, "pictures" if none is given. It uses a
-throwaway Postgres and fake settings, and sends no WhatsApp message.
-It needs Google Chrome and the playwright package, see docs/maintenance.md.
-"""
+Run from the app folder: .venv\\Scripts\\python.exe tools\\screenshots.py [folder]"""
 
 import base64
 import io
@@ -140,8 +136,7 @@ def newest_reference():
         return json.load(answer)["visits"][0]["reference"]
 
 
-# The pages scroll inside their own box, so a full-page picture stops at the
-# window. The picture is cut at the bottom of the content instead.
+# The pages scroll in their own box, so cut the picture at the end of the content.
 BOTTOM = """sel => Math.max(...[...document.querySelectorAll(sel)]
     .map(n => n.getBoundingClientRect().bottom))"""
 

@@ -12,8 +12,7 @@ FIELDS = ("name", "phone", "address", "reason", "visiting")
 
 # The gate page shrinks its photo to about 30-40 KB. The server takes up to this.
 PHOTO_BYTES = 150_000
-# The longest side a photo may claim. The page sends 640 pixels. The limit is
-# read from the file's header, before the picture is decoded.
+# Read from the header before decoding. The page sends 640 pixels.
 PHOTO_SIDE = 2000
 Image.MAX_IMAGE_PIXELS = PHOTO_SIDE * PHOTO_SIDE
 PHOTO_QUALITY = 60
@@ -21,12 +20,8 @@ PHOTO_PREFIX = "data:image/jpeg;base64,"
 NO_PHOTO = ("Take a photo of the visitor first. The entry needs one."
             " If this page shows no photo button, reload the page.")
 
-# Every field is one line of plain text. These characters are not text:
-# line breaks, terminal control codes, invisible marks, and the overrides
-# that make written text run the other way. Unicode files them under
-# C (other) and Z (separator). A visitor who puts them in a name is not
-# writing a name. They are trying to forge extra lines in the approval
-# message the approver reads on WhatsApp.
+# Line breaks, control and invisible characters. In a name they forge lines in the
+# approver's WhatsApp message.
 NOT_TEXT = ("Cc", "Cf", "Cs", "Co", "Cn", "Zl", "Zp")
 MAX_LENGTH = 200
 
@@ -79,11 +74,7 @@ def clean_phone(text):
 
 
 def read_photo(payload):
-    """The photo in the call's JSON, redrawn as a clean JPEG, or None when it is not one.
-
-    The server does not trust the page: it decodes the picture, and stores a
-    new copy, so a broken file or a hidden location never reaches the database.
-    """
+    """The photo redrawn as a clean JPEG with no metadata, or None when it is not a JPEG."""
     text = payload.get("photo") if isinstance(payload, dict) else None
     if not isinstance(text, str) or not text.startswith(PHOTO_PREFIX):
         return None

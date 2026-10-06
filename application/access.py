@@ -27,16 +27,8 @@ def guard_label(guard):
 
 
 def gate_guard():
-    """Who holds the gate key that came with the call, as a label, or None for a wrong key.
-
-    The shared GATE_KEY is the gate desk's. Each guard added on the admin page
-    has a key of their own, so the log names who let each visitor in.
-
-    There is deliberately no lockout. The key is long random text, so guessing
-    it is not a real threat, while a lockout is: people at one gate share one
-    address, so one person mistyping would shut out everybody else, and the
-    guard who is holding up a queue cannot tell a refusal from a wrong key.
-    """
+    """The label of the gate key's holder, or None. No lockout: one mistyping guard would lock out
+    the whole gate, and the key is too long to guess."""
     key = request.headers.get("X-Gate-Key", "")
     if same_secret(key, config.GATE_KEY):
         return DESK_KEY
@@ -47,11 +39,7 @@ def gate_guard():
 
 
 def admin_refusal():
-    """Why an admin call is refused, or None when the key is right.
-
-    While ADMIN_KEY is missing, the page is locked for everyone. The lock is
-    checked first, so an empty key never matches an empty ADMIN_KEY.
-    """
+    """Why an admin call is refused, or None. Checks the lock first: an empty key never matches."""
     if config.ADMIN_LOCKED:
         return jsonify(error=config.ADMIN_LOCKED), 503
     if not same_secret(request.headers.get("X-Admin-Key", ""), config.ADMIN_KEY):
@@ -93,10 +81,7 @@ def waiting_for(phone, table):
 
 
 def guard_at(phone):
-    """The label of the guard with this WhatsApp number, or None.
-
-    GUARD, the gate desk, is always a guard. The others are added on the admin page.
-    """
+    """The label of the guard with this number, or None. GUARD, the gate desk, is always one."""
     if whatsapp.same_number(phone, config.GUARD):
         return f"Gate desk {config.GUARD}"
     guard = people.guard_by_phone("+" + whatsapp.digits(phone))

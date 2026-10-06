@@ -18,8 +18,7 @@ def pass_cutoff():
 
 
 def to_dict(row):
-    """A visit as the app uses it. A pass past PASS_HOURS reads as expired at once,
-    before the background round saves that status."""
+    """A visit as the app uses it. Past PASS_HOURS it reads as expired at once."""
     visit = dict(row)
     visit["guests"] = json.loads(visit["guests"])
     created = str(visit.get("created_at") or "")
@@ -37,11 +36,7 @@ CODE_LETTERS = "".join(c for c in string.ascii_uppercase if c not in "IO")
 
 
 def new_gate_code():
-    """A random code such as KT-4821. VR is left out, because VR-4821 is a reference.
-
-    The codes come from secrets, not random: a code that lets a person onto
-    the campus must not be predictable from the ones before it.
-    """
+    """A code like KT-4821, from secrets so it cannot be guessed. Never VR, as in a reference."""
     while True:
         letters = "".join(secrets.choice(CODE_LETTERS) for _ in range(2))
         if letters != "VR":
@@ -112,10 +107,7 @@ def _pass_row(token):
 
 
 def visitor_pass(token):
-    """(visit, {"entry": code, "exit": code}) for the visitor's page, or None.
-
-    The status is worked out now, so a cached row never shows a pass past its end.
-    """
+    """(visit, codes) for the visitor's page, or None. The status is worked out now."""
     row = _pass_row(token)
     if row is None:
         return None
@@ -159,11 +151,7 @@ def delete(reference):
 
 @db.read
 def all_visits():
-    """Every stored visit, oldest first, with the time of its gate photo.
-
-    Used by the export. The photo time comes from one join rather than one
-    lookup per visit.
-    """
+    """Every visit, oldest first, with its photo time. For the CSV export."""
     with db.connect() as conn:
         rows = conn.execute(
             "SELECT visits.*, photos.taken_at AS photo_at FROM visits"
@@ -193,20 +181,14 @@ def _gate_rows():
 
 
 def at_gate():
-    """What the gate desk board shows: (expected, inside).
-
-    expected is every approved pass that has not expired, newest decision
-    first. inside is everyone inside, longest first. The expiry is worked out
-    now, so a cached row never outlives its pass.
-    """
+    """(expected, inside) for the gate board. The expiry is worked out now, past any cache."""
     expected, inside = _gate_rows()
     cutoff = pass_cutoff()
     return ([to_dict(row) for row in expected if row["created_at"] >= cutoff],
             [to_dict(row) for row in inside])
 
 
-# Everything the admin page shows. Never SELECT * here: the token is the
-# visitor's private status link and must not leave the server.
+# Never SELECT *: the token is the visitor's private link.
 ADMIN_FIELDS = (
     "visits.reference, name, phone, address, reason, visiting, guests, status,"
     " created_at, escalated_at, decided_at, decided_by, decided_phone, auto_approve_at,"
@@ -222,13 +204,7 @@ def _like(text):
 
 @db.read
 def admin_page(statuses=None, search="", after=None, limit=50):
-    """One page of visits for the admin list, newest first.
-
-    Returns (visits, cursor). Pass cursor back as `after` for the next page.
-    It is None on the last page. A page is a range read on an index that
-    starts right after the previous page's last row, so page 50 costs the same
-    as page 1. OFFSET would read and throw away every row before the page.
-    """
+    """(visits, cursor) for one admin page, newest first. Keyset paging: page 50 costs as page 1."""
     where, args = [], []
     if statuses:
         where.append(f"status IN ({', '.join(['%s'] * len(statuses))})")
@@ -237,9 +213,7 @@ def admin_page(statuses=None, search="", after=None, limit=50):
         where.append("(created_at, visits.reference) < (%s, %s)")
         args += after
     if search:
-        # A search reads rows until it fills a page, so a rare word can read
-        # the whole table. That is at most one retention period of visits.
-        # ILIKE ignores case, so a search in small letters finds a name in capitals.
+        # A search may read the whole table, one retention period. ILIKE ignores case.
         where.append(
             "(name ILIKE %s ESCAPE '\\' OR phone ILIKE %s ESCAPE '\\'"
             " OR visits.reference ILIKE %s ESCAPE '\\' OR visiting ILIKE %s ESCAPE '\\')"
@@ -273,11 +247,7 @@ def status_counts() -> dict[str, int]:
 
 @db.read
 def next_due():
-    """The earliest time the background round has work, or None when nothing waits.
-
-    Work is an escalation, an automatic approval, or a pass that expires. One
-    query, three lookups on the status indexes.
-    """
+    """The earliest time the timer has work, or None. One query on the status indexes."""
     with db.connect() as conn:
         row = conn.execute(
             "SELECT (SELECT MIN(created_at) FROM visits WHERE status = %s) AS pending,"
@@ -364,10 +334,7 @@ def purge_old():
     """Delete visits after the retention period. Returns how many went."""
     cutoff = db.ago(config.RETAIN_DAYS)
     with db.connect() as conn:
-        # A photo and the two codes go with their visit, so they are deleted
-        # first, in the same transaction and with the same cutoff. This reads
-        # only the expired visits. The old way asked every photo whether its
-        # visit still existed, every 30 seconds.
+        # Photos and codes go first, with the same cutoff, in the same transaction.
         for table in ("photos", "gate_codes"):
             conn.execute(
                 f"DELETE FROM {table} WHERE reference IN"

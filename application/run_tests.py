@@ -1,10 +1,4 @@
-"""Every check in one command: the three test suites and both linters.
-
-Run it from this folder with: .venv\\Scripts\\python.exe run_tests.py
-It ends with a list of what passed and what failed, and exits with 1 if
-anything failed or is missing. "The checks" in docs/maintenance.md says how
-to install what it needs.
-"""
+"""Every test and both linters. Run: .venv\\Scripts\\python.exe run_tests.py"""
 
 import shutil
 import subprocess
@@ -15,7 +9,7 @@ from pathlib import Path
 def tool(name: str) -> str | None:
     """The full path of a program in this Python's own folder, then on PATH, or None."""
     here = str(Path(sys.executable).parent)
-    # The warning is about a path object on old Windows Pythons. name is text.
+    # The warning is for a path argument on old Windows Pythons. name is text.
     # noinspection PyDeprecation
     return shutil.which(name, path=here) or shutil.which(name)
 

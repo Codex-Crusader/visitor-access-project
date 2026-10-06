@@ -11,8 +11,7 @@ import db
 API_URL = f"https://graph.facebook.com/v21.0/{config.META_PHONE_NUMBER_ID}/messages"
 TIMEOUT_SECONDS = 15
 
-# A reference, as VR-40221, or VR-4022 from before references had five digits.
-# An approver may type VR40221, VR 40221 or 40221.
+# VR-40221, or VR-4022 from before five digits. Also typed as VR40221, VR 40221 or 40221.
 CODE = re.compile(r"^(?:VR-?)?(\d{4,5})$", re.IGNORECASE)
 # An entry or exit code, as KT-4821. A guard may type kt4821 or KT 4821.
 GATE_CODE = re.compile(r"^([A-HJ-NP-Z]{2})-?(\d{4})$")
@@ -34,8 +33,7 @@ EXAMPLES = {db.ENTRY: "IN KT-4821", db.EXIT: "OUT RM-0937"}
 
 
 def digits(phone):
-    """The number as Meta wants it: digits only. A setting typed as
-    +91 98765 43210 must still match the 919876543210 that Meta sends."""
+    """Digits only, as Meta sends them, so +91 98765 43210 in a setting still matches."""
     return "".join(c for c in phone if c.isdigit())
 
 
@@ -72,17 +70,12 @@ def token_works():
 
 
 def send(to_phone, body):
-    """Plain text. WhatsApp delivers it only within 24 hours of the person's
-    last message to this number. Replies to a command always are."""
+    """Plain text. Arrives only within 24 hours of the person's last message."""
     return _post(to_phone, {"type": "text", "text": {"body": body}})
 
 
 def send_template(to_phone, values):
-    """The approved template, which WhatsApp delivers at any time.
-
-    The approver may not have written to this number for days, and outside
-    24 hours Meta accepts plain text and then drops it without telling us.
-    """
+    """The approved template, which arrives at any time."""
     return _post(to_phone, {
         "type": "template",
         "template": {
@@ -96,8 +89,7 @@ def send_template(to_phone, values):
     })
 
 
-# The values for the visit_request template, in the order of its {{1}} to {{8}}:
-# reference, the line saying who is asked, then the six details.
+# The visit_request template's {{1}} to {{8}}: reference, who is asked, six details.
 def template_values(visit, escalated=False):
     return [
         visit["reference"],
@@ -168,9 +160,7 @@ GATE_LINES = {
     db.CLOSED: "Closed. The visit is over and its codes are finished.",
     db.EXPIRED: "Expired. Do not let them in. They must send a new request.",
 }
-# When the guard sent the code that does the next step, the reply repeats it.
-# A reply only ever repeats a code the sender typed, so an approver who looks
-# up a reference never learns a gate code.
+# A reply repeats only a code the sender typed, so an approver never learns a gate code.
 NEXT_STEP = {
     (db.APPROVED, db.ENTRY): "Approved. Reply IN {code}, then send a photo of the visitor.",
     (db.INSIDE, db.EXIT): "Inside now. Reply OUT {code} to record the exit.",
@@ -189,11 +179,7 @@ def gate_line(visit, code=None, kind=None):
 
 
 def pass_body(visit, code=None, kind=None):
-    """What the guard sees after sending a reference or a pass code.
-
-    A closed visit is over, so it answers with times and nothing personal.
-    The same rule as the gate page and the pass endpoint.
-    """
+    """The reply to a reference or pass code. A closed visit shows only its times."""
     if visit["status"] == db.CLOSED:
         lines = [
             gate_line(visit),
@@ -244,11 +230,7 @@ def normalize_gate_code(text):
 
 
 def first_code(words, normalize):
-    """The code in the words after YES, NO, IN or OUT, or None.
-
-    All the words joined come first, for KT 4821. Then the first two and the
-    first one, so a word after the code, as in YES VR-40221 ok, is left out.
-    """
+    """The code after YES, NO, IN or OUT, or None. Tries all words joined, then two, then one."""
     for count in (len(words), 2, 1):
         found = normalize("".join(words[:count]))
         if found:
@@ -257,12 +239,7 @@ def first_code(words, normalize):
 
 
 def read_reply(body):
-    """Work out what the sender wants.
-
-    Returns (kind, value, key) where kind is one of: decide, gate, lookup,
-    key, help. The key is a reference for decide, the code as typed for gate, and
-    a reference or a pass code for lookup.
-    """
+    """(kind, value, key), kind being decide, gate, lookup, key or help."""
     parts = body.strip().split()
     if not parts:
         return "help", None, None
@@ -274,8 +251,7 @@ def read_reply(body):
     # A code may come with a space in it, as KT 4821, so the rest is joined.
     rest = "".join(parts[1:])
     if word in DECIDE_WORDS:
-        # A reference that does not read as one goes on as typed, so the reply
-        # names it. It must never fall back to the one request waiting.
+        # An unreadable reference goes on as typed. It must never decide the one request waiting.
         key = first_code(parts[1:], normalize_reference)
         return "decide", DECIDE_WORDS[word], key or rest.upper() or None
     if word in GATE_WORDS:
@@ -291,12 +267,7 @@ def read_reply(body):
 
 
 def read_incoming(payload):
-    """Pull (message_id, sender, text, photo) out of a Meta webhook payload.
-
-    photo is Meta's media id when the message is a picture, and None for text.
-    A picture's text is its caption, which is often empty. Any other kind of
-    message, and anything malformed, gives four Nones.
-    """
+    """(message_id, sender, text, photo media id) from a Meta webhook, or four Nones."""
     nothing = None, None, None, None
     try:
         value = payload["entry"][0]["changes"][0]["value"]
@@ -313,12 +284,7 @@ def read_incoming(payload):
 
 
 def read_failures(payload):
-    """Messages Meta could not deliver, as (recipient, code, reason) tuples.
-
-    Meta accepts a message first and reports its delivery later, in the same
-    webhook, as a status. A failed status is the only sign that a message
-    never arrived, for example error 131047, the 24-hour rule.
-    """
+    """Undelivered messages as (recipient, code, reason). The only sign of the 24-hour rule."""
     failures = []
     try:
         for entry in payload.get("entry", []):
@@ -338,13 +304,7 @@ def read_failures(payload):
 
 
 def notify(phone, visit, escalated=False):
-    """Send the approval request. Returns why the template failed, or None.
-
-    The template goes out when one is set, because it arrives whenever it is
-    sent. When Meta refuses it, the failure is raised, unless
-    TEMPLATE_FALLBACK is on. Then plain text goes instead, which arrives only
-    within 24 hours of the approver's last message.
-    """
+    """Send the approval request. Returns why the template failed if TEMPLATE_FALLBACK sent text."""
     if not config.REQUEST_TEMPLATE:
         send(phone, request_body(visit, escalated))
         return None

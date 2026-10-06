@@ -14,8 +14,7 @@ try:
 except RuntimeError as missing:
     fail(f"{missing}. Open .env and fill that value in.")
 
-# Imported after config, so a missing setting is reported above as a plain
-# sentence rather than as a stack trace from inside this module.
+# After config, so a missing setting reads as a sentence, not a stack trace.
 import whatsapp  # noqa: E402
 
 for name in ("MAIN_APPROVER", "BACKUP_APPROVER", "GATE_DESK_PHONE", "ADMIN_PHONE"):
@@ -36,8 +35,7 @@ print(f"Signature check {'on' if config.META_APP_SECRET else 'OFF: ALLOW_UNSIGNE
 if not config.META_APP_SECRET:
     print("WARNING: never use ALLOW_UNSIGNED_WEBHOOK in production. Set META_APP_SECRET.")
 
-# The app runs the migrations when it starts, so this runs them too, and a
-# wrong DATABASE_URL shows up here rather than at the first visit.
+# Runs the migrations, so a wrong DATABASE_URL shows here, not at the first visit.
 import db  # noqa: E402
 import people  # noqa: E402
 
@@ -51,8 +49,7 @@ for reason, (main, backup) in people.approver_table().items():
     print(f"  {reason:<14} {main}, backup {backup}")
 print()
 
-# The real request goes out as the template, so the test does too. A plain
-# text test would pass here and still never arrive after 24 quiet hours.
+# The template, as the real request uses: plain text can pass here and never arrive.
 SAMPLE = {"reference": "VR-0000", "name": "Test Visitor", "phone": "0000000000",
           "address": "Test address", "reason": "Setup check", "visiting": "Nobody",
           "guests": []}

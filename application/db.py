@@ -1,9 +1,4 @@
-"""The Postgres connection, the schema steps, the read cache, and the stored values.
-
-The connection string comes from DATABASE_URL. Connections come from a small
-pool, because opening a new one to a hosted database takes far longer than
-the query itself. The queries live in visits.py, entries.py and people.py.
-"""
+"""The Postgres pool, the read cache and the stored values. Queries: visits, entries, people."""
 
 import atexit
 import copy
@@ -59,40 +54,22 @@ _closed = False
 
 
 def connect() -> AbstractContextManager[Any]:
-    """A pooled connection, as a with block that commits at the end.
-
-    An error inside the block rolls everything in it back. The pool opens on
-    first use, so importing this module never touches the network.
-
-    prepare_threshold=None turns off prepared statements, which a pooled
-    connection string (Neon's -pooler host) cannot keep between transactions.
-    The check sends a quick query before handing out a connection, because
-    Neon closes idle connections when it scales to zero.
-
-    The connection is typed Any on purpose. The psycopg hints accept only a
-    literal string as a query, and the queries here are built from constants
-    in this file, never from input. Input always goes in the parameters.
-    """
+    """A pooled connection that commits at the end. The pool opens on first use, never at import."""
     with _pool_lock:
         if _closed:
             raise RuntimeError("The database is closed: the app is shutting down")
         if not _pools:
             _pools.append(ConnectionPool(
                 config.DATABASE_URL,
-                # The four gunicorn threads, plus the background loop. Two stay
-                # open, so the timer and a request never wait for a new one.
+                # Four gunicorn threads plus the timer.
                 min_size=2,
                 max_size=5,
-                # A request waits at most 5 seconds for a connection. The same
-                # four threads serve the pages, so a slow database must not
-                # hold them long. The visitor page gives up at 10 seconds.
+                # A request waits at most 5 s for a connection.
                 timeout=5,
-                # A connection attempt that hangs fails after 10 seconds and
-                # is tried again, instead of holding a waiting request forever.
-                # Keepalives notice a connection that died without a word in
-                # about a minute, not the two hours the system waits by default.
+                # A hung connect fails after 10 s. Keepalives find a dead connection in a minute.
                 kwargs={
                     "row_factory": dict_row,
+                    # Neon's pooled connection cannot keep prepared statements.
                     "prepare_threshold": None,
                     "connect_timeout": 10,
                     "keepalives": 1,
@@ -100,6 +77,7 @@ def connect() -> AbstractContextManager[Any]:
                     "keepalives_interval": 10,
                     "keepalives_count": 3,
                 },
+                # Neon closes idle connections when it scales to zero.
                 check=ConnectionPool.check_connection,
                 open=True,
             ))
@@ -107,14 +85,7 @@ def connect() -> AbstractContextManager[Any]:
 
 
 def close():
-    """Close the pool and its helper threads. Safe to call more than once.
-
-    Call it before the process exits. A pool left open is closed by Python's
-    own cleanup during interpreter shutdown, when Python 3.14 can no longer
-    join its threads: the connections are dropped instead of closed, and the
-    log shows PythonFinalizationError. After close(), connect() refuses, so
-    nothing opens a new pool on the way out.
-    """
+    """Close the pool before exit. Python 3.14 cannot close it at shutdown. Safe to call twice."""
     global _closed
     with _pool_lock:
         _closed = True
@@ -124,24 +95,17 @@ def close():
         pool.close(timeout=5)
 
 
-# Scripts and tests that open the database close it on exit too. The app
-# itself stops its timer first, see app.stop_background().
+# Scripts and tests close the pool on exit too. The app stops its timer first.
 atexit.register(close)
 
 log = logging.getLogger(__name__)
 
-# Seconds to wait before each new try when the database cannot be reached at
-# start. Neon takes a moment to wake, and gunicorn stops the whole server when
-# its worker fails to start, so the start waits about 15 seconds before it
-# gives up.
+# Waits between start tries while Neon wakes. A worker that fails to start stops gunicorn.
 START_WAITS = (1, 2, 4, 8)
 
 
 def init():
-    """Run every migration this database has not run yet. Returns the version.
-
-    A connection that fails is tried again after each of START_WAITS.
-    """
+    """Run the new migrations, trying again while the database wakes. Returns the version."""
     for wait in START_WAITS:
         try:
             return migrate()
@@ -172,13 +136,7 @@ def migrate():
 
 
 def read(query):
-    """Run a read a second time when its connection breaks under it.
-
-    Neon can close a connection at any moment, for example when it scales to
-    zero. A read changes nothing, so a second run is safe. Writes are never
-    run twice, because a COMMIT can land even when its reply is lost. A full
-    pool is not tried again either: that would only double the wait.
-    """
+    """Run a read again if its connection drops. Never a write: its COMMIT may have landed."""
     @functools.wraps(query)
     def read_again(*args, **kwargs):
         try:
@@ -190,12 +148,8 @@ def read(query):
     return read_again
 
 
-# The reads that open pages repeat: the gate board every 30 seconds, the
-# visitor's status, and the guard list on every gate call. They come from
-# memory until a change to the data, so Neon can sleep while pages stay
-# open. This holds because one process makes every write: keep --workers 1.
-# The old version can still write while Render swaps versions, so nothing is
-# kept in the first minutes after start.
+# Page reads come from memory until the next write, so Neon can sleep. This needs one
+# writing process (--workers 1), and is off in the first minutes while Render swaps versions.
 CACHE_AFTER_SECONDS = 120
 CACHE_LIMIT = 500
 _cache: dict = {}

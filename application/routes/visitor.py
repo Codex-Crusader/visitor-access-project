@@ -69,9 +69,7 @@ def read_visit(token):
     if found is None:
         return jsonify(error="No request with that token"), 404
     visit, codes = found
-    # The pass shows one code at a time: the entry code until the guard lets
-    # the visitor in, then the exit code. Before approval and after the exit,
-    # neither.
+    # One code at a time: entry until the visitor is in, then exit. Neither before or after.
     visit = visitor_view(visit)
     showing = {db.APPROVED: db.ENTRY, db.INSIDE: db.EXIT}.get(visit["status"])
     if showing:

@@ -223,11 +223,7 @@ def own_cycle(n):
 tokens = [visits.get(ref)["token"] for ref in refs]
 racing = threading.Event()
 def watch(start):
-    """Visitors' pages and the gate board, polling while the guards work.
-
-    Five pages with a short pause, as real pages do. Twenty tight loops would
-    need more connections than the server's four threads ever use.
-    """
+    """Five pages polling while the guards work, with a short pause, as real pages do."""
     while racing.is_set():
         for token in tokens[start::5]:
             client.get(f"/api/visit/{token}")

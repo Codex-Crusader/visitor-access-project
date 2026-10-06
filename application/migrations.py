@@ -1,14 +1,7 @@
 """The database schema. db.init() runs the steps that are new to the database."""
 
-# The schema, one step at a time. init() runs every step the database has not
-# run yet, in order, and records it in schema_migrations. To change the
-# schema, add a new step at the end. Never edit or remove a step that has been
-# deployed: databases that already ran it would never run the new text.
-#
-# While Render deploys a new version, the old version keeps running for a
-# moment against the new schema. So a step only adds things: a new table, or
-# a new column that is nullable or has a default. To remove a column, stop
-# using it in one version, and drop it in a later one.
+# Schema steps in order. Add steps only at the end, and only add things: the old version
+# runs against the new schema while Render deploys. Never edit a deployed step.
 MIGRATIONS = [
     # 1: the tables as they were when the app moved from SQLite to Postgres.
     """
@@ -120,6 +113,5 @@ ALTER TABLE photos ALTER COLUMN media_id DROP NOT NULL;
 """,
 ]
 
-# Any fixed number. Two instances that start at once, as when Render deploys,
-# wait for each other here instead of running the same step twice.
+# Advisory lock id, so two starting instances never run a step twice.
 MIGRATION_LOCK = 4_022_001

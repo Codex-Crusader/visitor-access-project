@@ -16,11 +16,7 @@ GUARD_SENDS_AT_ONCE = 8
 
 
 def tell_guards(visit, skip=()):
-    """Tell every guard that a visitor is approved, except the numbers in skip.
-
-    Plain text, so a guard who has not written to the app for 24 hours does
-    not get it. The approval stands either way.
-    """
+    """Tell every guard, except skip, that a visitor is approved. Plain text, so best effort."""
     try:
         phones = [config.GUARD] + [guard["phone"] for guard in people.guards()]
     except Exception as failure:
@@ -37,8 +33,7 @@ def tell_guards(visit, skip=()):
 
 
 def log_template_problem(problem):
-    """The template was refused and plain text went instead. Say so, because
-    plain text does not reach an approver who has been quiet for 24 hours."""
+    """Log a refused template: its plain text misses an approver quiet for 24 hours."""
     if problem:
         log.error("Approval template refused, sent plain text instead: %s", problem)
 

@@ -1,13 +1,9 @@
-// Keeps the visitor page and its script on the phone, so the page opens at
-// once on a weak signal, or with none, or while the free server wakes up.
-// Only those two are kept. Every API call goes to the network, and the page
-// keeps its own copy of the last pass. The gate and admin pages pass through.
+// Keeps the visitor page and its script on the phone. API calls always go to the network.
 const CACHE = "visitor-page";
 const PAGE = "/";
 const SCRIPT = /src="(app\.js\?v=\w+)"/;
 
-// Stored as soon as the worker installs, so a reload with no signal works on
-// the same visit, not only on the next one.
+// Stored at install, so a reload with no signal works on this visit too.
 self.addEventListener("install", event =>
   event.waitUntil(refresh().catch(() => {}).then(() => self.skipWaiting())));
 self.addEventListener("activate", event => event.waitUntil(self.clients.claim()));
@@ -25,8 +21,7 @@ async function script(request) {
   return (await cache.match(request, {ignoreVary: true})) || keepScript(cache, request);
 }
 
-// Only the current version is kept: the server marks it immutable. One copy
-// of the script is enough, so the older one goes.
+// Keeps only the current, immutable version of the script.
 async function keepScript(cache, request) {
   const answer = await fetch(request);
   if (answer.ok && (answer.headers.get("Cache-Control") || "").includes("immutable")) {
@@ -38,8 +33,7 @@ async function keepScript(cache, request) {
   return answer;
 }
 
-// Fetches the page, keeps the script it names, then keeps the page. The page
-// is kept only after its script, so the two always match.
+// Keeps the script, then the page, so the two always match.
 async function refresh(answer) {
   const cache = await caches.open(CACHE);
   answer = answer || await fetch(PAGE);
@@ -51,9 +45,7 @@ async function refresh(answer) {
   await cache.put(PAGE, answer);
 }
 
-// The kept page shows at once, and a fresh one is stored behind it, so a new
-// version shows from the next visit. With nothing kept, the network answers
-// straight away and is stored after that.
+// The kept page shows at once. A fresh one is stored for next time.
 async function page(event) {
   const kept = await caches.match(PAGE, {ignoreSearch: true, ignoreVary: true});
   const fresh = fetch(event.request);

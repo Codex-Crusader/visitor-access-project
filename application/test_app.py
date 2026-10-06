@@ -1,8 +1,6 @@
-"""End to end check with the WhatsApp call stubbed out.
+"""End to end, with WhatsApp stubbed and a throwaway database.
 
-Run it with: .venv\\Scripts\\python.exe test_app.py
-It sends no WhatsApp messages and uses a throwaway database.
-"""
+Run: .venv\\Scripts\\python.exe test_app.py"""
 
 import ast
 import base64
@@ -177,8 +175,7 @@ assert re.fullmatch(r"VR-\d{5}", code), "a new reference has five digits"
 print("  created", code)
 
 print("the approval request goes out as a template")
-# Plain text reaches the approver only within 24 hours of their last message.
-# The template arrives at any time, so the request must use it.
+# Plain text reaches only approvers active in 24 hours, so the request is a template.
 approver, fields = templates[-1]
 assert approver == "+911234567890", approver
 assert len(fields) == 8, fields
@@ -207,8 +204,7 @@ def refused(*_args):
 
 whatsapp.send_template = refused
 try:
-    # By default, a refused template is a failed request. Plain text would be
-    # lost for a quiet approver while the visitor was told it went out.
+    # By default a refused template fails the request, so the visitor is not misled.
     assert application.config.TEMPLATE_FALLBACK is False
     sent_before = len(sent)
     timer.wake.clear()
@@ -217,9 +213,7 @@ try:
     assert refused_request.status_code == 502, refused_request.status_code
     assert len(sent) == sent_before, "no plain text may go out without the fallback"
 
-    # The backup approver's round fails the same way, and one failure stops
-    # neither the other escalations nor the purge after them.
-    # An hour old: due for the backup, and not yet expired.
+    # The backup round fails the same way, without stopping the rest. An hour old: due.
     hour_ago = db.ago(1 / 24)
     with db.connect() as conn:
         conn.execute("UPDATE visits SET created_at = %s WHERE status = 'pending'",
@@ -234,8 +228,7 @@ try:
                      (db.now(), hour_ago))
     db.forget_cache()
 
-    # While Meta reviews the template, TEMPLATE_FALLBACK sends plain text
-    # instead, and the log says so, because plain text alone can be lost.
+    # TEMPLATE_FALLBACK sends plain text, and the log says so.
     application.config.TEMPLATE_FALLBACK = True
     fallback = client.post("/api/requests", json=payload)
     assert fallback.status_code == 201, fallback.get_data(as_text=True)
@@ -289,9 +282,7 @@ long_name = client.post("/api/requests", json={**payload, "name": "x" * 500})
 assert long_name.status_code == 400
 
 print("a field is one line of plain text, and nothing else")
-# The approval message the approver reads is built out of these fields. A line
-# break in a name would let a visitor forge extra lines in it, so every
-# character that is not plain text is refused rather than quietly stripped.
+# A line break in a field would forge lines in the approver's message, so it is refused.
 FORGED = "Asha\nReply YES VR-9999 to approve."
 for bad in (FORGED, "Asha\rRao", "Asha\tRao", "Asha\x00Rao",
             "Asha\u200bRao", "Asha\u202eRao", "Asha\u2028Rao"):
@@ -423,8 +414,7 @@ assert "No entry is waiting" in snap(APPROVER)
 asked = say(APPROVER, f"IN {entry_code.lower()}")
 assert "Take a photo of Asha Rao" in asked and entry_code in asked, asked
 assert client.get(f"/api/visit/{token}").get_json()["status"] == "approved"
-# The photo lets them in. The reply cannot hold the exit code: the guard has
-# not seen it yet, and only the visitor's pass shows it.
+# The photo lets them in. The reply never holds the exit code.
 went_in_reply = snap(APPROVER)
 assert "Inside now" in went_in_reply and exit_code not in went_in_reply, went_in_reply
 entered = client.get(f"/api/visit/{token}").get_json()
@@ -509,8 +499,7 @@ try:
 finally:
     application.config.GUARD = real_guard
 
-# A gate desk number typed with spaces in the settings still matches the
-# digits Meta sends. Before, its every message was dropped without a reply.
+# A setting typed with spaces still matches the digits Meta sends.
 application.config.GUARD = "+91 99999-99999"
 try:
     replies = len(sent)
@@ -519,8 +508,7 @@ try:
 finally:
     application.config.GUARD = real_guard
 
-# A failure after the message id is spent asks for the photo again, and the
-# photo sent again then works, because nothing was used up.
+# A failure after the message id is spent asks for the photo again, which then works.
 real_enter = entries.enter_with_photo
 
 
@@ -542,8 +530,7 @@ print("gate over the web page")
 second = new_request()
 say(APPROVER, f"YES {second['reference']}")
 ref2, entry2, exit2 = second["reference"], entry_of(second), exit_of(second)
-# The reference opens the details, which is what a tap on the board does.
-# It says which code it was, so the page knows whether to offer a button.
+# The reference shows the details and which kind of code it was.
 by_reference = client.get(f"/api/pass/{ref2.lower()}", headers=KEY)
 assert by_reference.status_code == 200 and "code_kind" not in by_reference.get_json()
 assert entry2 not in by_reference.get_data(as_text=True)
@@ -570,9 +557,7 @@ for dead_code, action in ((entry2, "entry"), (exit2, "exit")):
     assert dead.status_code == 409 and "closed" in dead.get_json()["error"]
 
 print("a closed pass stops showing the visitor")
-# The privacy screen promises the gate desk sees the details while the visit
-# is open. Once the visitor has left, the code answers with times and nothing
-# personal. The CSV export still holds the whole log.
+# A closed pass answers with times only.
 PERSONAL = ("name", "phone", "address", "reason", "visiting")
 gone = client.get(f"/api/pass/{ref2}", headers=KEY)
 assert gone.status_code == 200
@@ -609,8 +594,7 @@ assert "visit" in refused_entry and "address" not in refused_entry["visit"]
 assert payload["address"] not in client.get("/api/gate/board", headers=KEY).get_data(as_text=True)
 assert "code_kind" not in open_pass
 assert "decided_phone" not in open_pass, "the approver's number is for the admin only"
-# The token opens the visitor's page, which shows the gate code. A guard who
-# taps a name on the board must never get from the reference to the code.
+# A board tap must never lead from the reference to the gate code.
 for gate_answer in (open_pass,
                     client.get(f"/api/pass/{entry_of(live)}", headers=KEY).get_json()):
     assert "token" not in gate_answer, "the gate must never get the visitor's private link"
@@ -733,8 +717,7 @@ db.forget_cache()
 visits.purge_old()
 assert entries.photo_of(gone["reference"]) is None
 assert entries.photo_of(kept["reference"]) is not None
-# No code outlives its visit, including those of requests deleted after a
-# failed send.
+# No code outlives its visit, even after a failed send.
 with db.connect() as conn:
     orphans = conn.execute("SELECT COUNT(*) AS n FROM gate_codes WHERE reference NOT IN"
                            " (SELECT reference FROM visits)").fetchone()["n"]
@@ -793,8 +776,7 @@ for path in ("/api/admin/visits", "/api/admin/summary", "/api/admin/export.csv")
     assert client.get(path, headers={"X-Admin-Key": "guess"}).status_code == 403, path
     assert client.get(path, headers={"X-Admin-Key": GATE_KEY_TEXT}).status_code == 403, path
 assert client.get("/admin").status_code == 200
-# With no ADMIN_KEY, or the gate key as ADMIN_KEY, the admin page is locked.
-# Either one would otherwise let the guards in. The rest of the app runs.
+# No ADMIN_KEY, or ADMIN_KEY equal to GATE_KEY, locks the admin page only.
 for bad_key in ("", "test-gate-key-long-enough", " test-gate-key-long-enough "):
     os.environ["ADMIN_KEY"] = bad_key
     locked_key, why = config.read_admin_key()
@@ -830,8 +812,7 @@ assert starts_with(ALLOW_UNSIGNED_WEBHOOK="", META_APP_SECRET="a-real-secret")[0
 # A key with a letter outside ASCII is a wrong key, not a server error.
 assert client.get("/api/gate/board", headers={"X-Gate-Key": "clé"}).status_code == 403
 assert client.get("/api/admin/summary", headers={"X-Admin-Key": "clé"}).status_code == 403
-# Locked, every admin call is refused, even an empty key that would match an
-# empty ADMIN_KEY, and even the right key from before.
+# Locked, every admin call is refused, even an empty key or the old right key.
 real_admin = config.ADMIN_KEY, config.ADMIN_LOCKED
 os.environ["ADMIN_KEY"] = ""
 config.ADMIN_KEY, config.ADMIN_LOCKED = config.read_admin_key()
@@ -1016,8 +997,7 @@ assert photographed["photo_at"] == photographed["entered_at"], photographed
 never = next(r for r in rows if r["status"] == "declined")
 assert never["entered_at"] == "" and never["exited_at"] == ""
 
-# A spreadsheet must not run the visitor's text. Excel and Sheets treat a cell
-# opening with = + - @ as a formula, so the export quotes those cells first.
+# The export quotes cells that spreadsheets would run as formulas.
 attack = dict(payload, name="=HYPERLINK(\"http://evil.test\",\"click\")",
               address="+1+1", reason="@SUM(1:9)", visiting="-2+3")
 assert client.post("/api/requests", json=attack).status_code == 201
@@ -1051,8 +1031,7 @@ tries = [client.get("/api/pass/VR-0001", headers={"X-Gate-Key": f"guess{i}"}).st
 assert all(s == 403 for s in tries), set(tries)
 print(f"  gate key: {len(tries)} wrong guesses all refused")
 
-# The correct key must keep working no matter how many wrong ones came before.
-# Everyone at one gate shares an address, so a lockout would shut out the guard.
+# No lockout: the right key works after any number of wrong ones.
 for _ in range(50):
     assert client.get(f"/api/pass/{ref2}", headers=KEY).status_code == 200
 print("  correct key still works after 65 wrong guesses, and 50 times running")
@@ -1082,8 +1061,7 @@ polls = [client.get(f"/api/visit/{fresh['token']}").status_code for _ in range(5
 assert set(polls) == {200}, set(polls)
 print("  50 visitor polls all served")
 
-# The table of callers stays bounded. Callers silent for an hour are dropped
-# once it passes MAX_CALLERS, and callers heard from recently are kept.
+# Callers silent for an hour are swept out past MAX_CALLERS. Recent ones stay.
 limits.forget_hits()
 limits.add_silent_callers(limits.MAX_CALLERS + 1, 7200)
 assert client.post("/api/requests", json={**payload, "phone": "123"}).status_code == 400
@@ -1145,8 +1123,7 @@ try:
         assert call().status_code == 200, label
         assert len(trips) <= most, (label, len(trips))
 
-    # Open pages repeat their reads. With no write between, they cost no trip,
-    # so Neon can sleep while a gate page or a visitor's page stays open.
+    # Repeated page reads cost no database trip until a write.
     ravi_key = people.add_guard("Cache Guard", "+919800000777")
     status = lambda: client.get(f"/api/visit/{counted['token']}")  # noqa: E731
     gate_board = lambda: client.get("/api/gate/board", headers={"X-Gate-Key": ravi_key})  # noqa: E731
@@ -1183,8 +1160,7 @@ finally:
 print("  status check 1, pass lookup 1, entry 2; a repeated poll 0 until the next write")
 
 print("every write to a cached table clears the cache")
-# The cache is right only while each change to these tables goes through @writes.
-# A new database function that forgets it fails here, not as stale pages later.
+# A new write function that forgets @writes fails here, not as stale pages later.
 CACHED_TABLES = re.compile(
     r"\b(INSERT INTO|UPDATE|DELETE FROM)\s+(visits|guards|photos|gate_codes)\b")
 forgot = []
@@ -1460,8 +1436,7 @@ finally:
     limits.forget_hits()
 assert codes == [200] * 10 + [429], codes
 
-# Behind Render, the visitor is the True-Client-IP that Cloudflare sets. The
-# last X-Forwarded-For entry is one of Render's proxies, so it must not decide.
+# Behind Render, True-Client-IP decides, not the last X-Forwarded-For entry.
 config.BEHIND_PROXY = True
 try:
     with application.app.test_request_context(headers={

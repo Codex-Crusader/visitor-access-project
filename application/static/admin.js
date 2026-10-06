@@ -42,8 +42,7 @@ let guardErrors = {};
 let shownKey = null;    // {name, key}: a guard's new key, shown once
 let removing = null;    // the number of the guard whose removal waits for a second tap
 let loading = false;
-// Each list request gets a number. An answer to an older request, for example
-// a search the admin has since changed, is thrown away.
+// Each list request gets a number. An answer to an older one is dropped.
 let asked = 0;
 let searchTimer = null;
 
@@ -108,8 +107,7 @@ function renderTiles() {
 const plus = v => v.guests.length ? ` +${v.guests.length}` : "";
 const DECIDER = {main: "the approver", backup: "the backup approver"};
 
-// [tone, line] for who decided, such as "Declined by the backup approver +91…".
-// A decision made before the app kept the number names only the role.
+// [tone, line] for who decided. An old decision names only the role.
 function decision(v) {
   if (!v.decided_at) return ["", ""];
   if (v.decided_by === "auto") return ["go", "Approved automatically: no one answered in time"];
@@ -222,8 +220,7 @@ async function saveApprovers() {
   if (!backup) fieldErrors.backup = "Type the backup approver's number.";
   if (fieldErrors.main || fieldErrors.backup) return renderApprovers();
   el("ap-save").disabled = true;
-  // The admin can open another reason while this one saves. The answer then
-  // speaks for this reason and leaves the other one open.
+  // The admin can open another reason meanwhile. The answer speaks for this one.
   const reason = editing;
   try {
     const saved = await call("/api/admin/approvers", {reason, main: main1, backup});
