@@ -73,7 +73,9 @@ The working app lives in [`application/`](application/). A visitor fills in the 
 sends the details to an approver on WhatsApp. The approver replies `YES` or `NO`. The visitor sees
 the decision on the same page a few seconds later. At the gate, a guard checks the entry code on the
 pass, takes a photo of the visitor and records the entry. On the way out, the pass shows a new exit
-code. After the exit, neither code works. The admin page lists every request.
+code. After the exit, neither code works. Staff and faculty on the allow list enter with a 7-digit
+code, and get a WhatsApp message about each entry. The admin page lists every request, and keeps
+the offices, the allow list, the blacklist, and the two logs to download.
 
 The pictures below come from the working app, with made-up visitors. The demo has only the visitor
 screens, with fixed codes and no server, so some details are different.
@@ -82,20 +84,25 @@ screens, with fixed codes and no server, so some details are different.
 
 |                                    Home                                    |                                                Request a visit                                                 |                                                   Waiting on the approver                                                   |
 |:--------------------------------------------------------------------------:|:--------------------------------------------------------------------------------------------------------------:|:---------------------------------------------------------------------------------------------------------------------------:|
-| <img src="images/app-01-home.png" alt="The five section menu" width="250"> | <img src="images/app-02-form.png" alt="Reason chips, the student being visited, and one guest" width="250"> | <img src="images/app-03-waiting.png" alt="Not approved yet, with a tracker and the time the backup takes over" width="250"> |
+| <img src="images/app-01-home.png" alt="The five section menu" width="250"> | <img src="images/app-02-form.png" alt="Reason chips, the office picked from a list, and one guest" width="250"> | <img src="images/app-03-waiting.png" alt="Not approved yet, with a tracker and the time the request is asked again" width="250"> |
 
-|                                           Approved, with the pass                                            |                                                              The gate desk                                                              |
-|:------------------------------------------------------------------------------------------------------------:|:---------------------------------------------------------------------------------------------------------------------------------------:|
-| <img src="images/app-04-pass.png" alt="An entry pass showing the entry code UW-6831" width="250"> | <img src="images/app-05-gate.png" alt="The guard types the entry code and sees Let them in, and must take a photo before Record entry" width="250"> |
+| Approved, with the pass | The gate desk | A staff code at the gate |
+|:---:|:---:|:---:|
+| <img src="images/app-04-pass.png" alt="An entry pass with its entry code" width="250"> | <img src="images/app-05-gate.png" alt="The guard types the entry code and sees Let them in, and must take a photo before Record entry" width="250"> | <img src="images/app-07-gate-staff.png" alt="In Staff code mode the guard types a 7-digit code and sees the person's name and tag large, then records the entry" width="250"> |
 
-|                                                                 The admin page                                                                  |
-|:-----------------------------------------------------------------------------------------------------------------------------------------------:|
-| <img src="images/app-06-admin.png" alt="Every request, newest first, with counts by status and the approver who decided each one" width="760"> |
+| The admin page |
+|:---:|
+| <img src="images/app-06-admin.png" alt="Every request, newest first, with counts by status, bulk approval, and the approver who decided each one" width="760"> |
+
+| The allow list and the staff entry log |
+|:---:|
+| <img src="images/app-08-admin-allow.png" alt="The allow list grouped by tag, each person's 7-digit code, and the recent staff entries with a download button" width="760"> |
 
 </div>
 
 The waiting screen is the whole recommendation in one picture. It names who holds the request and
-states the minute the backup approver takes over.
+states the minute the request is asked again: of the backup approver, or as a reminder to the
+approver when there is no backup.
 [`application/docs/setup.md`](application/docs/setup.md) covers the settings and the setup.
 [`application/docs/maintenance.md`](application/docs/maintenance.md) covers the WhatsApp commands
 and daily use.

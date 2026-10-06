@@ -75,6 +75,8 @@ a.btn{display:block;text-align:center;text-decoration:none}
 label{display:block;font-weight:650;font-size:.84rem;letter-spacing:.02em;margin:20px 0 7px;color:var(--ink)}
 input,select{width:100%;padding:14px;border:1px solid var(--line);border-radius:12px;background:var(--mute);
  font:inherit;color:inherit;-webkit-appearance:none;appearance:none;transition:border-color .12s,background .12s}
+select{padding-right:40px;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='9'%3E%3Cpath d='M1 1l6 6 6-6' fill='none' stroke='%235A6979' stroke-width='2'/%3E%3C/svg%3E");
+ background-repeat:no-repeat;background-position:right 15px center}
 input:focus{background:var(--paper);border-color:var(--brand2);box-shadow:0 0 0 3px rgba(39,89,156,.12)}
 input.bad{border-color:var(--stop);background:var(--stopBg)}
 input.bad:focus{border-color:var(--stop);background:var(--stopBg);box-shadow:0 0 0 3px rgba(153,39,36,.14)}
@@ -154,8 +156,12 @@ input.bad:focus{border-color:var(--stop);background:var(--stopBg);box-shadow:0 0
 
 const REF="VR-4821",ENTRY="KT-3950",ESC=15,DEC=25;
 const REASONS=["See a student","See an office","Delivery","Event","Other"];
+// With this reason the visitor picks an office from a list, as in the app. Each office has its own approver.
+const OFFICE="See an office";
+const OFFICES=[{tag:"Main Building",offices:["Admissions Office","Accounts Office"]},
+  {tag:"Library Block",offices:["Library"]}];
 const MAX_GUESTS=10;
-const S={s:"home",min:804,f:{name:"",phone:"",address:"",reason:"",other:"",visiting:"",guest:""},g:[],e:{},
+const S={s:"home",min:804,f:{name:"",phone:"",address:"",reason:"",other:"",office:"",visiting:"",guest:""},g:[],e:{},
   adding:0,sent:null,st:"none",hist:[],sheet:0};
 const hm=m=>String(Math.floor(m/60)%24).padStart(2,"0")+":"+String(m%60).padStart(2,"0");
 const el=i=>document.getElementById(i);
@@ -180,6 +186,9 @@ const T={home:["",0],step1:["Request a Visit",1],step2:["Request a Visit",1],rev
   status:["Checking on My Request",1],inout:["Getting In and Out",1],privacy:["My Information and Privacy",1],help:["Getting Help",1]};
 const word=()=>({waiting:"Not approved yet",escalated:"Not approved yet",approved:"Approved",declined:"Declined"}[S.st]||"");
 const reasonText=()=>S.f.reason==="Other"?(S.f.other.trim()||"Other"):S.f.reason;
+const visitingText=()=>S.f.reason===OFFICE?S.f.office:S.f.visiting;
+const officeOptions=()=>OFFICES.map(g=>`<optgroup label="${x(g.tag)}">${g.offices.map(o=>
+  `<option value="${x(o)}"${o===S.f.office?" selected":""}>${x(o)}</option>`).join("")}</optgroup>`).join("");
 const ICONS={
  check:'<path d="M20 6 9 17l-5-5"/>',
  clock:'<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
@@ -194,13 +203,15 @@ const DESK="+912200000000", DESK_SHOWN="+91 22 0000 0000";
 const gate=()=>`<a class="btn plain" href="tel:${DESK}">Call gate desk</a>`;
 // A "+" button first. Pressing it opens a box for one more name. Adding the
 // name closes the box and brings the "+" back. It goes away at ten people.
-const guestBox=()=>S.adding
-  ?`<div class="add-row"><input id="f_guest" class="${flag("guest")}" value="${x(S.f.guest)}"
+const guestBox=()=>{
+  const box=S.adding
+    ?`<div class="add-row"><input id="f_guest" class="${flag("guest")}" value="${x(S.f.guest)}"
       oninput="set('guest',this.value)" placeholder="Their name" aria-label="Name of the person with you" enterkeyhint="done">
       </div>${note("guest")}`
-  :S.g.length<MAX_GUESTS
-    ?`<button type="button" class="add-person" id="more" onclick="openAdd()"><span class="plus" aria-hidden="true">+</span>Add a person</button>`
     :"";
+  const room=S.g.length+(S.adding?1:0)<MAX_GUESTS;
+  return box+(room?`<button type="button" class="add-person" id="more" onclick="openAdd()"><span class="plus" aria-hidden="true">+</span>${S.adding?"Add another person":"Add a person"}</button>`:"");
+};
 
 // How far the blue line has run down the tracker. mark() writes it on to the
 // bar after the markup is in the page, so the template holds no computed CSS.
@@ -213,9 +224,9 @@ function tracker(){
   const esc=S.st==="escalated"||S.st==="approved", done=S.st==="approved";
   return `<ul class="track"><span class="rail"><b></b></span>
     <li data-at="done"><b class="t">Request sent</b><span>${hm(S.sent)}</span></li>
-    <li data-at="${esc?"done":"now"}"><b class="t">First approver, Desk 1</b>
+    <li data-at="${esc?"done":"now"}"><b class="t">Approver, Desk 1</b>
       <span>${esc?"No answer by "+hm(S.sent+ESC):"Opened, no decision yet"}</span></li>
-    ${esc?`<li data-at="${done?"done":"now"}"><b class="t">Backup approver, Desk 2</b><span>Took over at ${hm(S.sent+ESC)}</span></li>`:""}
+    ${esc?`<li data-at="${done?"done":"now"}"><b class="t">Asked again, Desk 2</b><span>Sent again at ${hm(S.sent+ESC)}</span></li>`:""}
     <li data-at="${done?"done":""}"><b class="t">Decision</b><span>${done?"Approved at "+hm(S.sent+DEC):"Not yet"}</span></li>
   </ul>`;
 }
@@ -239,7 +250,7 @@ function view(){
     <input id="f_name" class="${flag("name")}" value="${x(S.f.name)}" oninput="set('name',this.value)">
     ${note("name")}
     <label for="f_phone">Phone</label>
-    <input id="f_phone" inputmode="numeric" class="${flag("phone")}" value="${x(S.f.phone)}" oninput="set('phone',this.value)">
+    <input id="f_phone" inputmode="tel" type="tel" class="${flag("phone")}" value="${x(S.f.phone)}" oninput="set('phone',this.value)">
     ${note("phone")}
     <label for="f_address">Address</label>
     <input id="f_address" class="${flag("address")}" value="${x(S.f.address)}" oninput="set('address',this.value)">
@@ -255,13 +266,18 @@ function view(){
     ${note("reason")}
     ${S.f.reason==="Other"?`<input id="f_other" style="margin-top:10px" class="${flag("other")}" value="${x(S.f.other)}" oninput="set('other',this.value)" placeholder="Say briefly why">
       ${note("other")}`:""}
-    <label for="f_visiting">Who are you visiting?</label>
+    ${S.f.reason===OFFICE?`<label for="f_office">Which office?</label>
+    <select id="f_office" class="${flag("office")}" onchange="set('office',this.value)">
+      <option value="">Choose an office</option>${officeOptions()}</select>
+    ${note("office")}
+    <p class="sm">The office's own approver gets your request.</p>`
+    :`<label for="f_visiting">Who are you visiting?</label>
     <input id="f_visiting" class="${flag("visiting")}" value="${x(S.f.visiting)}" oninput="set('visiting',this.value)" placeholder="Student name or roll number">
     ${note("visiting")}
     ${S.e.visiting===STAFF
       ?`<p class="sm">Staff no longer approve visits. Name the student you are seeing.</p>
         <button class="btn plain" onclick="roll()">Use a roll number</button>`
-      :`<p class="sm">We pick the approver for you.</p>`}
+      :`<p class="sm">We pick the approver for you.</p>`}`}
     <label>Anyone with you?</label>
     ${S.g.map((g,i)=>`<div class="guest">${x(g)}<button onclick="drop(${i})">Remove</button></div>`).join("")}
     ${guestBox()}
@@ -270,9 +286,9 @@ function view(){
 
   case "review": return `<div class="facts">
       ${fact("Name",S.f.name)}${fact("Phone",S.f.phone)}${fact("Address",S.f.address)}
-      ${fact("Reason",reasonText())}${fact("Visiting",S.f.visiting)}${S.g.length?fact("With you",S.g.join(", ")):""}
+      ${fact("Reason",reasonText())}${fact(S.f.reason===OFFICE?"Office":"Visiting",visitingText())}${S.g.length?fact("With you",S.g.join(", ")):""}
     </div>
-    <p class="sm">No answer in 15 minutes and it moves to a backup approver. You do not fill this in again.</p>
+    <p class="sm">No answer in 15 minutes, and it is sent again, to a backup approver if there is one. You do not fill this in again.</p>
     <button class="btn" onclick="send()">Send request</button>
     <button class="btn plain" onclick="back()">Edit</button>`;
 
@@ -289,8 +305,8 @@ function view(){
     return `<div class="state wait">${ico("clock")}<div><h3>Not approved yet</h3><p>Do not enter until this says Approved.</p></div></div>
       ${tracker()}
       <div class="facts">${fact("Reference",REF)}
-        ${fact("With",S.st==="escalated"?"Backup approver, Desk 2":"First approver, Desk 1")}
-        ${fact(S.st==="escalated"?"Decision by":"Backup takes over",S.st==="escalated"?hm(S.sent+DEC):hm(S.sent+ESC)+" · "+left+" min")}
+        ${fact("With",S.st==="escalated"?"Asked again, Desk 2":"Approver, Desk 1")}
+        ${fact(S.st==="escalated"?"Decision by":"Asked again at",S.st==="escalated"?hm(S.sent+DEC):hm(S.sent+ESC)+" · "+left+" min")}
         ${S.g.length?fact("With you",S.g.join(", ")):""}</div>
       <button class="btn alt" onclick="go('step2')">Add a visitor</button>${gate()}`;}
 
@@ -321,7 +337,12 @@ function view(){
 const MAX=200;
 const STAFF="Name a student, not a staff member.";
 const STEP1=["name","phone","address"];
-const STEP2=["reason","other","visiting","guest"];
+const STEP2=["reason","other","office","visiting","guest"];
+// 10 digits, or + and the country code, as the app takes.
+function phoneOk(phone){
+  const n=phone.replace(/\D/g,"").length;
+  return phone.startsWith("+")?n>=8&&n<=15:n===10;
+}
 // Line breaks, control codes, invisible marks and the overrides that make
 // text run the other way. They are not part of a name or an address.
 const NOT_TEXT=/[\p{C}\p{Zl}\p{Zp}]/u;
@@ -360,7 +381,7 @@ function n1(){
 
   const phone=needed("phone","Phone");
   if(phone)found.phone=phone;
-  else if(tidy(S.f.phone).replace(/\D/g,"").length!==10)found.phone="Enter 10 digits.";
+  else if(!phoneOk(tidy(S.f.phone)))found.phone="Enter 10 digits, or + and the country code.";
 
   const address=needed("address","Address");
   if(address)found.address=address;
@@ -378,7 +399,10 @@ function n2(){
     if(other)found.other=other;
   }
 
-  if(!tidy(S.f.visiting))found.visiting="Name the student you are visiting.";
+  if(S.f.reason===OFFICE){
+    if(!OFFICES.some(g=>g.offices.includes(S.f.office)))found.office="Choose the office you are visiting.";
+  }
+  else if(!tidy(S.f.visiting))found.visiting="Name the student you are visiting.";
   else{
     const who=needed("visiting","This");
     if(who)found.visiting=who;
@@ -402,6 +426,7 @@ function pick(r){
   S.f.reason=r;
   delete S.e.reason;
   if(r!=="Other")S.f.other="";
+  if(r!==OFFICE)S.f.office="";
   else delete S.e.other;
   render();
   if(r==="Other"){const i=el("f_other");if(i)i.focus()}
@@ -410,6 +435,13 @@ function pick(r){
 function roll(){S.f.visiting="2024SEPVUGP0003";delete S.e.visiting;render()}
 
 function openAdd(){
+  // A name in the open box is kept first, so each + adds one more person.
+  if(S.adding&&tidy(S.f.guest)){
+    const bad=needed("guest","That name");
+    if(bad){settle(["guest"],{guest:bad});return}
+    S.g.push(tidy(S.f.guest));
+    S.f.guest="";
+  }
   S.adding=1;
   render();
   const box=el("f_guest");
