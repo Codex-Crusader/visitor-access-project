@@ -9,6 +9,7 @@ import io
 import logging
 import os
 import re
+import runpy
 import subprocess
 import sys
 import time
@@ -46,6 +47,7 @@ import access
 import audit
 import blacklist
 from routes import admin as admin_routes
+from routes import gate as gate_routes
 import checks
 import limits
 import pages
@@ -55,6 +57,7 @@ import entries
 import export
 import migrations
 import people
+import redaction
 import staff
 import tags
 import visits
@@ -467,10 +470,11 @@ def status_of(ticket):
     return client.get(f"/api/visit/{ticket['token']}").get_json()["status"]
 
 
-# Two INs in a row: the photo goes to the second, and the reply says which.
+# Two INs in a row: the second is refused until the first photo arrives, so a photo never
+# goes to the wrong visitor. The reply to the photo names who went in.
 first, second_in = approved(), approved()
-say(APPROVER, f"IN {entry_of(first)}")
 say(APPROVER, f"IN {entry_of(second_in)}")
+assert second_in["reference"] in say(APPROVER, f"IN {entry_of(first)}")
 went_in = snap(APPROVER)
 assert second_in["reference"] in went_in and "Inside now" in went_in, went_in
 assert status_of(first) == "approved" and status_of(second_in) == "inside"
@@ -566,7 +570,9 @@ for dead_code, action in ((entry2, "entry"), (exit2, "exit")):
 print("a closed pass stops showing the visitor")
 # A closed pass answers with times only.
 PERSONAL = ("name", "phone", "address", "reason", "visiting")
-gone = client.get(f"/api/pass/{ref2}", headers=KEY)
+# By reference, a closed visit is not on the board, so it reads as no pass at all.
+assert client.get(f"/api/pass/{ref2}", headers=KEY).status_code == 404
+gone = client.get(f"/api/pass/{exit2}", headers=KEY)
 assert gone.status_code == 200
 shut = gone.get_json()
 assert shut["status"] == "closed"
@@ -647,7 +653,8 @@ with db.connect() as conn:
 db.forget_cache()
 board = client.get("/api/gate/board", headers=KEY).get_json()
 assert stale["reference"] not in [v["reference"] for v in board["expected"]]
-assert client.get(f"/api/pass/{stale['reference']}", headers=KEY).get_json()["status"] == "expired"
+assert client.get(f"/api/pass/{entry_of(stale)}", headers=KEY).get_json()["status"] == "expired"
+assert client.get(f"/api/pass/{stale['reference']}", headers=KEY).status_code == 404
 print(f"  {len(board['inside'])} inside, {len(board['expected'])} expected")
 
 print("a declined pass never opens the gate")
@@ -879,16 +886,24 @@ assert sum(summary["counts"].values()) == total
 gaps = " ".join(summary["setup_gaps"])
 assert "GATE_DESK_PHONE" in gaps and "STAFF_ENTRY_TEMPLATE" in gaps, gaps
 assert "ADMIN_PHONE" not in gaps and "TEMPLATE_FALLBACK" not in gaps, gaps
-real_settings = (config.GATE_DESK_PHONE, config.STAFF_ENTRY_TEMPLATE, config.ADMIN_PHONE_SET)
+# Here the gate desk is also the approver, as on the demo: one person approves and lets in.
+assert f"{config.GUARD} can approve a visit and also let the visitor in" in gaps, gaps
+real_settings = (config.GATE_DESK_PHONE, config.STAFF_ENTRY_TEMPLATE, config.ADMIN_PHONE_SET,
+                 config.GUARD, config.GATE_KEY)
 config.GATE_DESK_PHONE, config.STAFF_ENTRY_TEMPLATE = "+912212345678", "staff_entry"
-config.ADMIN_PHONE_SET = False
+config.ADMIN_PHONE_SET, config.GUARD = False, "+919999999990"
 try:
     gaps = client.get("/api/admin/summary", headers=ADMIN).get_json()["setup_gaps"]
     assert len(gaps) == 1 and "ADMIN_PHONE is not set" in gaps[0], gaps
     config.ADMIN_PHONE_SET = True
     assert client.get("/api/admin/summary", headers=ADMIN).get_json()["setup_gaps"] == []
+    # A long key of few characters is long but easy to guess: a warning, not a refusal.
+    config.GATE_KEY = "x" * 20
+    gaps = client.get("/api/admin/summary", headers=ADMIN).get_json()["setup_gaps"]
+    assert len(gaps) == 1 and gaps[0].startswith("GATE_KEY repeats"), gaps
 finally:
-    config.GATE_DESK_PHONE, config.STAFF_ENTRY_TEMPLATE, config.ADMIN_PHONE_SET = real_settings
+    (config.GATE_DESK_PHONE, config.STAFF_ENTRY_TEMPLATE, config.ADMIN_PHONE_SET,
+     config.GUARD, config.GATE_KEY) = real_settings
 # A download's name has the campus date, as its rows do, not the UTC date.
 assert export.file_name("x", "csv") == (
     f"x-{datetime.now(config.WORK_TIMEZONE).strftime('%Y-%m-%d')}.csv")
@@ -1085,7 +1100,7 @@ print(f"  gate key: {len(tries)} wrong guesses all refused")
 
 # No lockout: the right key works after any number of wrong ones.
 for _ in range(50):
-    assert client.get(f"/api/pass/{ref2}", headers=KEY).status_code == 200
+    assert client.get(f"/api/pass/{exit2}", headers=KEY).status_code == 200
 print("  correct key still works after 65 wrong guesses, and 50 times running")
 
 # The request limit must not be buyable with a made-up address header.
@@ -1994,8 +2009,19 @@ print(f"  {kept} photos, each named in visits.csv, a WhatsApp photo left empty")
 
 print("a blacklisted number cannot ask, cannot enter, and the gate is told")
 limits.forget_hits()
-assert blacklist.phone_key("98765 43210") == blacklist.phone_key("+919876543210") == "9876543210"
-assert blacklist.phone_key("12345") is None
+# One number, however it is typed. Python and the SQL of migration 8 agree on every form.
+SAME_NUMBER = ("98765 43210", "+919876543210", "098765 43210", "0091 98765 43210",
+               "919876543210")
+assert {blacklist.number_key(typed) for typed in SAME_NUMBER} == {"919876543210"}
+assert blacklist.number_key("12345") is None
+KEY_FORMS = (*SAME_NUMBER, "+44 20 7946 0958", "+1 202 555 0143", "+91 202 555 0143",
+             "00 44 20 7946 0958", "1234567890123")
+with db.connect() as conn:
+    for typed in KEY_FORMS:
+        in_sql = conn.execute("SELECT phone_number_key(%s) AS k", (typed,)).fetchone()["k"]
+        assert in_sql == blacklist.number_key(typed), (typed, in_sql)
+# Two countries whose numbers share the last 10 digits are two numbers.
+assert blacklist.number_key("+1 202 555 0143") != blacklist.number_key("+91 202 555 0143")
 
 
 def add_black(black_phone, black_name="Kiran", reason="Damaged property", with_key=None):
@@ -2010,7 +2036,7 @@ bad = add_black("123", "", "line\nbreak")
 assert bad.status_code == 400 and set(bad.get_json()["fields"]) == {"phone", "name", "reason"}
 listed_now = add_black("+91 98765 43210")
 assert listed_now.status_code == 200, listed_now.get_json()
-assert [b["phone_key"] for b in listed_now.get_json()["blacklist"]] == ["9876543210"]
+assert [b["number_key"] for b in listed_now.get_json()["blacklist"]] == ["919876543210"]
 assert add_black("9876543210").status_code == 400, "one number once"
 # The form's 10 digits match the +91 number. The page gets a neutral answer.
 refused_request = client.post("/api/requests", json=payload)
@@ -2137,8 +2163,9 @@ with db.connect() as conn:
 db.forget_cache()
 racing = new_request()
 with db.connect() as conn:
-    conn.execute("INSERT INTO blacklist (phone_key, phone, name, reason, added_at)"
-                 " VALUES ('9876543210', '+91 98765 43210', 'Kiran', '', %s)", (db.now(),))
+    conn.execute("INSERT INTO blacklist (number_key, phone_key, phone, name, reason, added_at)"
+                 " VALUES ('919876543210', '9876543210', '+91 98765 43210', 'Kiran', '', %s)",
+                 (db.now(),))
 db.forget_cache()
 assert "on the blacklist" in say(APPROVER, f"YES {racing['reference']}")
 assert visits.get(racing["reference"])["status"] == "pending"
@@ -2331,8 +2358,9 @@ banned_one = client.post("/api/requests", json={**payload, "phone": "9123456780"
 add_black("9123456780")
 blocked_one = client.post("/api/requests", json={**payload, "phone": "9123456781"}).get_json()
 with db.connect() as conn:
-    conn.execute("INSERT INTO blacklist (phone_key, phone, name, reason, added_at)"
-                 " VALUES ('9123456781', '9123456781', 'X', '', %s)", (db.now(),))
+    conn.execute("INSERT INTO blacklist (number_key, phone_key, phone, name, reason, added_at)"
+                 " VALUES ('919123456781', '9123456781', '9123456781', 'X', '', %s)",
+                 (db.now(),))
 db.forget_cache()
 asked = [v["reference"] for v in wave] + [done_before["reference"], late_one["reference"],
                                           banned_one["reference"], blocked_one["reference"],
@@ -2650,6 +2678,20 @@ plain_key = {"X-Admin-Key": plain_admin["key"]}
 for log_path in ("/api/admin/export.zip", "/api/admin/export.csv", "/api/admin/staff-entries.csv"):
     assert client.get(log_path, headers=plain_key).status_code == 409, log_path
     assert client.get(log_path, headers=ADMIN).status_code == 200, log_path
+# Admins and faces are for super admins only: a regular admin gets 409 for each.
+for admin_path, admin_body in (("/api/admin/admins", {"name": "X", "phone": "+919300000010"}),
+                               ("/api/admin/admins/new-key", {"phone": "+919300000009"}),
+                               ("/api/admin/admins/remove", {"phone": "+919300000009"})):
+    refused_admin = client.post(admin_path, json=admin_body, headers=plain_key)
+    assert refused_admin.status_code == 409, admin_path
+photographed = approved()
+client.post(f"/api/pass/{entry_of(photographed)}/entry", headers=KEY, json=PHOTO)
+photo_path = f"/api/admin/photo/{photographed['reference']}"
+assert client.get(photo_path, headers=plain_key).status_code == 409
+assert client.get(photo_path, headers=ADMIN).status_code == 200
+# The approver change log keeps the numbers before the change.
+assert any("Delivery: from +919300000003, backup +919300000002, to +919300000003, backup"
+           " +919300000001" in change["detail"] for change in audit.everything())
 gate_pass = client.get(f"/api/pass/{entry_of(approved())}", headers=KEY).get_json()
 assert "phone" not in gate_pass and gate_pass["name"], gate_pass
 # On WhatsApp too: a guard's lookup has no phone. An approver, who has it already, keeps it.
@@ -2663,6 +2705,205 @@ assert "Phone: 9876543210" in approver_reply, approver_reply
 # Another reason's request reads as no pass at all, so references cannot be tried one by one.
 assert say("919300000003", looked_up["reference"]) == f"No pass has code {looked_up['reference']}."
 print("  409 for a plain admin, 200 for a super, no phone for a guard on the page or WhatsApp")
+
+print("one photo, one visitor: a second IN waits for the first photo")
+limits.forget_hits()
+first_in, second_in = approved(), approved()
+assert "Take a photo of" in say(APPROVER, f"IN {entry_of(first_in)}")
+owed = say(APPROVER, f"IN {entry_of(second_in)}")
+assert first_in["reference"] in owed and "CANCEL" in owed, owed
+snap(APPROVER)
+assert visits.get(first_in["reference"])["status"] == "inside", "the photo went to the first IN"
+assert visits.get(second_in["reference"])["status"] == "approved"
+# The same IN twice only refreshes the wait. CANCEL drops it and lets nobody in.
+assert "Take a photo of" in say(APPROVER, f"IN {entry_of(second_in)}")
+assert "Take a photo of" in say(APPROVER, f"in {entry_of(second_in)}")
+assert "nobody was let in" in say(APPROVER, "cancel")
+assert visits.get(second_in["reference"])["status"] == "approved"
+assert "No photo is waiting" in say(APPROVER, "CANCEL")
+# An expired wait, or one for a pass that can no longer enter, never blocks.
+third_in = approved()
+say(APPROVER, f"IN {entry_of(second_in)}")
+with db.connect() as wait_writer:
+    wait_writer.execute("UPDATE photo_waits SET asked = %s", (db.ago(1),))
+assert "Take a photo of" in say(APPROVER, f"IN {entry_of(third_in)}")
+client.post(f"/api/pass/{entry_of(third_in)}/entry", headers=KEY, json=PHOTO)
+assert "Take a photo of" in say(APPROVER, f"IN {entry_of(second_in)}"), "third is inside now"
+say(APPROVER, "CANCEL")
+assert "CANCEL" in whatsapp.help_text({"guard"})
+print("  refused with the pending name, CANCEL drops it, expired or entered waits give way")
+
+print("a gate key opens only the board by reference, and lookups have a limit")
+limits.forget_hits()
+on_board_visit = approved()
+assert client.get(f"/api/pass/{on_board_visit['reference']}", headers=KEY).status_code == 200
+waiting_visit = new_request()
+assert client.get(f"/api/pass/{waiting_visit['reference']}", headers=KEY).status_code == 404
+unknown_answer = client.get("/api/pass/VR-99999", headers=KEY).get_json()
+hidden_answer = client.get(f"/api/pass/{waiting_visit['reference']}", headers=KEY).get_json()
+assert unknown_answer == hidden_answer, "the same answer, so a reference tells nothing"
+# On WhatsApp, a guard who is not an approver of it gets the same answer.
+guard_only = client.post("/api/admin/guards", headers=ADMIN,
+                         json={"name": "Lookup Guard", "phone": "+919300000020"}).get_json()
+assert say("919300000020", waiting_visit["reference"]).startswith("No pass has code")
+assert waiting_visit["name"] in say("919300000020", on_board_visit["reference"])
+limits.forget_hits()
+lookups = [client.get(f"/api/pass/{on_board_visit['reference']}", headers=KEY).status_code
+           for _ in range(gate_routes.LOOKUPS_PER_MINUTE + 1)]
+assert lookups[-1] == 429 and lookups.count(200) == gate_routes.LOOKUPS_PER_MINUTE, lookups
+limits.forget_hits()
+print("  board visits only, the same 404 for the rest, 60 lookups a minute per guard")
+
+print("the blacklist keeps two countries apart, and migration 8 converts old rows")
+limits.forget_hits()
+# A ban on a US number does not stop an Indian number with the same last 10 digits.
+assert add_black("+1 202 555 0143", "US caller").status_code == 200
+same_tail = client.post("/api/requests", json={**payload, "phone": "+91 202 555 0143"})
+assert same_tail.status_code == 201, same_tail.get_json()
+assert client.post("/api/requests", json={**payload, "phone": "+1 202 555 0143"}).status_code == 403
+assert add_black("+91 202 555 0143", "Indian caller").status_code == 200, "both can be listed"
+client.post("/api/admin/blacklist/remove", headers=ADMIN, json={"phone": "+1 202 555 0143"})
+client.post("/api/admin/blacklist/remove", headers=ADMIN, json={"phone": "+91 202 555 0143"})
+# Migration 8 on rows written by the old version: build steps 1 to 7 in a scratch schema,
+# add old-style rows, run step 8, and read the new keys.
+with db.connect() as conn:
+    conn.execute("CREATE SCHEMA old_shape")
+    conn.execute("SET LOCAL search_path TO old_shape")
+    for old_step in migrations.MIGRATIONS[:7]:
+        conn.execute(old_step)
+    for old_phone in ("+91 98765 43210", "9123456780", "+44 20 7946 0958"):
+        conn.execute("INSERT INTO blacklist (phone_key, phone, name, reason, added_at)"
+                     " VALUES (%s, %s, 'Old', '', %s)",
+                     (blacklist.phone_key(old_phone), old_phone, db.now()))
+    conn.execute(migrations.MIGRATIONS[7])
+    converted = {row["phone"]: row["number_key"] for row in
+                 conn.execute("SELECT phone, number_key FROM blacklist").fetchall()}
+    conn.execute("SET LOCAL search_path TO public")
+    conn.execute("DROP SCHEMA old_shape CASCADE")
+assert converted == {"+91 98765 43210": "919876543210", "9123456780": "919123456780",
+                     "+44 20 7946 0958": "442079460958"}, converted
+print("  US and Indian numbers with one tail stay apart; old rows get their full key")
+
+print("webhooks: every message in a payload, none without an id, logs hide secrets")
+limits.forget_hits()
+batch_one, batch_two = new_request(), new_request()
+one_message = inbound(APPROVER, f"YES {batch_one['reference']}")["entry"][0]["changes"][0]
+two_message = inbound(APPROVER, f"NO {batch_two['reference']}")["entry"][0]["changes"][0]
+# Meta can send two entries, each with a change, in one payload. Both act.
+client.post("/webhook/whatsapp", json={"entry": [{"changes": [one_message]},
+                                                  {"changes": [two_message]}]})
+assert visits.get(batch_one["reference"])["status"] == "approved"
+assert visits.get(batch_two["reference"])["status"] == "declined"
+# The same message twice in one payload acts once, and a message with no id is left out.
+repeat_visit = new_request()
+twice = inbound(APPROVER, f"YES {repeat_visit['reference']}")
+twice["entry"][0]["changes"][0]["value"]["messages"] *= 2
+sent_count = len(sent)
+client.post("/webhook/whatsapp", json=twice)
+to_approver = [body for to, body in sent[sent_count:]
+               if whatsapp.same_number(to, APPROVER) and repeat_visit["reference"] in body]
+assert len(to_approver) == 1, to_approver
+assert visits.get(repeat_visit["reference"])["status"] == "approved"
+no_id_visit = new_request()
+nameless = inbound(APPROVER, f"YES {no_id_visit['reference']}")
+del nameless["entry"][0]["changes"][0]["value"]["messages"][0]["id"]
+sent_count = len(sent)
+client.post("/webhook/whatsapp", json=nameless)
+assert visits.get(no_id_visit["reference"])["status"] == "pending" and len(sent) == sent_count
+assert whatsapp.read_messages({"entry": [{"changes": [{"value": {}}]}]}) == []
+assert whatsapp.read_messages({"entry": "nonsense"}) == []
+# Access log lines hide a visitor's link and the pass and staff codes.
+hidden_line = redaction.redact('"GET /api/visit/abc_DEF-123 HTTP/1.1"')
+assert hidden_line == '"GET /api/visit/<hidden> HTTP/1.1"'
+assert redaction.redact("/api/pass/KT-4821/entry") == "/api/pass/<hidden>/entry"
+assert redaction.redact("/api/staff/1234567") == "/api/staff/<hidden>"
+assert redaction.redact("/api/admin/visits?status=all") == "/api/admin/visits?status=all"
+try:
+    gunicorn_settings = runpy.run_path("gunicorn.conf.py")
+except ImportError:  # gunicorn runs only on Linux, as on Render and GitHub
+    gunicorn_settings = None
+if gunicorn_settings is not None:
+    assert gunicorn_settings["logger_class"].__name__ == "RedactingLogger"
+# Many new addresses within the hour cannot grow the limit table past its hard size.
+limits.forget_hits()
+limits.add_silent_callers(limits.HARD_MAX_CALLERS + 5, 60)
+limits.too_many("request", 1, 3600, who="one more")
+assert limits.hit_buckets() <= limits.MAX_CALLERS + 1, limits.hit_buckets()
+limits.forget_hits()
+# The whole campus has a request cap, whatever the address.
+real_cap = config.REQUESTS_PER_HOUR_ALL
+config.REQUESTS_PER_HOUR_ALL = 2
+try:
+    capped = [client.post("/api/requests", json=payload) for _ in range(3)]
+finally:
+    config.REQUESTS_PER_HOUR_ALL = real_cap
+    limits.forget_hits()
+assert [c.status_code for c in capped] == [201, 201, 429]
+assert "Call the gate desk" in capped[2].get_json()["error"]
+print("  batched and repeated messages, no-id refused, redacted paths, bounded limits, a cap")
+
+print("eleven guests are refused, not cut to ten")
+limits.forget_hits()
+crowd = client.post("/api/requests", json={**payload, "guests": [f"Guest {n}" for n in range(11)]})
+assert crowd.status_code == 400 and "Up to 10" in crowd.get_json()["error"], crowd.get_json()
+assert client.post("/api/requests", json={**payload, "guests": [f"G {n}" for n in range(10)]}
+                   ).status_code == 201
+print("  11 refused with the limit named, 10 accepted")
+
+print("every key-protected route refuses a missing key and the wrong kind of key")
+limits.forget_hits()
+SUPER_ONLY_ROUTES = {"/api/admin/decide", "/api/admin/admins", "/api/admin/admins/new-key",
+                     "/api/admin/admins/remove", "/api/admin/admins/super",
+                     "/api/admin/export.csv", "/api/admin/export.zip",
+                     "/api/admin/staff-entries.csv", "/api/admin/photo/<reference>"}
+checked = 0
+for rule in application.app.url_map.iter_rules():
+    path = rule.rule
+    gate_side = path.startswith(("/api/pass/", "/api/gate/", "/api/staff/"))
+    if not (path.startswith("/api/admin/") or gate_side):
+        continue
+    url = re.sub(r"<[^>]+>", "VR-12345", path)
+    for method in sorted(rule.methods - {"HEAD", "OPTIONS"}):
+        wrong = ADMIN if gate_side else KEY
+        for headers in ({}, wrong, {"X-Admin-Key": "x" * 30, "X-Gate-Key": "y" * 30}):
+            answer = client.open(url, method=method, headers=headers, json={})
+            assert answer.status_code == 403, (method, path, headers, answer.status_code)
+        if path in SUPER_ONLY_ROUTES:
+            super_answer = client.open(url, method=method, headers=plain_key, json={})
+            assert super_answer.status_code == 409, (method, path)
+        checked += 1
+    limits.forget_hits()
+assert checked >= 29, checked  # every route today; a new one adds to it
+print(f"  {checked} routes: no key, a wrong key and the other page's key all get 403")
+
+print("the database refuses a status it does not know, and the purge reads by key")
+checked_visit = new_request()
+for bad_sql in ("UPDATE visits SET status = 'lost' WHERE reference = %s",
+                "UPDATE visits SET decided_by = 'someone' WHERE reference = %s"):
+    try:
+        with db.connect() as conn:
+            conn.execute(bad_sql, (checked_visit["reference"],))
+        raise AssertionError(f"the database took: {bad_sql}")
+    except psycopg.errors.CheckViolation:
+        pass
+assert visits.get(checked_visit["reference"])["status"] == "pending"
+# A visit past retention goes with its codes and photo; the rest stay.
+with db.connect() as conn:
+    conn.execute("UPDATE visits SET created_at = %s WHERE reference = %s",
+                 (db.ago(config.RETAIN_DAYS + 1), checked_visit["reference"]))
+db.forget_cache()
+kept_count = visits.status_counts()
+with db.connect() as conn:
+    old_count = conn.execute("SELECT COUNT(*) AS n FROM visits WHERE created_at < %s",
+                             (db.ago(config.RETAIN_DAYS),)).fetchone()["n"]
+assert old_count >= 1
+assert visits.purge_old() == old_count
+assert visits.get(checked_visit["reference"]) is None
+assert visits.codes_of(checked_visit["reference"]) == {}
+assert sum(visits.status_counts().values()) == sum(kept_count.values()) - old_count
+assert visits.purge_old() == 0, "nothing old, nothing deleted"
+assert visits.next_due() is not None
+print("  CHECK on status and decider, purge by reference, next_due on the status index")
 
 # Last, because it closes the database for the rest of this process.
 print("on exit, the timer stops and the database closes before Python shuts down")

@@ -49,7 +49,7 @@ approvers cannot record the same thing twice.
 | Approver    | A staff member for each reason or office | Replies YES or NO on WhatsApp                                          |
 | Guard       | Security staff at the gate               | Checks passes and staff codes, takes the photo, records entry and exit |
 | Admin       | Office staff who run the app             | Keeps the approvers, offices, allow list, blacklist and guards         |
-| Super admin | One or two senior admins                 | Also decides many requests at once and downloads the logs              |
+| Super admin | One or two senior admins                 | Also adds admins, sees gate photos and downloads the logs              |
 | Host        | University IT                            | Runs the server, the database and the WhatsApp account                 |
 
 ## Who is responsible for what
@@ -146,9 +146,22 @@ says what the app keeps, and that the guard takes one photo at the gate.
 | Approver          | For their reason or office: the reference, name, phone, address, reason, person visited, people with them                              | Requests for other reasons                            |
 | Guard             | The pass's name, reason, person visited, people with them, status and codes; who is inside and expected; a staff member's name and tag | The visitor's phone and address, the history, any log |
 | Allow list person | A message about each of their own entries                                                                                              | Anything else                                         |
-| Admin             | Everything on the admin page: requests, photos on request, the lists, the change log                                                   | Keys of other people                                  |
-| Super admin       | As an admin, and the downloads: every visit, every gate photo, the staff entries, the blocked attempts, the change log                 | Keys of other people                                  |
+| Admin             | Everything on the admin page except the gate photos: requests, the lists, the change log                                               | Keys of other people                                  |
+| Super admin       | As an admin, and each gate photo, the downloads, and adding or removing admins                                                         | Keys of other people                                  |
 | Host              | The database and the server settings                                                                                                   | Nothing is hidden from the host                       |
+
+## WhatsApp keeps its own copies
+
+The app deletes its records after `RETAIN_DAYS`. WhatsApp does not: the
+approvers' and guards' chats keep each request, reply and photo until the
+person deletes them, and a phone backup to a personal cloud keeps them too.
+
+1. The university decides how long those chats may keep visitor details and
+   photos, and tells the approvers and guards.
+2. For photos, prefer the gate page. Its photo stays in the app's database,
+   and the app deletes it on time.
+3. Consider WhatsApp's disappearing messages, or a phone with no personal
+   cloud backup, for the gate desk.
 
 ## Backups and recovery
 
@@ -160,6 +173,19 @@ says what the app keeps, and that the guard takes one photo at the gate.
 3. To restore, the host restores the database to a time before the problem,
    then restarts the app. See "Where the data lives" in
    [maintenance.md](maintenance.md).
+
+The targets to agree on before the pilot:
+
+| Target                      | On the free plans | On a paid database |
+|-----------------------------|-------------------|--------------------|
+| Data that can be lost (RPO) | Up to one week    | Minutes            |
+| Time to be back up (RTO)    | About an hour     | About an hour      |
+| Who restores                | University IT     | University IT      |
+
+Test a restore once before the pilot: restore a copy of the database to a new
+branch in Neon, point a test copy of the app at it, and check that the
+visits, the passes, the blacklist, the allow list and the change log are
+there.
 
 ## When the system is down
 

@@ -190,19 +190,20 @@ def remove_guard():
     return remove_holder(people.GUARDS)
 
 
+# An admin opens everything, so only a super admin adds, renews or removes one.
 @bp.post("/api/admin/admins")
 def add_admin():
-    return add_holder(people.ADMINS)
+    return access.admin_refusal() or access.super_refusal() or add_holder(people.ADMINS)
 
 
 @bp.post("/api/admin/admins/new-key")
 def renew_admin_key():
-    return renew_holder_key(people.ADMINS)
+    return access.admin_refusal() or access.super_refusal() or renew_holder_key(people.ADMINS)
 
 
 @bp.post("/api/admin/admins/remove")
 def remove_admin():
-    return remove_holder(people.ADMINS)
+    return access.admin_refusal() or access.super_refusal() or remove_holder(people.ADMINS)
 
 
 @bp.post("/api/admin/offices")
@@ -363,7 +364,7 @@ def add_blacklist():
     raw_reason = str(payload().get("reason") or "")
     reason = checks.clean_text(raw_reason) if len(raw_reason) <= REASON_LENGTH else None
     problems = {"name": name_problem} if name_problem else {}
-    if not blacklist.phone_key(raw_phone) or checks.clean_text(raw_phone) is None:
+    if not blacklist.number_key(raw_phone) or checks.clean_text(raw_phone) is None:
         problems["phone"] = "Type the phone number, with 10 digits or more."
     if reason is None:
         problems["reason"] = f"Write the reason in one line, {REASON_LENGTH} letters at most."

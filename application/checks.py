@@ -41,6 +41,10 @@ def visitor_phone_ok(phone):
     return len(digits) == 10
 
 
+# The people with one visitor. The visitor page stops at the same number.
+MAX_GUESTS = 10
+
+
 def clean_fields(payload):
     """Return (fields, guests, error)."""
     fields = {}
@@ -61,8 +65,11 @@ def clean_fields(payload):
     raw_guests = payload.get("guests") or []
     if not isinstance(raw_guests, list):
         return None, None, "guests must be a list"
+    # Refused, not cut short: a cut list would let in fewer people than the visitor named.
+    if len(raw_guests) > MAX_GUESTS:
+        return None, None, f"Up to {MAX_GUESTS} people can come with you."
     guests = []
-    for guest in raw_guests[:10]:
+    for guest in raw_guests:
         name = clean_text(str(guest)[:MAX_LENGTH])
         if name is None:
             return None, None, "guests have characters that are not allowed"

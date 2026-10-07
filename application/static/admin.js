@@ -175,6 +175,19 @@ async function call(url, body = null) {
   return data;
 }
 
+// A box keeps the keyboard inside it while open, and hands the focus back when it closes.
+function holdFocus(sheet) {
+  const opener = document.activeElement;
+  sheet.addEventListener("keydown", e => {
+    if (e.key !== "Tab") return;
+    const stops = [...sheet.querySelectorAll("button, input")];
+    const first = stops[0], last = stops[stops.length - 1];
+    if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+    else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+  });
+  return () => { if (opener && document.contains(opener)) opener.focus(); };
+}
+
 // Asks before a deletion, a ban or a bulk decision. Resolves true only for the first button.
 function confirmDelete(line, yes = "Delete", tone = "stop") {
   return new Promise(done => {
@@ -183,7 +196,8 @@ function confirmDelete(line, yes = "Delete", tone = "stop") {
         <button class="btn ${tone}" id="sure-yes">${x(yes)}</button>
         <button class="btn plain" id="sure-no">Cancel</button></div></div>`;
     const sheet = el("over").firstElementChild;
-    const close = answer => { el("over").innerHTML = ""; done(answer); };
+    const giveBack = holdFocus(sheet);
+    const close = answer => { el("over").innerHTML = ""; giveBack(); done(answer); };
     el("sure-yes").onclick = () => close(true);
     el("sure-no").onclick = () => close(false);
     sheet.onclick = e => { if (e.target === sheet) close(false); };
@@ -261,7 +275,9 @@ function photoLine(v) {
     return `<span class="shot"><img src="${x(photos[v.reference])}" alt="The visitor at the gate"></span>`;
   }
   if (v.photo_stored) {
-    return ` <button class="small edit" data-photo="${x(v.reference)}">View photo</button><span class="shot"></span>`;
+    return team.super
+      ? ` <button class="small edit" data-photo="${x(v.reference)}">View photo</button><span class="shot"></span>`
+      : " (stored: a super admin can view it)";
   }
   return v.photo_at ? " (in the guard's WhatsApp chat)" : "";
 }
@@ -567,7 +583,8 @@ function askTag(title, current, kind) {
         <button class="btn" id="tag-save">Save</button>
         <button class="btn plain" id="tag-no">Cancel</button></div></div>`;
     const sheet = el("over").firstElementChild;
-    const close = answer => { el("over").innerHTML = ""; done(answer); };
+    const giveBack = holdFocus(sheet);
+    const close = answer => { el("over").innerHTML = ""; giveBack(); done(answer); };
     el("tag-save").onclick = () => close(el("tag-new").value.trim());
     el("tag-no").onclick = () => close(null);
     el("tag-new").onkeydown = e => { if (e.key === "Enter") close(el("tag-new").value.trim()); };
@@ -640,13 +657,13 @@ const TABLES = {
     : `<tr><td colspan="5" class="fixed">No number is on the blacklist.</td></tr>`),
   guards: () => table(["Name", "WhatsApp number", "Added", ""],
     `<tr><td>Gate desk</td><td>${x(team.gate_desk)}</td>
-       <td colspan="2" class="fixed">Set as GUARD on the server. Uses the shared gate key.</td></tr>`
+       <td colspan="2" class="fixed">Set on the server by the host. Uses the shared gate key.</td></tr>`
     + team.guards.map(g => `<tr><td>${x(g.name)}</td><td>${x(g.phone)}</td><td>${day(g.added_at)}</td>
         <td class="acts">${newKey("guards", g.phone)}
           ${del("guards", g.phone, `${g.name} ${g.phone}`)}</td></tr>`).join("")),
   admins: () => table(["Name", "WhatsApp number", "Added", ""],
-    `<tr><td>Main admin${you("Main admin (ADMIN_KEY)")}${SUPER}</td><td>${x(team.main_admin)}</td>
-       <td colspan="2" class="fixed">Set as ADMIN_PHONE on the server. Uses ADMIN_KEY.</td></tr>`
+    `<tr><td>Main admin${you("Main admin")}${SUPER}</td><td>${x(team.main_admin)}</td>
+       <td colspan="2" class="fixed">Set on the server by the host. Uses the main admin key.</td></tr>`
     + team.admins.map(a => `<tr><td>${x(a.name)}${you(`${a.name} ${a.phone}`)}${a.super ? SUPER : ""}</td>
         <td>${x(a.phone)}</td><td>${day(a.added_at)}</td><td class="acts">${adminActions(a)}</td></tr>`).join("")),
 };
@@ -656,7 +673,8 @@ const SUPER = ` <span class="you super">Super admin</span>`;
 // Only a super admin may act on a super admin: a new key would let anyone take their place.
 function adminActions(a) {
   const label = `${a.name} ${a.phone}`;
-  if (a.super && !team.super) return `<span class="fixed">Only a super admin can change this.</span>`;
+  // An admin opens everything, so only a super admin adds, renews or removes one.
+  if (!team.super) return `<span class="fixed">Only a super admin can change this.</span>`;
   const role = team.super && label !== team.you
     ? `<button class="small ${a.super ? "del" : "go"}" data-super="${x(a.phone)}" data-on="${!a.super}" data-label="${x(label)}">
         ${a.super ? "Remove super admin" : "Make super admin"}</button>` : "";
@@ -733,6 +751,7 @@ function renderTeam() {
   el("you").textContent = team.you ? `Signed in as ${team.you}${team.super ? " (super admin)" : ""}` : "";
   // The logs hold every visitor's details and face: only a super admin downloads them.
   el("csv").hidden = el("s-download").hidden = !team.super;
+  main.querySelector('[data-open="a"]').hidden = !team.super;
   renderToday();
   renderBulk();
 }
@@ -986,7 +1005,7 @@ const PANELS = `
   <div class="bar"><input id="q" type="search" placeholder="Search name, phone, code or person visited"
     aria-label="Search" autocomplete="off" spellcheck="false"></div>
   <p class="found" id="found"></p>
-  <div id="bulk-note"></div>
+  <div id="bulk-note" role="status" aria-live="polite"></div>
   <div class="bulk" id="bulk" hidden>
     <button class="small edit" id="pick-all"></button><span id="picked-count"></span>
     <button class="btn go" id="bulk-yes" disabled>Approve</button>
@@ -1027,7 +1046,8 @@ const PANELS = `
     `A number on the blacklist cannot send a request: the visitor page says only that the number
     cannot request a visit. The gate refuses an entry for a pass with that number, also a pass
     approved before, on the gate page and on WhatsApp, and allow list codes for that number stop.
-    The app matches the last 10 digits, so 98765 43210 and +919876543210 are one number.`,
+    The app compares the full number with its country code. A number with no country code is
+    Indian, so 98765 43210 and +919876543210 are one number.`,
     `Each visit's details also have a Blacklist this number button. The blacklist cannot stop a
     person who uses another phone, or who comes as a guest on someone else's request.`,
     `Blocked attempts lists each time the blacklist stopped someone: a request on the visitor page,
@@ -1083,11 +1103,11 @@ const PANELS = `
   ${form("admins")}
   <div class="wrap" id="a-table"></div>
   ${help("How admins work",
-    `Each admin gets an admin key of their own. An admin who loses their key sends KEY from their
-    phone to the app's WhatsApp number, or another admin taps New key. A guard's number cannot be an
+    `Each admin gets an admin key of their own. Only a super admin adds, renews or deletes an
+    admin. An admin who loses their key sends KEY from their phone to the app's WhatsApp number. A guard's number cannot be an
     admin, and an admin's number cannot be a guard. Nobody can delete themselves.`,
-    `A super admin can also approve and decline many waiting requests at once, and download the
-    logs. The main admin is always a super admin, and a super admin can make another admin one.
+    `A super admin can also approve and decline many waiting requests at once, see the gate
+    photos, and download the logs. The main admin is always a super admin, and a super admin can make another admin one.
     Only a super admin can make a new key for, delete, or change a super admin.`,
     `The page signs out by itself after ${IDLE_MINUTES} minutes with no use. On a shared computer,
     tap Sign out when you finish.`)}
@@ -1203,7 +1223,7 @@ function render() {
   }
   // The parts are built once, so typing in a search box never loses focus to a redraw.
   if (!el("list")) {
-    main.innerHTML = `<div id="notice"></div><div id="alert"></div>${PANELS}`;
+    main.innerHTML = `<div id="notice" role="status" aria-live="polite"></div><div id="alert"></div>${PANELS}`;
     bindPanels();
   }
   renderNotice();

@@ -182,8 +182,9 @@ def main():
         visits.decide(other["reference"], db.DECLINED, db.BY_MAIN)
     racing = request(phone="9123456781")
     with db.connect() as conn:
-        conn.execute("INSERT INTO blacklist (phone_key, phone, name, reason, added_at)"
-                     " VALUES ('9123456781', '9123456781', 'X', '', %s)", (db.now(),))
+        conn.execute("INSERT INTO blacklist (number_key, phone_key, phone, name, reason, added_at)"
+                     " VALUES ('919123456781', '9123456781', '9123456781', 'X', '', %s)",
+                     (db.now(),))
     db.forget_cache()
     scenario("YES on a request whose number was just blacklisted",
              lambda: say(APPROVER, f"YES {racing['reference']}"), APPROVER,
@@ -203,6 +204,13 @@ def main():
              f"in {entry}")
     scenario("The guard sends the photo", lambda: photo(GUARD[1:]), GUARD[1:], "(a photo)")
     scenario("A photo with no IN before it", lambda: photo(GUARD[1:]), GUARD[1:], "(a photo)")
+    owed_first, owed_second = codes(approved()), codes(approved())
+    say(GUARD[1:], f"IN {owed_first['entry']}")
+    scenario("IN for a second visitor while a photo is still owed",
+             lambda: say(GUARD[1:], f"IN {owed_second['entry']}"), GUARD[1:],
+             f"IN {owed_second['entry']}")
+    scenario("CANCEL drops the photo still owed", lambda: say(GUARD[1:], "CANCEL"), GUARD[1:],
+             "CANCEL")
     scenario("IN again for a visitor inside", lambda: say(GUARD[1:], f"IN {entry}"), GUARD[1:],
              f"IN {entry}")
     scenario("OUT with the exit code", lambda: say(GUARD[1:], f"OUT {leave}"), GUARD[1:],

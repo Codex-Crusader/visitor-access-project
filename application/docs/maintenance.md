@@ -26,6 +26,8 @@ new copy, read [setup.md](setup.md). For security and privacy, read
    office, pick the office from the list.
 5. To add the people who come with you, tap Add a person and type a name.
    Tap Add another person for each next name, up to 10 people. Tap Review.
+   To stop and come back, tap Finish later, then Save and exit. The phone
+   keeps what you typed for 7 days. Nothing goes to the server.
 6. Read the details, then tap Send request. Keep the page open. If the page
    says the request was not sent, tap Send request again: if the first one
    did reach the server, you get that request back, and the approver is not
@@ -96,7 +98,11 @@ WhatsApp delivers it only if the guard wrote to the app's number in the last
      arrive, send `KEY` from the gate desk phone to the app's WhatsApp
      number.
    - On a phone that other people also use, tap Lock at the top when you
-     finish. It forgets the key on that phone at once.
+     finish. It forgets the key on that phone at once. The gate page also
+     locks by itself after 8 hours with no tap or key press.
+   - With no connection, the board says so at the top, with the time of its
+     last refresh. You cannot check a pass then: use the paper log in
+     [university-deployment.md](university-deployment.md).
 3. Type the code on the visitor's pass, and tap "Check the pass". Small
    letters and spaces are correct, for example `kt 4821`. For a staff
    member, see "The allow list" below.
@@ -134,8 +140,10 @@ To look at a pass and record nothing, send only the code or the reference.
 The rules for the photo:
 
 1. If the photo comes more than 10 minutes after `IN`, send `IN` again.
-2. Each `IN` replaces the one before it. The photo lets in the visitor of the
-   last `IN`, and the reply names that visitor.
+2. While you still owe a photo, a new `IN` for another pass is refused, and
+   the reply names the visitor whose photo you owe. So a photo can never go
+   to the wrong visitor. Send that photo first. To drop it, send `CANCEL`:
+   nobody is let in. An `IN` for the same pass again is fine.
 3. One photo lets in one person. A second photo on the same `IN` does nothing.
 4. Only a guard can send the photo: the `GUARD` number, or a guard on the
    admin page's Guards part.
@@ -224,7 +232,8 @@ blacklist". A banned visitor who is inside can still leave.
    before 5 October 2026 shows no number, and the oldest show no role,
    because the app did not keep them then.
 7. Tap a request to see all its details and times, and when its pass ends.
-   If the gate page took the photo, tap View photo to see it.
+   If the gate page took the photo, a super admin can tap View photo to see
+   it.
    Entered and Exited name the guard who recorded them. "Gate desk (shared
    key)" means that someone used the shared `GATE_KEY`.
 8. Show more loads the next 50 requests.
@@ -413,8 +422,10 @@ refuses it.
 
 You can also open a visit, in Today or Visits, and tap "Blacklist this
 number".
-The app compares the last 10 digits, so `98765 43210` and `+919876543210` are
-the same number. Delete takes a number off the blacklist.
+The app compares the full number with its country code. A number with no
+country code is Indian, so `98765 43210`, `098765 43210` and `+919876543210`
+are the same number. Two countries' numbers stay apart, even when their last
+10 digits are the same. Delete takes a number off the blacklist.
 
 The blacklist knows only phone numbers. It cannot stop a person who uses
 another phone, or who comes as a guest on someone else's request.
@@ -510,6 +521,7 @@ job has its own word.
 | a photo        | Records the entry for the last `IN`                                                                        |
 | `OUT RM-0937`  | With the exit code: records the exit                                                                       |
 | `4569918`      | From a guard, with an allow list code: records the entry at once. `IN 4569918` does the same               |
+| `CANCEL`       | Drops the photo you still owe after `IN`. Nobody is let in                                                 |
 | `KEY`          | From `GUARD` or `ADMIN_PHONE`: sends back that number's key. From an added guard or admin: makes a new key |
 | anything else  | Sends back the requests that wait for you                                                                  |
 
@@ -614,6 +626,12 @@ To put back an older version, click Rollback next to it on Render. Do
 not roll back to a version from before 5 October 2026 (commit `ecf09e0`).
 Those versions do not know the status `expired`. The gate and WhatsApp then
 fail on every expired pass.
+
+A rollback to a version from before 8 October 2026 (migration 8) still runs.
+That version matches the blacklist by the last 10 digits again, and numbers
+added after the rollback have no full key. Before you go forward again, run
+this in the Neon SQL editor:
+`UPDATE blacklist SET number_key = phone_number_key(phone) WHERE number_key IS NULL;`
 
 ## The checks
 
@@ -901,6 +919,20 @@ browser. Before, each blacklist check copied the whole list, every row made
 a new date formatter, and the page drew every row. Now the lookups share one
 read-only index, the page draws 200 rows with a "Show more" button, and the
 search waits for a pause in typing.
+
+Measured on 8 October 2026 with 200,000 visits, 400,000 pass codes and 5,000
+blacklisted numbers, with `EXPLAIN ANALYZE` on every query the app runs
+often. All but four read an index and take under 1 millisecond:
+
+| Query                    | Time         | Cost       | Note                                   |
+|--------------------------|--------------|------------|----------------------------------------|
+| Timer: the next due time | 0.2 ms       | O(log n)   | Was up to 45 ms: a full walk of visits |
+| Timer: delete old codes  | under 0.1 ms | O(k log n) | Was 33 ms each round, a full scan      |
+| Admin counts by status   | 28 ms        | O(n)       | Kept in memory until the next change   |
+| Admin search             | 100 ms       | O(n)       | A word inside a field needs `pg_trgm`  |
+
+n is the number of visits and k the number of visits past `RETAIN_DAYS`.
+The retention period keeps n near the visits of 90 days.
 
 If you change rows outside the app, for example a restore in the Neon
 console, restart the service on Render. The server keeps some reads in

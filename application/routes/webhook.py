@@ -101,13 +101,25 @@ def handle_gate(guard, sender, action, code, help_lines=whatsapp.HELP):
         return gate.BLACKLISTED
     # IN only asks for the photo. The photo lets the visitor in, see handle_photo.
     if action == db.ENTRY:
-        entries.wait_for_photo(whatsapp.digits(sender), reference)
+        pending = entries.wait_for_photo(whatsapp.digits(sender), reference, PHOTO_MINUTES)
+        if pending:
+            return whatsapp.photo_owed(visits.get(pending))
         return whatsapp.photo_request(visit, code)
 
     done = entries.check_out(reference, guard)
     if done is None:
         return gate.REFUSALS[action][visits.get(reference)["status"]]
     return whatsapp.pass_body(done)
+
+
+def handle_cancel(guard, sender):
+    """CANCEL drops the photo this guard owes, so the next IN can start."""
+    if not guard:
+        return "Only a guard can record entry and exit."
+    dropped = entries.cancel_photo(whatsapp.digits(sender))
+    if dropped is None:
+        return "No photo is waiting. Send IN and the entry code to start."
+    return whatsapp.photo_cancelled(visits.get(dropped))
 
 
 def handle_photo(guard, sender, media_id):
@@ -154,14 +166,17 @@ def handle_lookup(guard, sender, key, table):
     """A reference or a pass code. The reply repeats only the code that was sent."""
     if not guard and not access.is_approver(sender, table):
         return None
+    if limits.too_many("lookup", gate.LOOKUPS_PER_MINUTE, 60, who=whatsapp.digits(sender)):
+        return "Too many lookups. Wait a minute."
     visit, kind = visits.by_code(key)
     code = key if visit is not None else None
     if visit is None:
         visit = visits.get(key)
-    # An approver sees only the requests they approve, and gets the same answer as for no pass.
-    if visit is None or (not guard and not any(
-            whatsapp.same_number(sender, phone)
-            for phone in people.approvers_for(table, visit))):
+    # A pass code opens its pass. By reference, a guard sees only a visit on the gate board,
+    # and an approver only the requests they approve. Anything else reads as no pass at all.
+    approves = visit is not None and any(
+        whatsapp.same_number(sender, phone) for phone in people.approvers_for(table, visit))
+    if visit is None or not (code or approves or (guard and gate.on_board(visit))):
         return f"No pass has code {key}."
     body = whatsapp.pass_body(visit, code, kind, phone=not guard)
     if visit["status"] in db.EXPIRING and blacklist.has(visit["phone"]):
@@ -183,15 +198,19 @@ def whatsapp_reply():
         log.error("WhatsApp could not deliver to %s: error %s, %s",
                          recipient, code, reason)
 
-    message_id, sender, text, photo = whatsapp.read_incoming(payload)
-    if sender is None:
-        return "", 200
+    for message_id, sender, text, photo in whatsapp.read_messages(payload):
+        handle_message(message_id, sender, text, photo)
+    return "", 200
+
+
+def handle_message(message_id, sender, text, photo):
+    """One message: only a known number gets an answer, and each message id acts once."""
     table = people.approver_table()
     guard = access.guard_at(sender)
     if not (access.is_approver(sender, table) or guard or access.is_admin_phone(sender)):
-        return "", 200
+        return
     if not db.is_new_message(message_id):
-        return "", 200
+        return
 
     # The message id is spent now, so a failure must ask for the message again.
     try:
@@ -203,7 +222,6 @@ def whatsapp_reply():
 
     if answer:
         notify.reply_to(sender, answer)
-    return "", 200
 
 
 def answer_message(sender, text, photo, table, guard):
@@ -218,6 +236,8 @@ def answer_message(sender, text, photo, table, guard):
     kind, value, key = whatsapp.read_reply(text)
     if kind == "key":
         return handle_key(sender, guard, help_lines)
+    if kind == "cancel":
+        return handle_cancel(guard, sender)
     if kind == "decide":
         return handle_decide(sender, value, key, table, help_lines)
     if kind == "gate":

@@ -656,7 +656,10 @@ async function offlinePassChecks() {
   v.eval('S.s="inout";render()');
   ok("the saved pass shows its entry code", v.document.querySelector(".pass b").textContent === "KT-4821");
   ok("and says it is offline, with the time it last heard",
-     view().includes("No connection right now") && view().includes("Last updated"));
+     view().includes("No connection right now") && view().includes("last checked with the campus system at")
+     && view().includes("may be out"));
+  ok("the pass says the guard checks the code, so a stale screen is not proof",
+     view().includes("The guard checks this code with the campus system"));
 
   v.fetch = () => Promise.resolve({ok: false, status: 404,
     json: () => Promise.resolve({error: "No request with that token"})});
@@ -779,7 +782,8 @@ async function guardChecks() {
       }
       if (url.includes("/api/admin/photo/")) return answer(200, {photo: "data:image/jpeg;base64,/9j/AA=="});
       return answer(200, url.includes("/summary")
-        ? {counts: {}, escalate_minutes: 15, retain_days: 90, approvers: [], gate_desk: "+911", guards: list}
+        ? {counts: {}, escalate_minutes: 15, retain_days: 90, approvers: [], gate_desk: "+911", guards: list,
+           super: true}
         : {visits: [{reference: "VR-1", name: "A", phone: "1", address: "x", reason: "Delivery",
                      visiting: "y", guests: [], status: "closed", created_at: "2026-10-05T05:00:00+00:00",
                      entered_at: "2026-10-05T06:00:00+00:00", entered_by: "Ravi +919800000001",
@@ -880,6 +884,60 @@ async function sessionChecks() {
   deep.window.location.hash = "blacklist";
   await new Promise(done => setTimeout(done, 20));
   ok("Back and Forward move between parts", !deep.window.document.getElementById("blacklist").hidden);
+}
+
+async function hardeningChecks() {
+  console.log("visitor: Finish later keeps the form on the phone; gate: stale lists, idle lock");
+  const v = boot("index.html", "app.js", {fetch: () => Promise.reject(new Error("offline"))});
+  const S1 = v.eval("S");
+  Object.assign(S1.f, {name: "Asha Rao", phone: "9876543210", address: "Karjat"});
+  S1.g = ["Ravi Rao"];
+  v.eval("saveDraft()");
+  const v2 = new JSDOM(read("index.html"), {runScripts: "dangerously", url: "http://localhost/"});
+  v2.window.fetch = () => Promise.reject(new Error("offline"));
+  v2.window.localStorage.setItem("draft", v.localStorage.getItem("draft"));
+  for (const src of ["app.js"]) {
+    const tag = v2.window.document.createElement("script");
+    tag.textContent = read(src);
+    v2.window.document.body.appendChild(tag);
+  }
+  await tick();
+  const S2 = v2.window.eval("S");
+  ok("Finish later: a new page view has the typed form back", S2.f.name === "Asha Rao"
+     && S2.g.join() === "Ravi Rao");
+  v2.window.eval("dropDraft()");
+  ok("and the copy goes once the request is sent", v2.window.localStorage.getItem("draft") === null);
+  v.localStorage.setItem("draft", JSON.stringify({at: Date.now() - 8 * 86400000, f: {name: "Old"}, g: []}));
+  v.eval('S.f.name = ""; restoreDraft()');
+  ok("a copy older than 7 days is dropped", S1.f.name === "" && v.localStorage.getItem("draft") === null);
+
+  const desk = boot("gate.html", "gate.js", {fetch: () => Promise.resolve({status: 200, ok: true,
+    json: () => Promise.resolve({inside: [], expected: []})})});
+  const d = id => desk.document.getElementById(id);
+  desk.eval('localStorage.setItem("gatekey","k")');
+  await desk.eval("loadBoard()");
+  desk.fetch = () => Promise.reject(new Error("offline"));
+  await desk.eval("loadBoard()");
+  ok("offline, the board says the lists may be old and checks need the connection",
+     d("board").textContent.includes("may be out of date") && d("board").textContent.includes("paper log"));
+  desk.fetch = () => Promise.resolve({status: 200, ok: true, json: () => Promise.resolve({inside: [], expected: []})});
+  await desk.eval("loadBoard()");
+  ok("back online, it says once that the lists are fresh", d("board").textContent.includes("Connected again"));
+  desk.eval('visit = {reference: "VR-1", status: "approved", name: "A", visiting: "y", reason: "Event", guests: [],'
+    + ' decided_at: "2026-10-07T05:00:00+00:00", decided_by: "auto", code: "KT-4821", code_kind: "entry"}; render()');
+  ok("an automatic approval says no person answered", d("out").textContent.includes("Approved automatically"));
+  desk.eval(`localStorage.setItem("gateseen", String(Date.now() - (GATE_IDLE_HOURS + 1) * 3600000))`);
+  ok("after 8 hours with no use the gate locks", desk.eval("gateIdle()") === true && !!d("k"));
+
+  const admin = boot("admin.html", "admin.js", {fetch: () => Promise.resolve({status: 200, ok: true,
+    json: () => Promise.resolve({counts: {}, approvers: [], visits: [], next: null})})});
+  admin.eval('localStorage.setItem("adminkey","k"); render()');
+  const opener = admin.document.getElementById("refresh");
+  opener.focus();
+  const asking = admin.eval('confirmDelete("Delete it?")');
+  admin.document.getElementById("sure-no").click();
+  await asking;
+  ok("a closed box gives the focus back to its button", admin.document.activeElement === opener);
 }
 
 async function forgotChecks() {
@@ -1101,7 +1159,7 @@ async function staffGateChecks() {
 async function teamChecks() {
   console.log("admin page: staff, offices and admins, each deleted only after Are you sure?");
   const posts = [];
-  let lists = {gate_desk: "+911", guards: [], main_admin: "+919", you: "Meera +918", offices: [],
+  let lists = {gate_desk: "+911", guards: [], main_admin: "+919", you: "Meera +918", offices: [], super: true,
     admins: [{name: "Meera", phone: "+918", added_at: "2026-10-05T05:00:00+00:00"}],
     staff: [], staff_entries: [{code: "1234567", name: "Dr Dev", entered_at: "2026-10-06T04:00:00+00:00",
                                 entered_by: "Ravi +919800000001"}]};
@@ -1140,7 +1198,7 @@ async function teamChecks() {
   admin.eval('localStorage.setItem("adminkey","k")');
   admin.eval("render(); refresh()");
   await tick(); await tick();
-  ok("the header names who is signed in", byId("you").textContent === "Signed in as Meera +918");
+  ok("the header names who is signed in", byId("you").textContent === "Signed in as Meera +918 (super admin)");
 
   tab("staff").click();
   ok("the staff tab opens", !byId("staff").hidden && byId("visits").hidden);
@@ -1575,6 +1633,9 @@ async function bulkChecks() {
   ok("no tick boxes and no bulk buttons", !plain.byId("list").querySelector("[data-pick-ref]")
      && plain.byId("bulk").hidden && plain.byId("t-bulk").hidden);
   ok("and no downloads", plain.byId("csv").hidden && plain.byId("s-download").hidden);
+  ok("no Add admin and no gate photos for a regular admin",
+     plain.win.document.querySelector('[data-open="a"]').hidden
+     && plain.win.eval('photoLine({photo_stored: true, reference: "VR-1"})').includes("super admin"));
   ok("a super admin's row offers them nothing", plain.byId("a-table").textContent
      .includes("Only a super admin can change this.") && !plain.byId("a-table").querySelector('[data-id="+91"]'));
   plain.win.eval('picked.add("VR-10001")');
@@ -1586,7 +1647,7 @@ async function bulkChecks() {
      && plain.byId("bulk-note").textContent.includes("Only a super admin"));
 }
 
-void boardChecks().then(officeFormChecks).then(bulkChecks).then(tagChecks).then(worstCaseChecks).then(blacklistChecks).then(staffGateChecks).then(teamChecks).then(staleGateChecks).then(stalePollChecks).then(staleApproverChecks).then(offlinePassChecks).then(approverChecks).then(guardChecks).then(forgotChecks).then(sessionChecks).then(visitorAutoChecks).then(wrongKeyChecks).then(adminChecks).then(downloadChecks).then(() => {
+void boardChecks().then(officeFormChecks).then(bulkChecks).then(tagChecks).then(worstCaseChecks).then(blacklistChecks).then(staffGateChecks).then(teamChecks).then(staleGateChecks).then(stalePollChecks).then(staleApproverChecks).then(offlinePassChecks).then(approverChecks).then(guardChecks).then(forgotChecks).then(sessionChecks).then(hardeningChecks).then(visitorAutoChecks).then(wrongKeyChecks).then(adminChecks).then(downloadChecks).then(() => {
   console.log();
   console.log(failures ? `${failures} check(s) FAILED` : "all form checks passed");
   process.exit(failures ? 1 : 0);

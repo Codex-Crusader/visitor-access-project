@@ -62,6 +62,8 @@ let busy = "";
 let board = null;
 let boardAt = null;
 let boardError = "";
+// True for one refresh after the lists came back from a failed refresh.
+let reconnected = false;
 // Each lookup, entry and exit takes a number. A slower, older answer is dropped,
 // so it never brings back a pass the guard has left.
 let latest = 0;
@@ -197,8 +199,13 @@ function renderBoard() {
     return;
   }
   const now = Date.now();
+  // Offline, the lists may be old, and checking a pass needs the connection. Say both first.
+  const state = boardError
+    ? problem(`No connection since ${hm(boardAt)}. These lists may be out of date, and checking a`
+      + " pass needs the connection. If it does not come back, use the paper log.")
+    : reconnected ? `<p class="updated">Connected again. The lists are fresh as of ${hm(boardAt)}.</p>` : "";
   // Inside first: everyone on it must still be let out.
-  boardBox.innerHTML =
+  boardBox.innerHTML = state +
     section("Inside now", board.inside, "Nobody is inside.", v => {
       const long = now - new Date(v.entered_at).getTime() > LONG_HOURS * 3600000;
       return row(v, `In for ${since(v.entered_at, now)}`, long);
@@ -266,7 +273,9 @@ function render() {
       ${fact("Visiting", visit.visiting)}
       ${fact("Reason", visit.reason)}
       ${visit.guests && visit.guests.length ? fact("With", visit.guests.join(", ")) : ""}
-      ${visit.decided_at ? fact(visit.status === "declined" ? "Declined" : "Approved", hm(visit.decided_at)) : ""}
+      ${visit.decided_at ? fact(visit.status === "declined" ? "Declined"
+        : visit.decided_by === "auto" ? "Approved automatically, no person answered" : "Approved",
+        hm(visit.decided_at)) : ""}
       ${visit.status === "approved" && visit.expires_at ? fact("Valid until", dayHm(visit.expires_at)) : ""}`;
 
   out.innerHTML = `
@@ -324,6 +333,8 @@ async function loadBoard() {
   if (!key()) return;
   try {
     board = await call("/api/gate/board");
+    // After a drop, the guard reads once that the lists are fresh again.
+    reconnected = !!boardError;
     boardAt = new Date().toISOString();
     boardError = "";
   } catch (err) {
@@ -526,8 +537,33 @@ boardBox.onclick = e => {
 };
 el("refresh").onclick = () => void loadBoard();
 el("rekey").onclick = () => forgetKey();
+// The gate locks after GATE_IDLE_HOURS with no click or key press, as at the end of a shift
+// with nobody at the desk. A busy desk never reaches it.
+const GATE_IDLE_HOURS = 8;
+let gateSeenWritten = 0;
+function gateTouch(now = Date.now()) {
+  if (now - gateSeenWritten < 60000) return;
+  gateSeenWritten = now;
+  try { localStorage.setItem("gateseen", String(now)); } catch { /* this page view only */ }
+}
+function gateIdle() {
+  if (!key()) return false;
+  let seen = 0;
+  try { seen = Number(localStorage.getItem("gateseen")) || 0; } catch { /* nothing stored */ }
+  if (!seen) { gateTouch(); return false; }
+  if (Date.now() - seen < GATE_IDLE_HOURS * 3600000) return false;
+  try { localStorage.removeItem("gateseen"); } catch { /* nothing stored */ }
+  gateSeenWritten = 0;
+  forgetKey(`Locked after ${GATE_IDLE_HOURS} hours with no use. Type the gate key to open it again.`);
+  return true;
+}
+document.addEventListener("click", () => gateTouch(), true);
+document.addEventListener("keydown", () => gateTouch(), true);
+document.addEventListener("visibilitychange", () => { if (!document.hidden) gateIdle(); });
+setInterval(gateIdle, 60000);
 // A hidden tab does not need fresh lists. It catches up when shown again.
 setInterval(() => { if (!document.hidden) void loadBoard(); }, BOARD_EVERY);
 document.addEventListener("visibilitychange", () => { if (!document.hidden) void loadBoard(); });
+gateIdle();
 render();
 void loadBoard();

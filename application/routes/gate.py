@@ -84,12 +84,26 @@ def typed_pass(visit, code, kind):
     return {**gate_view(visit), "code": code, "code_kind": kind}
 
 
+# Pass and reference lookups one guard may make in a minute. A busy desk makes a few.
+LOOKUPS_PER_MINUTE = 60
+
+
+def on_board(visit):
+    """True for a visit the gate board shows: approved and still valid, or inside now."""
+    return visit is not None and visit["status"] in (db.APPROVED, db.INSIDE)
+
+
 @bp.get("/api/pass/<key>")
 def read_pass(key):
-    """A pass by its typed code, or by reference from the board. A reference records nothing."""
+    """A pass by its typed code, or by reference from the board. A reference records nothing.
+
+    A reference opens only a visit on the board, so a gate key cannot read the history by
+    trying references one by one. Any other reference reads as no pass at all."""
     guard = access.gate_guard()
     if not guard:
         return jsonify(error="Wrong gate key"), 403
+    if limits.too_many("pass-lookup", LOOKUPS_PER_MINUTE, 60, who=guard):
+        return jsonify(error="Too many lookups. Wait a minute."), 429
     code = whatsapp.normalize_gate_code(key)
     if code:
         visit, kind = visits.by_code(code)
@@ -97,11 +111,12 @@ def read_pass(key):
             return jsonify(error="No pass with that code"), 404
         shown = typed_pass(visit, code, kind)
         # The entry code means the person is at the gate. A board tap is not an attempt.
-        if shown["blacklisted"] and kind == db.ENTRY:
+        # A closed pass shows times only, with no blacklist mark.
+        if shown.get("blacklisted") and kind == db.ENTRY:
             stopped_at_gate(visit, guard)
         return jsonify(shown)
     visit = visits.get(whatsapp.normalize_reference(key) or key.upper())
-    if visit is None:
+    if not on_board(visit):
         return jsonify(error="No pass with that code"), 404
     return jsonify(gate_view(visit))
 

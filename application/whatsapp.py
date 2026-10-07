@@ -22,6 +22,7 @@ DECIDE_WORDS = {"YES": db.APPROVED, "NO": db.DECLINED}
 GATE_WORDS = {"IN": db.ENTRY, "OUT": db.EXIT}
 # The gate desk or admin number gets its key back.
 KEY_WORD = "KEY"
+CANCEL_WORD = "CANCEL"
 
 # The help each person gets names only the jobs they have. One number can have all three.
 HELP_LINES = {
@@ -34,6 +35,7 @@ HELP_LINES = {
         "IN <entry code>, then a photo of the visitor, records entry.",
         "OUT <exit code> records exit. Both codes are on the visitor's pass.",
         "A staff member's 7-digit allow list code records their entry at once.",
+        "CANCEL drops the photo you still owe after IN.",
     ],
 }
 KEY_LINES = {
@@ -261,6 +263,19 @@ def photo_request(visit, code):
     )
 
 
+def photo_owed(visit):
+    """The reply to a second IN while a photo is still owed. One photo, one visitor."""
+    who = f"{visit['name']} ({visit['reference']})" if visit else "the last visitor"
+    return (f"You still owe the photo of {who}. Send that photo first, so it cannot go to the"
+            f" wrong visitor. To drop it, send {CANCEL_WORD}. Then send IN again.")
+
+
+def photo_cancelled(visit):
+    who = f"{visit['name']} ({visit['reference']})" if visit else "that pass"
+    return (f"The photo of {who} is no longer waited for, and nobody was let in."
+            " Send IN and the entry code to start again.")
+
+
 def normalize_reference(text):
     found = CODE.match(text.strip())
     return f"VR-{found.group(1)}" if found else None
@@ -288,7 +303,8 @@ PUNCTUATION = str.maketrans(dict.fromkeys(",.!?;:'\"()", " "))
 
 
 def read_reply(body):
-    """(kind, value, key). The kind is one of "decide", "gate", "staff", "lookup", "key", "help".
+    """(kind, value, key). The kind is "decide", "gate", "staff", "lookup", "key", "cancel" or
+    "help".
 
     Any case works: yes vr-40221 is YES VR-40221. Marks a phone adds, as in "No, VR-40221."
     or "Yes!", are dropped. The dash stays: it is part of a code."""
@@ -300,6 +316,8 @@ def read_reply(body):
 
     if word == KEY_WORD and len(parts) == 1:
         return "key", None, None
+    if word == CANCEL_WORD and len(parts) == 1:
+        return "cancel", None, None
     # A code may come with a space in it, as KT 4821, so the rest is joined.
     rest = "".join(parts[1:])
     if word in DECIDE_WORDS:
@@ -322,21 +340,40 @@ def read_reply(body):
     return "help", None, None
 
 
-def read_incoming(payload):
-    """(message_id, sender, text, photo media id) from a Meta webhook, or four Nones."""
-    nothing = None, None, None, None
+def read_messages(payload):
+    """Each (message_id, sender, text, photo media id) in a Meta webhook. Meta can send several
+    in one payload. A message with no id is left out: it could not be told from a repeat."""
+    found = []
     try:
-        value = payload["entry"][0]["changes"][0]["value"]
-        message = value["messages"][0]
-        kind = message.get("type")
+        changes = [change for entry in payload.get("entry", []) for change in entry["changes"]]
+    except (KeyError, TypeError, AttributeError):
+        return found
+    for change in changes:
+        try:
+            messages = change["value"].get("messages", [])
+        except (KeyError, TypeError, AttributeError):
+            continue
+        for message in messages:
+            read = _read_message(message)
+            if read is not None:
+                found.append(read)
+    return found
+
+
+def _read_message(message):
+    """One text or image message as a tuple, or None for any other kind or shape."""
+    try:
+        message_id, kind = message.get("id"), message.get("type")
+        if not message_id:
+            return None
         if kind == "text":
-            return message.get("id"), message["from"], message["text"]["body"], None
+            return message_id, message["from"], message["text"]["body"], None
         if kind == "image":
             image = message["image"]
-            return message.get("id"), message["from"], image.get("caption", ""), image["id"]
-        return nothing
-    except (KeyError, IndexError, TypeError):
-        return nothing
+            return message_id, message["from"], image.get("caption", ""), image["id"]
+    except (KeyError, TypeError, AttributeError):
+        pass
+    return None
 
 
 def read_failures(payload):

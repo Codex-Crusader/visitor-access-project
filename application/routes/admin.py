@@ -113,8 +113,10 @@ def why_not_decided(reference, status):
 
 @bp.get("/api/admin/photo/<reference>")
 def admin_photo(reference):
-    """The gate page's photo of a visitor, as a data URL. A WhatsApp photo is not stored."""
-    refused = access.admin_refusal()
+    """The gate page's photo of a visitor, as a data URL. A WhatsApp photo is not stored.
+
+    A face is the most private thing the app keeps, so only a super admin sees it."""
+    refused = access.admin_refusal() or access.super_refusal()
     if refused:
         return refused
     photo = entries.photo_of(reference)
@@ -147,6 +149,8 @@ def admin_summary():
     )
 
 
+# A random key of 20 or more characters has many different ones.
+DISTINCT_KEY_CHARACTERS = 10
 # The example number in the setup guide. Nobody answers it.
 EXAMPLE_DESK_PHONE = "+912200000000"
 
@@ -166,6 +170,16 @@ def setup_gaps():
     if not config.STAFF_ENTRY_TEMPLATE:
         gaps.append("STAFF_ENTRY_TEMPLATE is not set, so most staff get no WhatsApp message about"
                     " their entry. Get the staff_entry template approved, then set it.")
+    for name, key in (("GATE_KEY", config.GATE_KEY), ("ADMIN_KEY", config.ADMIN_KEY)):
+        if key and len(set(key)) < DISTINCT_KEY_CHARACTERS:
+            gaps.append(f"{name} repeats a few characters, so it is easy to guess. Make a random"
+                        f" one with: {config.MAKE_KEY}")
+    table = people.approver_table()
+    guards = [config.GUARD] + [guard["phone"] for guard in people.holders(people.GUARDS)]
+    both = sorted({phone for phone in guards if access.is_approver(phone, table)})
+    if both:
+        gaps.append(f"{', '.join(both)} can approve a visit and also let the visitor in. If the"
+                    " campus wants two people for that, give the approvals to other numbers.")
     if config.TEMPLATE_FALLBACK:
         gaps.append("TEMPLATE_FALLBACK is on. It hides a template that Meta refuses."
                     " Turn it off when Meta approves the visit_request template.")
@@ -202,10 +216,12 @@ def set_approvers():
     if problems:
         return jsonify(error="Check the numbers.", fields=problems), 400
     before = people.approver_table()
+    old_main, old_backup = before["reasons"][reason]
     people.save_approvers(reason, main, backup)
     resent = notify.resend_after_change(before, people.approver_table())
     audit.record(access.admin_caller(), "Changed the approvers",
-                 f"{reason}: {main}, backup {backup}. Open requests sent to them: {resent}")
+                 f"{reason}: from {old_main}, backup {old_backup}, to {main}, backup {backup}."
+                 f" Open requests sent to them: {resent}")
     return jsonify(approvers=approver_rows(people.approver_table()))
 
 

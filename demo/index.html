@@ -495,7 +495,7 @@ function render(){
   el("nav").innerHTML=(b?`<button class="back" onclick="back()">‹</button>`:"")+(t?`<h1>${t}</h1>`:"");
   el("view").innerHTML=view();
   el("over").innerHTML=S.sheet?`<div class="sheet">
-    <div class="box"><h2>Finish later?</h2><p>Everything you typed is saved. Nothing is sent.</p>
+    <div class="box"><h2>Finish later?</h2><p>What you typed stays on this page while it is open. Nothing is sent.</p>
     <button class="btn plain" onclick="S.sheet=0;render()">Keep filling</button>
     <button class="btn alt" onclick="S.sheet=0;S.s='home';S.hist=[];render()">Save and exit</button></div></div>`:"";
   mark();

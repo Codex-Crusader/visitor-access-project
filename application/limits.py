@@ -14,6 +14,8 @@ _hits_lock = threading.Lock()
 _last_sweep = [0.0]
 SWEEP_SECONDS = 60
 MAX_CALLERS = 10000
+# Past this, the quietest callers are forgotten at once, so many addresses cannot fill memory.
+HARD_MAX_CALLERS = 50000
 KEEP_SECONDS = 3600  # the longest window any limit uses
 
 
@@ -31,13 +33,21 @@ def caller():
 
 
 def _sweep(moment):
-    """Drop callers silent for the longest window. At most once a minute, and only when big."""
-    if len(_hits) <= MAX_CALLERS or moment - _last_sweep[0] < SWEEP_SECONDS:
+    """Drop callers silent for the longest window. At most once a minute, and only when big.
+
+    Past HARD_MAX_CALLERS it runs at once, and forgets the quietest callers down to
+    MAX_CALLERS: O(n log n), but only after n new callers."""
+    full = len(_hits) > HARD_MAX_CALLERS
+    if not full and (len(_hits) <= MAX_CALLERS or moment - _last_sweep[0] < SWEEP_SECONDS):
         return
     _last_sweep[0] = moment
     old = moment - KEEP_SECONDS
     for stale in [key for key, times in _hits.items() if not times or times[-1] <= old]:
         del _hits[stale]
+    if len(_hits) > HARD_MAX_CALLERS:
+        by_last_call = sorted(_hits, key=lambda key: _hits[key][-1] if _hits[key] else 0.0)
+        for quiet in by_last_call[:len(_hits) - MAX_CALLERS]:
+            del _hits[quiet]
 
 
 def forget_hits():

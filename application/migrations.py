@@ -195,6 +195,39 @@ CREATE INDEX admin_changes_at ON admin_changes (at);
 ALTER TABLE visits ADD COLUMN request_key TEXT;
 CREATE UNIQUE INDEX visits_request_key ON visits (request_key) WHERE request_key IS NOT NULL;
 """,
+    # 8: the blacklist knows each number with its country code, not only its last 10 digits.
+    """
+-- One key for a phone number, with its country code: 98765 43210, 098765 43210,
+-- +91 98765 43210 and 0091 98765 43210 are one number. A number with no country code is
+-- Indian. blacklist.number_key() in Python does the same, and a test checks that they agree.
+CREATE FUNCTION phone_number_key(phone TEXT) RETURNS TEXT
+LANGUAGE SQL IMMUTABLE AS $$
+  SELECT CASE
+    WHEN d LIKE '00%' THEN substr(d, 3)
+    WHEN length(d) = 11 AND d LIKE '0%' THEN '91' || substr(d, 2)
+    WHEN length(d) = 10 THEN '91' || d
+    ELSE d END
+  FROM (SELECT regexp_replace(phone, '[^0-9]', '', 'g') AS d) AS digits
+$$;
+ALTER TABLE blacklist ADD COLUMN number_key TEXT;
+UPDATE blacklist SET number_key = phone_number_key(phone);
+-- The old last-10 key stays, so the version before this step still runs, also after a
+-- rollback. It is no longer unique: two countries can share the last 10 digits.
+ALTER TABLE blacklist DROP CONSTRAINT blacklist_pkey;
+CREATE INDEX blacklist_phone_key ON blacklist (phone_key);
+CREATE UNIQUE INDEX blacklist_number_key ON blacklist (number_key);
+""",
+    # 9: the database itself refuses a status, code kind or decider the app does not know.
+    """
+-- NOT VALID: new and changed rows are checked, old rows are not read, so the step is quick
+-- and never fails on a row the app wrote before.
+ALTER TABLE visits ADD CONSTRAINT visits_status_known CHECK (status IN
+  ('pending', 'escalated', 'approved', 'declined', 'inside', 'closed', 'expired')) NOT VALID;
+ALTER TABLE visits ADD CONSTRAINT visits_decided_by_known CHECK (decided_by IS NULL OR
+  decided_by IN ('main', 'backup', 'auto', 'admin', 'blacklist')) NOT VALID;
+ALTER TABLE gate_codes ADD CONSTRAINT gate_codes_kind_known CHECK (kind IN ('entry', 'exit'))
+  NOT VALID;
+""",
 ]
 
 # Advisory lock id, so two starting instances never run a step twice.

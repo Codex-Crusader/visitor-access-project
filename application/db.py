@@ -222,9 +222,9 @@ def ping():
 
 
 def is_new_message(message_id):
-    """False when this WhatsApp message was already handled."""
+    """False when this WhatsApp message was already handled, or has no id to tell."""
     if not message_id:
-        return True
+        return False
     with connect() as conn:
         added = conn.execute(
             "INSERT INTO seen_messages (id, seen) VALUES (%s, %s) ON CONFLICT DO NOTHING",

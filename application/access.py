@@ -39,7 +39,7 @@ def gate_guard():
 
 
 # Who used the ADMIN_KEY from the server settings.
-MAIN_ADMIN = "Main admin (ADMIN_KEY)"
+MAIN_ADMIN = "Main admin"
 
 
 def admin_who():

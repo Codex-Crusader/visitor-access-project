@@ -5,15 +5,47 @@ it does not protect. Read it before real use, and give the known limits to
 the people who decide about the campus. To set up the app, read
 [setup.md](setup.md). To run it, read [maintenance.md](maintenance.md).
 
+## How the parts fit
+
+```mermaid
+flowchart LR
+  V[Visitor's phone] -->|request, status| S[App server on Render]
+  G[Gate page] -->|gate key| S
+  A[Admin page] -->|admin key| S
+  S <-->|one database| D[(Postgres on Neon)]
+  S -->|templates and replies| M[Meta WhatsApp API]
+  M -->|signed webhook| S
+  M <--> P[Approvers' and guards' WhatsApp]
+```
+
+One app process holds the web pages, the API and a background timer. The
+database is the only record. WhatsApp carries the approvals and the guards'
+commands, and Meta signs each webhook call with the app secret.
+
+## Security assumptions
+
+The protections below hold only while these are true:
+
+1. Each guard and admin keeps their own key private, and uses it on their
+   own device.
+2. A WhatsApp number is held by the person named on the admin page. The app
+   cannot tell if someone else took over that account or SIM.
+3. The host, University IT, keeps the server settings secret and is the
+   only one with access to the database and Render.
+4. Meta delivers the webhook calls signed. The app refuses unsigned calls.
+5. Render and Cloudflare set the visitor's address in True-Client-IP, and
+   nobody can reach the app except through them.
+
 ## Who can see what
 
-| Who                     | How                                   | Sees                                                                                                                                                          |
-|-------------------------|---------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| A visitor               | Their own private link                | Their own request, its status and its current code                                                                                                            |
-| An approver             | WhatsApp, from their number           | The requests of their own reasons, and any pass they look up                                                                                                  |
-| A guard                 | Their own key, or the shared gate key | Open passes without the address, the gate lists, and a WhatsApp message for each approval                                                                     |
-| An admin                | The admin key, or their own key       | Every request, who decided it, which guard let the visitor in and out, the gate page photos, the approvers, offices, allow list, guards, admins and blacklist |
-| Anybody on the internet | The public pages                      | The forms, the gate desk number, and the health result                                                                                                        |
+| Who                     | How                                   | Sees                                                                                                                                        |
+|-------------------------|---------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------|
+| A visitor               | Their own private link                | Their own request, its status and its current code                                                                                          |
+| An approver             | WhatsApp, from their number           | The requests of their own reasons and offices, and a pass by its code                                                                       |
+| A guard                 | Their own key, or the shared gate key | The visits on the gate board, and a pass by its code, with no phone or address, and a WhatsApp message for each approval                    |
+| An admin                | Their own key                         | Every request, who decided it, which guard let the visitor in and out, the approvers, offices, allow list, guards, blacklist and change log |
+| A super admin           | The main admin key, or their own key  | As an admin, and each gate photo, the downloads, and the admins                                                                             |
+| Anybody on the internet | The public pages                      | The forms, the gate desk number, and the health result                                                                                      |
 
 Only an admin key opens the log with every visitor's name, phone
 number and address. A guard sees an open visit only, and never its address.
@@ -207,35 +239,59 @@ Never put a secret in git, in a chat or in a screenshot. `.gitignore` keeps
 
 ## Threats and what stops them
 
-| Threat                                 | What stops it                                                               |
-|----------------------------------------|-----------------------------------------------------------------------------|
-| A false WhatsApp message to the app    | Meta's signature, checked with `META_APP_SECRET`. The app needs the secret  |
-| The same WhatsApp message sent again   | The app records each message id and acts on it once                         |
-| Two decisions on one request           | The decision is one database statement that changes an open request only    |
-| Two guards on one entry                | The entry is one database statement that changes an approved pass only      |
-| A guessed reference                    | A reference names a request and opens nothing                               |
-| A guessed entry or exit code           | About 5.7 million random codes, and each one needs a gate key too           |
-| A guessed visitor link                 | 22 random characters                                                        |
-| A guessed gate or admin key            | 20 characters or more, required at start                                    |
-| A stolen gate key                      | Remove the guard, or change `GATE_KEY`. A gate key opens no history         |
-| A stolen admin key                     | Change `ADMIN_KEY` on Render, or tap New key or Delete for an added admin   |
-| An allow list code used by another     | The guard reads the name. The person gets a message about the entry         |
-| A person the campus has banned         | The blacklist refuses their number, and the admin page lists each attempt   |
-| A ban while a request waits            | The ban declines it. An approval checks the blacklist in the same statement |
-| An admin change nobody expected        | The admin change log names who made it, also by `KEY` on WhatsApp           |
-| A stolen gate key lists the staff      | 60 allow list calls a minute for each key                                   |
-| A regular admin acts as a super one    | Only a super admin may renew the key of, delete or change a super admin     |
-| A bulk approval of the wrong rows      | An "Are you sure?" box with the count, and every reference in the log       |
-| Two guards record one staff entry      | One entry for each code in 2 minutes, with a database lock                  |
-| A visitor sends one form twice         | A random key from their browser: the second send gets the first request     |
-| False lines in the approver message    | The form refuses line breaks, control codes and invisible marks             |
-| A formula in the CSV log               | Cells that start with `=`, `+`, `-` or `@` get a quote in front             |
-| A harmful photo file                   | Size and pixel limits, then the server decodes it and stores a new copy     |
-| Many requests from one place           | `REQUESTS_PER_HOUR` for each address, and limits on "Forgot key?"           |
-| A guard who reads the whole history    | Only an admin key opens the log. The gate never gets an address or phone    |
-| Any admin copies every face            | Only a super admin can download the logs and the photos                     |
-| A send that may have reached Meta      | The request stays, is never approved by itself, and the reminder asks again |
-| Open requests after an approver change | They go to the new approver at once, and the change log counts them         |
+| Threat                                 | What stops it                                                                                          |
+|----------------------------------------|--------------------------------------------------------------------------------------------------------|
+| A false WhatsApp message to the app    | Meta's signature, checked with `META_APP_SECRET`. The app needs the secret                             |
+| The same WhatsApp message sent again   | The app records each message id and acts on it once                                                    |
+| Two decisions on one request           | The decision is one database statement that changes an open request only                               |
+| Two guards on one entry                | The entry is one database statement that changes an approved pass only                                 |
+| A guessed reference                    | A reference opens only a visit on the gate board, and each guard has 60 lookups a minute               |
+| A guessed entry or exit code           | About 5.7 million random codes, and each one needs a gate key too                                      |
+| A guessed visitor link                 | 22 random characters                                                                                   |
+| A guessed gate or admin key            | 20 characters or more, required at start                                                               |
+| A stolen gate key                      | Remove the guard, or change `GATE_KEY`. A gate key opens no history                                    |
+| A stolen admin key                     | Change `ADMIN_KEY` on Render, or tap New key or Delete for an added admin                              |
+| An allow list code used by another     | The guard reads the name. The person gets a message about the entry                                    |
+| A person the campus has banned         | The blacklist refuses their number, and the admin page lists each attempt                              |
+| A ban while a request waits            | The ban declines it. An approval checks the blacklist in the same statement                            |
+| An admin change nobody expected        | The admin change log names who made it, also by `KEY` on WhatsApp                                      |
+| A stolen gate key lists the staff      | 60 allow list calls a minute for each key                                                              |
+| A regular admin acts as a super one    | Only a super admin may renew the key of, delete or change a super admin                                |
+| A bulk approval of the wrong rows      | An "Are you sure?" box with the count, and every reference in the log                                  |
+| Two guards record one staff entry      | One entry for each code in 2 minutes, with a database lock                                             |
+| A guard's second IN before the photo   | Refused until the first photo arrives, or CANCEL. A photo never goes to the wrong visitor              |
+| Two countries share the last 10 digits | The blacklist compares the full number with its country code                                           |
+| A visitor's link or a code in a log    | Access log lines show `<hidden>` in place of the token or code                                         |
+| One webhook payload with many messages | Each message acts once, by its id. A message with no id is left out                                    |
+| Many addresses flood the approvers     | `REQUESTS_PER_HOUR_ALL` for the whole campus, default 300 an hour                                      |
+| A stolen WhatsApp account or SIM       | Remove that number on the admin page at once. The change log shows what it did                         |
+| A stolen or lost gate phone            | Lock on the gate page, or delete the guard to stop their key. The gate also locks after 8 hours unused |
+| An admin who abuses their access       | Only super admins add admins or see faces. Every change is in the change log                           |
+| No network at the gate                 | The board says so. The paper log in university-deployment.md takes over                                |
+| Meta is down                           | New requests cannot reach approvers. The gate still checks approved passes                             |
+| A visitor sends one form twice         | A random key from their browser: the second send gets the first request                                |
+| False lines in the approver message    | The form refuses line breaks, control codes and invisible marks                                        |
+| A formula in the CSV log               | Cells that start with `=`, `+`, `-` or `@` get a quote in front                                        |
+| A harmful photo file                   | Size and pixel limits, then the server decodes it and stores a new copy                                |
+| Many requests from one place           | `REQUESTS_PER_HOUR` for each address, and limits on "Forgot key?"                                      |
+| A guard who reads the whole history    | Only an admin key opens the log. The gate never gets an address or phone                               |
+| Any admin copies every face            | Only a super admin can download the logs and the photos                                                |
+| A send that may have reached Meta      | The request stays, is never approved by itself, and the reminder asks again                            |
+| Open requests after an approver change | They go to the new approver at once, and the change log counts them                                    |
+
+## What lives only in the server's memory
+
+The database is the record. These live in the app process only, and a
+restart or a new deployment clears them:
+
+1. The rate limits. After a restart, each caller starts again at zero.
+2. The cached reads, such as the gate board and the blacklist index. The
+   next read fills them from the database again.
+3. The background timer's next run time. It works it out again at start.
+
+No visit, decision, entry or exit is held only in memory, so a restart loses
+none of them. The app runs as one worker on purpose: two workers would each
+have their own limits and caches, and would send each reminder twice.
 
 ## Known limits
 

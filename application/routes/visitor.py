@@ -86,6 +86,9 @@ def create_request():
         earlier = visits.by_request_key(key)
         if earlier:
             return jsonify(visitor_view(earlier)), 200
+    # Counted only here, so a refused or repeated form never uses up the campus's hour.
+    if limits.too_many("request-all", config.REQUESTS_PER_HOUR_ALL, 3600, who="campus"):
+        return jsonify(error="The campus has too many requests right now. Call the gate desk."), 429
     auto_at = timer.auto_approve_time(datetime.now(timezone.utc))
     try:
         visit = visits.create(fields, guests, auto_at, office, key)

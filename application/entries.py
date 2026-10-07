@@ -40,15 +40,38 @@ def check_out(reference, by):
     return visits.to_dict(row) if row is not None else None
 
 
-def wait_for_photo(guard, reference):
-    """Remember that this guard owes a photo for this pass. Replaces any earlier one."""
+def wait_for_photo(guard, reference, minutes):
+    """Remember that this guard owes a photo for this pass. Returns None, or the reference of an
+    earlier pass that still waits for its photo: a photo must never go to the wrong visitor.
+
+    One statement decides. An earlier wait gives way only when it is for the same pass, when it
+    is older than minutes, or when that pass can no longer enter."""
     with db.connect() as conn:
-        conn.execute(
+        taken = conn.execute(
             "INSERT INTO photo_waits (guard, reference, asked) VALUES (%s, %s, %s)"
-            " ON CONFLICT (guard) DO UPDATE"
-            " SET reference = EXCLUDED.reference, asked = EXCLUDED.asked",
-            (guard, reference, db.now()),
-        )
+            " ON CONFLICT (guard) DO UPDATE SET reference = EXCLUDED.reference,"
+            " asked = EXCLUDED.asked"
+            " WHERE photo_waits.reference = EXCLUDED.reference OR photo_waits.asked < %s"
+            " OR NOT EXISTS (SELECT 1 FROM visits WHERE visits.reference = photo_waits.reference"
+            " AND visits.status = %s)"
+            " RETURNING reference",
+            (guard, reference, db.now(), db.ago(minutes / 1440), db.APPROVED),
+        ).fetchone()
+        if taken is not None:
+            return None
+        pending = conn.execute(
+            "SELECT reference FROM photo_waits WHERE guard = %s", (guard,)
+        ).fetchone()
+    return pending["reference"] if pending else None
+
+
+def cancel_photo(guard):
+    """Drop the photo this guard owes. Returns that pass's reference, or None."""
+    with db.connect() as conn:
+        dropped = conn.execute(
+            "DELETE FROM photo_waits WHERE guard = %s RETURNING reference", (guard,)
+        ).fetchone()
+    return dropped["reference"] if dropped else None
 
 
 @db.writes

@@ -165,6 +165,10 @@ PASS_HOURS = _int("PASS_HOURS", 48)
 
 # New requests per address per hour. Generous, because one campus Wi-Fi is one address.
 REQUESTS_PER_HOUR = _int("REQUESTS_PER_HOUR", 60)
+# All new requests in one hour, from every address together. Each one sends a WhatsApp
+# template, so this caps the messages to approvers and Meta's charges when many addresses
+# send at once. A campus event needs a higher number.
+REQUESTS_PER_HOUR_ALL = _int("REQUESTS_PER_HOUR_ALL", 300)
 # True behind Render's proxies, see limits.caller(). False locally, or anyone can fake an address.
 BEHIND_PROXY = _flag("BEHIND_PROXY")
 

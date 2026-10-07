@@ -278,12 +278,17 @@ def status_counts() -> dict[str, int]:
 
 @db.read
 def next_due():
-    """The earliest time the timer has work, or None. One query on the status indexes."""
+    """The earliest time the timer has work, or None. One query on the status indexes.
+
+    Each MIN takes one status, so it reads the first row of that status on the (status,
+    created_at) index: O(log n). One MIN over three statuses walked the created_at index from
+    the oldest visit instead, O(n): 200,000 rows read for one."""
+    oldest = " (SELECT MIN(created_at) FROM visits WHERE status = %s)"
     with db.connect() as conn:
         row = conn.execute(
-            "SELECT (SELECT MIN(created_at) FROM visits WHERE status = %s) AS pending,"
+            f"SELECT{oldest} AS pending,"
             " (SELECT MIN(auto_approve_at) FROM visits WHERE status IN (%s, %s)) AS auto,"
-            " (SELECT MIN(created_at) FROM visits WHERE status IN (%s, %s, %s)) AS expiring",
+            f" LEAST({','.join([oldest] * len(db.EXPIRING))}) AS expiring",
             (db.PENDING, *db.OPEN_STATUSES, *db.EXPIRING),
         ).fetchone()
     times = []
@@ -377,16 +382,18 @@ def purge_old():
     """Delete visits, entries and blocked attempts after the retention period. Returns visits."""
     cutoff = db.ago(config.RETAIN_DAYS)
     with db.connect() as conn:
-        # Photos and codes go first, with the same cutoff, in the same transaction.
-        for table in ("photos", "gate_codes"):
-            conn.execute(
-                f"DELETE FROM {table} WHERE reference IN"
-                " (SELECT reference FROM visits WHERE created_at < %s)",
-                (cutoff,),
-            )
-        removed = conn.execute(
-            "DELETE FROM visits WHERE created_at < %s", (cutoff,)
-        ).rowcount
+        # The old references first, on the created_at index: usually none. Their photos and
+        # codes go by reference, on each table's index, so a round costs O(k log n) for k old
+        # visits. A join on the whole code table cost O(n) every round, also with none old.
+        old = [row["reference"] for row in conn.execute(
+            "SELECT reference FROM visits WHERE created_at < %s", (cutoff,)).fetchall()]
+        removed = 0
+        if old:
+            for table in ("photos", "gate_codes"):
+                conn.execute(f"DELETE FROM {table} WHERE reference = ANY(%s)", (old,))
+            removed = conn.execute(
+                "DELETE FROM visits WHERE reference = ANY(%s)", (old,)
+            ).rowcount
         conn.execute("DELETE FROM seen_messages WHERE seen < %s", (db.ago(1),))
         conn.execute("DELETE FROM photo_waits WHERE asked < %s", (db.ago(1),))
         conn.execute("DELETE FROM staff_entries WHERE entered_at < %s", (cutoff,))

@@ -73,8 +73,9 @@ const guestBox=()=>{
 const gate=()=>S.cfg.gate_desk_phone?`<a class="btn plain" href="tel:${x(S.cfg.gate_desk_phone)}">Call gate desk</a>`:"";
 
 const offlineNote=()=>S.down
-  ? `<p class="sm" style="color:var(--wait)">No connection right now. This page keeps trying,
-     and updates by itself once you are back online.${S.seen?` Last updated ${hm(S.seen)}.`:""}</p>`
+  ? `<p class="sm" style="color:var(--wait)">No connection right now. This is the copy saved on
+     this phone${S.seen?`, last checked with the campus system at ${hm(S.seen)}`:""}. It may be out
+     of date. This page keeps trying, and updates by itself once you are back online.</p>`
   : "";
 
 // How far the tracker's line runs. mark() sets it, so the template has no computed CSS.
@@ -140,6 +141,7 @@ function view(){
       ?`<p class="sm">Staff no longer approve visits. Give the student name or the roll number.</p>`
       :`<p class="sm">We pick the approver for you.</p>`}`}
     <label>Anyone with you?</label>
+    <p class="sm">Up to ${MAX_GUESTS} people.</p>
     ${S.g.map((g,i)=>`<div class="guest">${x(g)}<button onclick="drop(${i})">Remove</button></div>`).join("")}
     ${guestBox()}
     <button class="btn" onclick="n2()">Review</button>
@@ -200,6 +202,8 @@ function view(){
       <span class="pass-cut"></span>
       <span class="pass-foot">${x(S.visit.name||"Visitor")}${S.visit.guests.length?" +"+S.visit.guests.length:""} &middot; ${out?"inside now":"until "+x(dayHm(S.visit.expires_at))}</span>
       <span class="pass-way">${out?"On your way out":"Coming in"}</span></div>
+      <p class="sm">The guard checks this code with the campus system, so a canceled pass does
+        not work, even if this screen still shows it.${S.seen?` Last checked ${hm(S.seen)}.`:""}</p>
       <p class="sm">${out?"Show this exit code on the way out. It is new: the code you came in with no longer opens the gate.":"Show this at the gate. The guard looks it up and takes your photo, then lets you in."}</p>
       ${gate()}
       <button class="btn plain" onclick="home()">Go to home</button>`;}
@@ -209,7 +213,7 @@ function view(){
     <p class="sm">At the gate, the guard takes one photo of you before letting
     you in, on the gate desk page or on the campus guards' WhatsApp. A photo on
     the gate desk page is kept by this app with your visit, and only the campus
-    admins can see it. The admins can download it with the visit log, and the
+    super admins can see it. They can download it with the visit log, and the
     campus then keeps that copy. A photo on WhatsApp stays in that WhatsApp chat.
     No ID number, no vehicle number.</p>
     <p class="sm">When your visit is approved, the campus guards get a WhatsApp
@@ -450,6 +454,7 @@ async function send(){
         reason:reasonText(),visiting:visitingText(),office:officeList()?S.f.office:"",guests:S.g,
         request_key:S.key})},SEND_TIMEOUT);
     S.err="";
+    dropDraft();
     keep(S.visit);
     S.hist=["home"];
     go("status",0);
@@ -506,16 +511,33 @@ function render(){
   el("nav").innerHTML=(b?`<button class="back" onclick="back()">&lsaquo;</button>`:"")+(t?`<h1>${t}</h1>`:"");
   el("view").innerHTML=view();
   el("over").innerHTML=S.sheet?`<div class="sheet">
-    <div class="box"><h2>Finish later?</h2><p>Everything you typed is saved. Nothing is sent.</p>
+    <div class="box"><h2>Finish later?</h2><p>What you typed stays on this phone for one week. Nothing is sent.</p>
     <button class="btn plain" onclick="S.sheet=0;render()">Keep filling</button>
-    <button class="btn alt" onclick="S.sheet=0;S.s='home';S.hist=[];render()">Save and exit</button></div></div>`:"";
+    <button class="btn alt" onclick="saveDraft();S.sheet=0;S.s='home';S.hist=[];render()">Save and exit</button></div></div>`:"";
   mark();
+}
+
+// "Finish later" keeps the form on this phone, never on the server, and only for a few days.
+const DRAFT_DAYS=7;  // one week, as the Finish later box says
+function saveDraft(){
+  try{localStorage.setItem("draft",JSON.stringify({at:Date.now(),f:S.f,g:S.g}))}catch{/* this page view only */}
+}
+function dropDraft(){
+  try{localStorage.removeItem("draft")}catch{/* nothing stored */}
+}
+function restoreDraft(){
+  let d=null;
+  try{d=JSON.parse(localStorage.getItem("draft")||"null")}catch{/* nothing stored */}
+  if(!d||!d.f||Date.now()-d.at>DRAFT_DAYS*86400000){dropDraft();return}
+  Object.assign(S.f,d.f);
+  S.g=Array.isArray(d.g)?d.g.slice(0,MAX_GUESTS):[];
 }
 
 async function start(){
   // The last pass this phone saw shows at once, before any network answer.
   const p=saved();
   if(p){S.visit=p.visit;S.seen=p.seen}
+  else restoreDraft();
   render();
   // Both questions go out together: one round trip of waiting, not two.
   let tok=S.visit&&S.visit.token;

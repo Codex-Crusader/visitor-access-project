@@ -209,6 +209,7 @@ These have a default. Set the ones that apply to you.
 | `PASS_HOURS`             | Hours a pass works after the request. Default 48             |
 | `RETAIN_DAYS`            | Days a record is kept before deletion. Default 90            |
 | `REQUESTS_PER_HOUR`      | New requests from one address in one hour. Default 60        |
+| `REQUESTS_PER_HOUR_ALL`  | New requests from all addresses in one hour. Default 300     |
 | `REQUEST_TEMPLATE`       | The approval template. Default `visit_request`               |
 | `TEMPLATE_LANGUAGE`      | The language code of that template. Default `en`             |
 | `TEMPLATE_FALLBACK`      | `true` sends plain text when the template fails. Off         |
@@ -232,6 +233,12 @@ what to fix:
 `REQUESTS_PER_HOUR` counts requests from one internet address. A whole
 campus Wi-Fi can be one address, so before a large event with visitors on
 the campus Wi-Fi, raise it, for example to 300.
+
+`REQUESTS_PER_HOUR_ALL` counts the requests from every address together. Each
+request sends a WhatsApp template to an approver, so this cap stops a flood of
+messages from many addresses, and Meta's charges with it. After the cap, the
+visitor page asks the visitor to call the gate desk. Before a large event,
+raise it on Render.
 
 `ADMIN_PHONE` must not be the gate desk number (`GUARD`). If it is, "Forgot
 admin key?" is refused, because a guard must never get the admin key.
