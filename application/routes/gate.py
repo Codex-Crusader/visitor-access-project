@@ -173,7 +173,8 @@ def gate_action(key, action):
 
 
 def refusal(visit, action, kind, code, guard):
-    """Why this code cannot do this action now, or None. The page and WhatsApp share it."""
+    """Why this code cannot do this action now, or None. A blacklisted number's stop is
+    recorded too. The page and WhatsApp share it."""
     if kind != action:
         return WRONG_KIND[action].format(code=code)
     if visit["status"] != NEEDS[action]:

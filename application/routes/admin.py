@@ -157,7 +157,11 @@ EXAMPLE_DESK_PHONE = "+912200000000"
 
 def setup_gaps():
     """Server settings still at a demo value. Warnings only: the app runs, but not as it should."""
-    return [*phone_gaps(), *setting_gaps(), *approver_gaps()]
+    gaps = [*phone_gaps(), *setting_gaps(), *approver_gaps()]
+    if config.TEMPLATE_FALLBACK:
+        gaps.append("TEMPLATE_FALLBACK is on. It hides a template that Meta refuses."
+                    " Turn it off when Meta approves the visit_request template.")
+    return gaps
 
 
 def phone_gaps():
@@ -183,9 +187,6 @@ def setting_gaps():
         if key and len(set(key)) < DISTINCT_KEY_CHARACTERS:
             gaps.append(f"{name} repeats a few characters, so it is easy to guess. Make a random"
                         f" one with: {config.MAKE_KEY}")
-    if config.TEMPLATE_FALLBACK:
-        gaps.append("TEMPLATE_FALLBACK is on. It hides a template that Meta refuses."
-                    " Turn it off when Meta approves the visit_request template.")
     return gaps
 
 

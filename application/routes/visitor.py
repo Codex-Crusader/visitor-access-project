@@ -94,7 +94,8 @@ def create_request():
 
 
 def read_form(payload):
-    """((fields, guests, office), None), or (None, the refusal to send back)."""
+    """((fields, guests, office), None), or (None, the refusal to send back). A blacklisted
+    number's attempt is recorded too."""
     fields, guests, error = checks.clean_fields(payload)
     if error:
         return None, (jsonify(error=error), 400)
