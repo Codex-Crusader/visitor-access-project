@@ -235,18 +235,10 @@ function decision(v) {
   return [tone, who ? `${word} by ${who}${v.decided_phone ? ` ${v.decided_phone}` : ""}` : word];
 }
 
-function item(v) {
+// The open part of a visit row: every detail, then the blacklist button.
+function visitMore(v, byLine) {
   const [main1, backup] = v.approvers || [];
-  const [tone, word] = STATUS[v.status] || ["", v.status];
-  const [byTone, byLine] = decision(v);
-  const body = `<details class="visit"><summary>
-      <span><b>${x(v.name)}${plus(v)}</b><small>${x(v.phone)}</small>
-        ${byLine ? `<small class="by" data-tone="${byTone}">${x(byLine)}</small>` : ""}</span>
-      <span class="mid"><b>${x(v.reason)}</b><small>Visiting ${x(v.visiting)}</small></span>
-      <span class="side-col"><code>${x(v.reference)}</code><br>
-        <span class="pill" data-tone="${tone}">${x(word)}</span></span>
-    </summary>
-    <div class="more"><dl>
+  return `<div class="more"><dl>
       <dt>Address</dt><dd>${x(v.address)}</dd>
       <dt>Reason</dt><dd>${x(v.reason)}</dd>
       ${v.office ? `<dt>Office</dt><dd>${x(v.office)}</dd>` : `<dt>Visiting</dt><dd>${x(v.visiting)}</dd>`}
@@ -262,7 +254,20 @@ function item(v) {
       <dt>Exited</dt><dd>${when(v.exited_at)}${v.exited_by ? ` by ${x(v.exited_by)}` : ""}</dd>
     </dl>
     <button class="small del ban" data-ban="${x(v.phone)}" data-name="${x(v.name)}">Blacklist this number</button>
-    </div></details>`;
+    </div>`;
+}
+
+function item(v) {
+  const [tone, word] = STATUS[v.status] || ["", v.status];
+  const [byTone, byLine] = decision(v);
+  const body = `<details class="visit"><summary>
+      <span><b>${x(v.name)}${plus(v)}</b><small>${x(v.phone)}</small>
+        ${byLine ? `<small class="by" data-tone="${byTone}">${x(byLine)}</small>` : ""}</span>
+      <span class="mid"><b>${x(v.reason)}</b><small>Visiting ${x(v.visiting)}</small></span>
+      <span class="side-col"><code>${x(v.reference)}</code><br>
+        <span class="pill" data-tone="${tone}">${x(word)}</span></span>
+    </summary>
+    ${visitMore(v, byLine)}</details>`;
   if (!pickable(v)) return body;
   return `<div class="pickrow"><label class="tick"><input type="checkbox" data-pick-ref="${x(v.reference)}"
       aria-label="Select ${x(v.name)} ${x(v.reference)}"></label>${body}</div>`;
@@ -340,21 +345,26 @@ function pickAll(which = "visits") {
   renderToday();
 }
 
+// The words and color for each bulk choice.
+const BULK = {
+  approve: {verb: "Approve", done: "Approved", tone: "go",
+    ask: what => `Approve ${what}? Each guard gets one WhatsApp message with the list.`},
+  decline: {verb: "Decline", done: "Declined", tone: "stop",
+    ask: what => `Decline ${what}? The visitors see Declined.`},
+};
+
 async function bulkDecide(choice) {
   const references = [...picked];
   const n = references.length;
+  const words = BULK[choice];
   const what = `${n} ${n === 1 ? "request" : "requests"}`;
-  const line = choice === "approve"
-    ? `Approve ${what}? Each guard gets one WhatsApp message with the list.`
-    : `Decline ${what}? The visitors see Declined.`;
-  const verb = choice === "approve" ? "Approve" : "Decline";
-  if (!(await confirmDelete(line, `${verb} ${n}`, choice === "approve" ? "go" : "stop"))) return;
+  if (!(await confirmDelete(words.ask(what), `${words.verb} ${n}`, words.tone))) return;
   try {
     const answer = await call("/api/admin/decide", {references, decision: choice});
     picked.clear();
     const skipped = answer.skipped.map(s => `${x(s.reference)}: ${x(s.why)}`).join("<br>");
     bulkNote = {tone: answer.skipped.length ? "bad" : "good",
-      html: `${choice === "approve" ? "Approved" : "Declined"} ${answer.decided.length}.`
+      html: `${words.done} ${answer.decided.length}.`
         + (skipped ? ` Not changed:<br>${skipped}` : "")};
     refresh();
   } catch (err) {
@@ -725,9 +735,8 @@ function renderBlocked() {
   renderMenu();
 }
 
-function renderTeam() {
-  if (!el("s-table")) return;
-  for (const kind of Object.keys(views)) renderTagged(kind);
+// Each add form's table, note and field errors.
+function renderForms() {
   for (const [kind, spec] of Object.entries(FORMS)) {
     if (!(kind in views)) {
       el(`${spec.prefix}-table`).innerHTML = TABLES[kind]();
@@ -741,13 +750,23 @@ function renderTeam() {
     // A form with a problem stays open, so the admin sees why.
     if (Object.keys(formErrors[kind]).length) el(`${spec.prefix}-form`).hidden = false;
   }
-  renderEntries();
-  renderBlocked();
+}
+
+function renderChanges() {
   el("a-changes").innerHTML = table(["When", "Who", "What", "Details"], team.changes.length
     ? team.changes.map(c => `<tr><td>${when(c.at)}</td><td>${x(c.by_whom)}</td><td>${x(c.action)}</td>
         <td>${x(c.detail || "—")}</td></tr>`).join("")
     : `<tr><td colspan="4" class="fixed">No changes yet.</td></tr>`);
   labelCells(el("a-changes"));
+}
+
+function renderTeam() {
+  if (!el("s-table")) return;
+  for (const kind of Object.keys(views)) renderTagged(kind);
+  renderForms();
+  renderEntries();
+  renderBlocked();
+  renderChanges();
   el("you").textContent = team.you ? `Signed in as ${team.you}${team.super ? " (super admin)" : ""}` : "";
   // The logs hold every visitor's details and face: only a super admin downloads them.
   el("csv").hidden = el("s-download").hidden = !team.super;
@@ -1236,16 +1255,21 @@ function render() {
 }
 
 // Loads the first page again, or with more=true the page after the last one.
+// The filter, the search, and where the next page starts.
+function visitQuery(more) {
+  const params = new URLSearchParams({status: filter});
+  if (query) params.set("q", query);
+  if (more && next) params.set("after", next);
+  return params;
+}
+
 async function load(more = false) {
   const mine = ++asked;
   loading = true;
   if (!more) { rows = []; next = null; }
   if (el("list")) { renderTiles(); renderList(); }
-  const params = new URLSearchParams({status: filter});
-  if (query) params.set("q", query);
-  if (more && next) params.set("after", next);
   try {
-    const page = await call(`/api/admin/visits?${params}`);
+    const page = await call(`/api/admin/visits?${visitQuery(more)}`);
     if (mine !== asked) return;
     rows = more ? rows.concat(page.visits) : page.visits;
     next = page.next;

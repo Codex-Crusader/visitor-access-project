@@ -93,11 +93,14 @@ function tracker(){
   </ul>`;
 }
 
-function view(){
-  switch(S.s){
-  case "home": return `<div class="hero"><h2>Campus Visitor Access</h2><p class="heroP">Ask to visit, then watch the decision happen.</p></div>
-    ${S.visit&&st()!=="closed"?`<button class="live" data-tone="${["approved","inside"].includes(st())?"go":["declined","expired"].includes(st())?"stop":""}" onclick="go('status')">
-      <b>${word()}</b><span>${x(S.visit.reference)}</span></button>`:""}
+// The live card's color on the home screen: green with a pass, red when it ended without one.
+const liveTone=()=>["approved","inside"].includes(st())?"go":["declined","expired"].includes(st())?"stop":"";
+
+function homeView(){
+  const card=S.visit&&st()!=="closed"?`<button class="live" data-tone="${liveTone()}" onclick="go('status')">
+      <b>${word()}</b><span>${x(S.visit.reference)}</span></button>`:"";
+  return `<div class="hero"><h2>Campus Visitor Access</h2><p class="heroP">Ask to visit, then watch the decision happen.</p></div>
+    ${card}
     <div class="menu">
       <button onclick="go('step1')">Request a Visit<i>&rsaquo;</i></button>
       <button onclick="go('status')">Checking on My Request<i>&rsaquo;</i></button>
@@ -105,8 +108,10 @@ function view(){
       <button onclick="go('privacy')">My Information and Privacy<i>&rsaquo;</i></button>
       <button onclick="go('help')">Getting Help<i>&rsaquo;</i></button>
     </div>`;
+}
 
-  case "step1": return `<div class="steps"><i class="on"></i><i></i></div>
+function step1View(){
+  return `<div class="steps"><i class="on"></i><i></i></div>
     <label for="f_name">Your name</label>
     <input id="f_name" class="${flag("name")}" value="${x(S.f.name)}" oninput="set('name',this.value)">
     ${note("name")}
@@ -118,36 +123,45 @@ function view(){
     ${note("address")}
     <button class="btn" onclick="n1()">Continue</button>
     <button class="btn plain" onclick="S.sheet=1;render()">Finish later</button>`;
+}
 
-  case "step2":
-    return `<div class="steps"><i class="on"></i><i class="on"></i></div>
+// The office list when there is one. Else a box to type the office or the student.
+function placeField(){
+  if(officeList())return `<label for="f_office">Which office?</label>
+    <select id="f_office" class="${flag("office")}" onchange="set('office',this.value)">
+      <option value="">Choose an office</option>
+      ${officeOptions()}
+    </select>
+    ${note("office")}
+    <p class="sm">The office's own approver gets your request.</p>`;
+  const office=S.f.reason===OFFICE;
+  return `<label for="f_visiting">${office?"Which office?":"Who are you visiting?"}</label>
+    <input id="f_visiting" class="${flag("visiting")}" value="${x(S.f.visiting)}" oninput="set('visiting',this.value)" placeholder="${office?"Office name":"Student name or roll number"}">
+    ${note("visiting")}
+    ${S.e.visiting===STAFF
+      ?`<p class="sm">Staff no longer approve visits. Give the student name or the roll number.</p>`
+      :`<p class="sm">We pick the approver for you.</p>`}`;
+}
+
+function step2View(){
+  return `<div class="steps"><i class="on"></i><i class="on"></i></div>
     <label>Reason</label>
     <div class="chips ${S.e.reason?"bad":""}" id="f_reason">${REASONS.map(r=>
       `<button type="button" aria-pressed="false" onclick="pick('${r}')">${r}</button>`).join("")}</div>
     ${note("reason")}
     ${S.f.reason==="Other"?`<input id="f_other" style="margin-top:10px" class="${flag("other")}" value="${x(S.f.other)}" oninput="set('other',this.value)" placeholder="Say briefly why">
       ${note("other")}`:""}
-    ${officeList()?`<label for="f_office">Which office?</label>
-    <select id="f_office" class="${flag("office")}" onchange="set('office',this.value)">
-      <option value="">Choose an office</option>
-      ${officeOptions()}
-    </select>
-    ${note("office")}
-    <p class="sm">The office's own approver gets your request.</p>`
-    :`<label for="f_visiting">${S.f.reason===OFFICE?"Which office?":"Who are you visiting?"}</label>
-    <input id="f_visiting" class="${flag("visiting")}" value="${x(S.f.visiting)}" oninput="set('visiting',this.value)" placeholder="${S.f.reason===OFFICE?"Office name":"Student name or roll number"}">
-    ${note("visiting")}
-    ${S.e.visiting===STAFF
-      ?`<p class="sm">Staff no longer approve visits. Give the student name or the roll number.</p>`
-      :`<p class="sm">We pick the approver for you.</p>`}`}
+    ${placeField()}
     <label>Anyone with you?</label>
     <p class="sm">Up to ${MAX_GUESTS} people.</p>
     ${S.g.map((g,i)=>`<div class="guest">${x(g)}<button onclick="drop(${i})">Remove</button></div>`).join("")}
     ${guestBox()}
     <button class="btn" onclick="n2()">Review</button>
     <button class="btn plain" onclick="S.sheet=1;render()">Finish later</button>`;
+}
 
-  case "review": return `${S.err?`<div class="state bad">${ico("cross")}<div><h3>Not sent</h3><p>${x(S.err)}</p></div></div>`:""}
+function reviewView(){
+  return `${S.err?`<div class="state bad">${ico("cross")}<div><h3>Not sent</h3><p>${x(S.err)}</p></div></div>`:""}
     <div class="facts">
       ${fact("Name",S.f.name)}${fact("Phone",S.f.phone)}${fact("Address",S.f.address)}
       ${fact("Reason",reasonText())}${fact(S.f.reason===OFFICE?"Office":"Visiting",visitingText())}${S.g.length?fact("With you",S.g.join(", ")):""}
@@ -155,60 +169,82 @@ function view(){
     <p class="sm">No answer in ${S.cfg.escalate_minutes} minutes, and it is sent again, to a backup approver if there is one. You do not fill this in again.</p>
     <button class="btn" onclick="send()">Send request</button>
     <button class="btn plain" onclick="back()">Edit</button>`;
+}
 
-  case "sending": return `<div class="spin"></div><p style="text-align:center">Sending</p>`;
-
-  case "status":{
-    if(!S.visit) return `<h2>Nothing sent yet</h2><button class="btn" onclick="go('step1')">Request a Visit</button>`;
-    const v=S.visit;
-    if(st()==="declined") return `<div class="state bad">${ico("cross")}<div><h3>Declined</h3><p>The approver turned down this visit.</p></div></div>
+// What the status screen shows for each status. A request still waiting shows waitingView.
+const STATUS_VIEWS={
+  declined:v=>`<div class="state bad">${ico("cross")}<div><h3>Declined</h3><p>The approver turned down this visit.</p></div></div>
       <div class="facts">${fact("Reference",v.reference)}${fact("Decided",hm(v.decided_at))}</div>
-      <button class="btn" onclick="again()">New request</button>${gate()}`;
-    if(st()==="expired") return `<div class="state bad">${ico("cross")}<div><h3>Pass expired</h3><p>A request works for ${S.cfg.pass_hours} hours. This one ended at ${dayHm(v.expires_at)}. Send a new request to visit.</p></div></div>
+      <button class="btn" onclick="again()">New request</button>${gate()}`,
+  expired:v=>`<div class="state bad">${ico("cross")}<div><h3>Pass expired</h3><p>A request works for ${S.cfg.pass_hours} hours. This one ended at ${dayHm(v.expires_at)}. Send a new request to visit.</p></div></div>
       <div class="facts">${fact("Reference",v.reference)}</div>
-      <button class="btn" onclick="again()">New request</button>${gate()}`;
-    if(st()==="closed") return `<div class="state good">${ico("check")}<div><h3>Visit complete</h3><p>You checked out at ${hm(v.exited_at)}. This pass is closed and will not open again.</p></div></div>
+      <button class="btn" onclick="again()">New request</button>${gate()}`,
+  closed:v=>`<div class="state good">${ico("check")}<div><h3>Visit complete</h3><p>You checked out at ${hm(v.exited_at)}. This pass is closed and will not open again.</p></div></div>
       <div class="facts">${fact("Entered",hm(v.entered_at))}${fact("Exited",hm(v.exited_at))}</div>
-      <button class="btn" onclick="again()">New request</button>`;
-    if(st()==="inside") return `<div class="state good">${ico("check")}<div><h3>Inside campus</h3><p>You entered at ${hm(v.entered_at)}. Show the pass again on the way out.</p></div></div>
+      <button class="btn" onclick="again()">New request</button>`,
+  inside:v=>`<div class="state good">${ico("check")}<div><h3>Inside campus</h3><p>You entered at ${hm(v.entered_at)}. Show the pass again on the way out.</p></div></div>
       <div class="facts">${fact("Reference",v.reference)}${fact("Entered",hm(v.entered_at))}</div>
       <button class="btn" onclick="go('inout')">Open pass</button>${gate()}
-      <button class="btn plain" onclick="home()">Go to home</button>`;
-    if(st()==="approved") return `<div class="state good">${ico("check")}<div><h3>Approved</h3><p>Show your pass at the gate.</p></div></div>
+      <button class="btn plain" onclick="home()">Go to home</button>`,
+  approved:v=>`<div class="state good">${ico("check")}<div><h3>Approved</h3><p>Show your pass at the gate.</p></div></div>
       ${tracker()}<div class="facts">${fact("Valid until",dayHm(v.expires_at))}</div>
       <button class="btn" onclick="go('inout')">Open pass</button>${gate()}
-      <button class="btn plain" onclick="home()">Go to home</button>`;
-    return `<div class="state wait">${ico("clock")}<div><h3>Not approved yet</h3><p>Do not enter until this says Approved.</p></div></div>
+      <button class="btn plain" onclick="home()">Go to home</button>`,
+};
+
+function waitingView(v){
+  const asked=st()==="escalated";
+  return `<div class="state wait">${ico("clock")}<div><h3>Not approved yet</h3><p>Do not enter until this says Approved.</p></div></div>
       ${offlineNote()}
       ${tracker()}
       <div class="facts">${fact("Reference",v.reference)}
-        ${fact("With",st()==="escalated"?"Approver, asked again":"Approver")}
-        ${st()==="escalated"?"":fact("Asked again at",plus(v.created_at,S.cfg.escalate_minutes))}
+        ${fact("With",asked?"Approver, asked again":"Approver")}
+        ${asked?"":fact("Asked again at",plus(v.created_at,S.cfg.escalate_minutes))}
         ${v.guests.length?fact("With you",v.guests.join(", ")):""}</div>
-      ${gate()}`;}
+      ${gate()}`;
+}
 
-  case "inout":{
-    if(st()==="expired") return `<h2>Pass expired</h2><p>This pass ended at ${dayHm(S.visit.expires_at)}. The code no longer works.</p>
-      <button class="btn" onclick="again()">New request</button>`;
-    if(st()==="closed") return `<h2>Pass closed</h2><p>You checked out at ${hm(S.visit.exited_at)}. This code no longer works.</p>
-      <button class="btn" onclick="again()">New request</button>`;
-    if(!hasPass()) return `<h2>No pass yet</h2><p>Your pass appears here once a request is approved.</p>
-      <button class="btn" onclick="go(S.visit?'status':'step1')">${S.visit?"Check my request":"Request a Visit"}</button>`;
-    const out=st()==="inside";
-    return `${offlineNote()}
+function statusView(){
+  if(!S.visit) return `<h2>Nothing sent yet</h2><button class="btn" onclick="go('step1')">Request a Visit</button>`;
+  return (STATUS_VIEWS[st()]||waitingView)(S.visit);
+}
+
+// The two sides of the pass: the entry code before the visitor is in, the exit code once inside.
+const PASS_SIDES={
+  in:{arrow:"&darr;",label:"Entry pass",code:"entry_code",way:"Coming in",
+    tip:"Show this at the gate. The guard looks it up and takes your photo, then lets you in."},
+  out:{arrow:"&uarr;",label:"Exit pass",code:"exit_code",way:"On your way out",
+    tip:"Show this exit code on the way out. It is new: the code you came in with no longer opens the gate."},
+};
+
+function passView(out){
+  const v=S.visit, side=PASS_SIDES[out?"out":"in"];
+  return `${offlineNote()}
       <div class="pass ${out?"out":"in"}">
-      <span class="ptop"><span class="pass-arrow">${out?"&uarr;":"&darr;"}</span>${out?"Exit pass":"Entry pass"}</span>
-      <b>${x((out?S.visit.exit_code:S.visit.entry_code)||"—")}</b>
+      <span class="ptop"><span class="pass-arrow">${side.arrow}</span>${side.label}</span>
+      <b>${x(v[side.code]||"—")}</b>
       <span class="pass-cut"></span>
-      <span class="pass-foot">${x(S.visit.name||"Visitor")}${S.visit.guests.length?" +"+S.visit.guests.length:""} &middot; ${out?"inside now":"until "+x(dayHm(S.visit.expires_at))}</span>
-      <span class="pass-way">${out?"On your way out":"Coming in"}</span></div>
+      <span class="pass-foot">${x(v.name||"Visitor")}${v.guests.length?" +"+v.guests.length:""} &middot; ${out?"inside now":"until "+x(dayHm(v.expires_at))}</span>
+      <span class="pass-way">${side.way}</span></div>
       <p class="sm">The guard checks this code with the campus system, so a canceled pass does
         not work, even if this screen still shows it.${S.seen?` Last checked ${hm(S.seen)}.`:""}</p>
-      <p class="sm">${out?"Show this exit code on the way out. It is new: the code you came in with no longer opens the gate.":"Show this at the gate. The guard looks it up and takes your photo, then lets you in."}</p>
+      <p class="sm">${side.tip}</p>
       ${gate()}
-      <button class="btn plain" onclick="home()">Go to home</button>`;}
+      <button class="btn plain" onclick="home()">Go to home</button>`;
+}
 
-  case "privacy": return `<h2>What we ask for</h2>
+function inoutView(){
+  if(st()==="expired") return `<h2>Pass expired</h2><p>This pass ended at ${dayHm(S.visit.expires_at)}. The code no longer works.</p>
+      <button class="btn" onclick="again()">New request</button>`;
+  if(st()==="closed") return `<h2>Pass closed</h2><p>You checked out at ${hm(S.visit.exited_at)}. This code no longer works.</p>
+      <button class="btn" onclick="again()">New request</button>`;
+  if(!hasPass()) return `<h2>No pass yet</h2><p>Your pass appears here once a request is approved.</p>
+      <button class="btn" onclick="go(S.visit?'status':'step1')">${S.visit?"Check my request":"Request a Visit"}</button>`;
+  return passView(st()==="inside");
+}
+
+function privacyView(){
+  return `<h2>What we ask for</h2>
     <div class="facts">${["Name","Phone","Address","Reason","Who you are visiting","A photo at the gate"].map(i=>`<div><span>${i}</span></div>`).join("")}</div>
     <p class="sm">At the gate, the guard takes one photo of you before letting
     you in, on the gate desk page or on the campus guards' WhatsApp. A photo on
@@ -228,12 +264,20 @@ function view(){
     signal: your name, your guests, the code and the times. Not your phone
     number or address. The copy is deleted when you check out or start
     a new request.</p>`;
+}
 
-  case "help": return `<h2>Getting help</h2>
+const helpView=()=>`<h2>Getting help</h2>
     <div class="facts">${fact("Gate desk",S.cfg.gate_desk_phone)}</div>
     ${gate()}`;
-  }
-  return "";
+
+// One function for each screen. view() draws the screen the visitor is on.
+const VIEWS={home:homeView,step1:step1View,step2:step2View,review:reviewView,
+  sending:()=>`<div class="spin"></div><p style="text-align:center">Sending</p>`,
+  status:statusView,inout:inoutView,privacy:privacyView,help:helpView};
+
+function view(){
+  const draw=VIEWS[S.s];
+  return draw?draw():"";
 }
 
 // The same rules as the server, checked first to name the wrong field.
@@ -328,31 +372,30 @@ function n1(){
   go("step2");
 }
 
+// What is wrong with the reason, as {field: message}.
+function reasonProblems(){
+  if(!S.f.reason)return {reason:"Choose a reason for the visit."};
+  const other=S.f.reason==="Other"?needed("other","A short reason"):"";
+  return other?{other}:{};
+}
+
+// What is wrong with the office or the student, as {field: message}.
+function placeProblems(){
+  if(officeList())return S.cfg.offices.includes(S.f.office)?{}:{office:"Choose the office you are visiting."};
+  if(!tidy(S.f.visiting))return {visiting:S.f.reason===OFFICE?"Name the office you are visiting.":"Name the student you are visiting."};
+  const who=needed("visiting","This");
+  if(who)return {visiting:who};
+  // An office visit may name a staff member. Only a student visit may not.
+  return S.f.reason!==OFFICE&&STAFF_WORDS.test(S.f.visiting)?{visiting:STAFF}:{};
+}
+
 function n2(){
-  const found={};
-  if(!S.f.reason)found.reason="Choose a reason for the visit.";
-  else if(S.f.reason==="Other"){
-    const other=needed("other","A short reason");
-    if(other)found.other=other;
-  }
-
-  if(officeList()){
-    if(!S.cfg.offices.includes(S.f.office))found.office="Choose the office you are visiting.";
-  }
-  else if(!tidy(S.f.visiting))found.visiting=S.f.reason===OFFICE?"Name the office you are visiting.":"Name the student you are visiting.";
-  else{
-    const who=needed("visiting","This");
-    if(who)found.visiting=who;
-    // An office visit may name a staff member. Only a student visit may not.
-    else if(S.f.reason!==OFFICE&&STAFF_WORDS.test(S.f.visiting))found.visiting=STAFF;
-  }
-
   // A name typed but not added yet still counts.
-  const typed=S.adding&&tidy(S.f.guest)?needed("guest","That name"):"";
-  if(typed)found.guest=typed;
-
+  const typed=S.adding&&tidy(S.f.guest);
+  const guest=typed?needed("guest","That name"):"";
+  const found={...reasonProblems(),...placeProblems(),...(guest?{guest}:{})};
   if(!settle(STEP2,found))return;
-  if(S.adding&&tidy(S.f.guest))S.g.push(tidy(S.f.guest));
+  if(typed)S.g.push(typed);
   closeAdd();
   S.f.other=tidy(S.f.other);
   S.f.visiting=tidy(S.f.visiting);
@@ -482,27 +525,35 @@ async function poll(){
   if(S.busy)return;
   if(S.visit&&live()&&!document.hidden){
     S.busy=1;
-    // New request may drop this visit meanwhile. Its answer then changes nothing.
-    const token=S.visit.token;
-    const same=()=>S.visit&&S.visit.token===token;
-    try{
-      const v=await load(`/api/visit/${token}`);
-      if(same()){
-        const changed=v.status!==S.visit.status;
-        keep(v);
-        S.wait=gap();
-        if(S.down){S.down=0;render()}
-        else if(changed&&LIVE_VIEWS.includes(S.s))render();
-      }
-    }catch(err){
-      if(same()&&unknown(err)){forget();render()}
-      else if(same()){
-        S.wait=Math.min(S.wait*2,POLL_SLOWEST);
-        if(!S.down){S.down=1;if(LIVE_VIEWS.includes(S.s))render()}
-      }
-    }finally{S.busy=0}
+    try{await checkVisit(S.visit.token)}finally{S.busy=0}
   }
   S.timer=setTimeout(()=>void poll(),S.wait);
+}
+
+// One status check. New request may drop this visit meanwhile. Its answer then changes nothing.
+async function checkVisit(token){
+  const same=()=>S.visit&&S.visit.token===token;
+  try{
+    const v=await load(`/api/visit/${token}`);
+    if(same())gotVisit(v);
+  }catch(err){
+    if(same())lostVisit(err);
+  }
+}
+
+function gotVisit(v){
+  const changed=v.status!==S.visit.status;
+  keep(v);
+  S.wait=gap();
+  if(S.down){S.down=0;render()}
+  else if(changed&&LIVE_VIEWS.includes(S.s))render();
+}
+
+// No answer: check less often, and show that this is the saved copy.
+function lostVisit(err){
+  if(unknown(err)){forget();render();return}
+  S.wait=Math.min(S.wait*2,POLL_SLOWEST);
+  if(!S.down){S.down=1;if(LIVE_VIEWS.includes(S.s))render()}
 }
 function pollNow(){if(!document.hidden){S.wait=gap();void poll()}}
 
@@ -533,6 +584,19 @@ function restoreDraft(){
   S.g=Array.isArray(d.g)?d.g.slice(0,MAX_GUESTS):[];
 }
 
+// A finished or unknown visit is not reopened. A failed call keeps the saved pass.
+function openSaved(answer){
+  if(answer.status==="rejected"){
+    if(unknown(answer.reason))forget();
+    else S.down=1;
+    return;
+  }
+  const v=answer.value;
+  if(v.status==="closed")forget();
+  else if(v.status==="expired")forget(v);
+  else keep(v);
+}
+
 async function start(){
   // The last pass this phone saw shows at once, before any network answer.
   const p=saved();
@@ -545,16 +609,7 @@ async function start(){
   const [cfg,visit]=await Promise.allSettled([load("/api/config"),tok?load(`/api/visit/${tok}`):null]);
   // No settings mean the built-in defaults, which are good enough to start.
   if(cfg.status==="fulfilled")S.cfg=cfg.value;
-  if(tok){
-    // A finished or unknown visit is not reopened. A failed call keeps the saved pass.
-    if(visit.status==="fulfilled"){
-      if(visit.value.status==="closed")forget();
-      else if(visit.value.status==="expired")forget(visit.value);
-      else keep(visit.value);
-    }
-    else if(unknown(visit.reason))forget();
-    else S.down=1;
-  }
+  if(tok)openSaved(visit);
   render();
   window.addEventListener("online",pollNow);
   document.addEventListener("visibilitychange",pollNow);

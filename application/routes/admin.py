@@ -157,6 +157,10 @@ EXAMPLE_DESK_PHONE = "+912200000000"
 
 def setup_gaps():
     """Server settings still at a demo value. Warnings only: the app runs, but not as it should."""
+    return [*phone_gaps(), *setting_gaps(), *approver_gaps()]
+
+
+def phone_gaps():
     gaps = []
     if whatsapp.same_number(config.GATE_DESK_PHONE, EXAMPLE_DESK_PHONE):
         gaps.append(f"GATE_DESK_PHONE is the example number {EXAMPLE_DESK_PHONE}. Call gate desk"
@@ -167,6 +171,11 @@ def setup_gaps():
     elif not config.ADMIN_PHONE_SET:
         gaps.append("ADMIN_PHONE is not set, so Forgot admin key? sends the admin key to"
                     " MAIN_APPROVER. Set it to the admin's own WhatsApp number.")
+    return gaps
+
+
+def setting_gaps():
+    gaps = []
     if not config.STAFF_ENTRY_TEMPLATE:
         gaps.append("STAFF_ENTRY_TEMPLATE is not set, so most staff get no WhatsApp message about"
                     " their entry. Get the staff_entry template approved, then set it.")
@@ -174,16 +183,20 @@ def setup_gaps():
         if key and len(set(key)) < DISTINCT_KEY_CHARACTERS:
             gaps.append(f"{name} repeats a few characters, so it is easy to guess. Make a random"
                         f" one with: {config.MAKE_KEY}")
-    table = people.approver_table()
-    guards = [config.GUARD] + [guard["phone"] for guard in people.holders(people.GUARDS)]
-    both = sorted({phone for phone in guards if access.is_approver(phone, table)})
-    if both:
-        gaps.append(f"{', '.join(both)} can approve a visit and also let the visitor in. If the"
-                    " campus wants two people for that, give the approvals to other numbers.")
     if config.TEMPLATE_FALLBACK:
         gaps.append("TEMPLATE_FALLBACK is on. It hides a template that Meta refuses."
                     " Turn it off when Meta approves the visit_request template.")
     return gaps
+
+
+def approver_gaps():
+    table = people.approver_table()
+    guards = [config.GUARD] + [guard["phone"] for guard in people.holders(people.GUARDS)]
+    both = sorted({phone for phone in guards if access.is_approver(phone, table)})
+    if not both:
+        return []
+    return [f"{', '.join(both)} can approve a visit and also let the visitor in. If the"
+            " campus wants two people for that, give the approvals to other numbers."]
 
 
 def approver_rows(table):

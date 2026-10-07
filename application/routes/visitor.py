@@ -65,19 +65,10 @@ def create_request():
         return jsonify(error="Too many requests from here. Try again later."), 429
 
     payload = request.get_json(silent=True) or {}
-    fields, guests, error = checks.clean_fields(payload)
-    if error:
-        return jsonify(error=error), 400
-    if blacklist.has(fields["phone"]):
-        blacklist.record_attempt(fields["phone"], fields["name"], blacklist.ASKED,
-                                 fields["visiting"], blacklist.VISITOR_PAGE)
-        return jsonify(error=BLOCKED), 403
-    office, error = chosen_office(fields["reason"], payload.get("office"))
-    if error:
-        # The page's list may be old: an office was deleted, or the list did not load.
-        return jsonify(error=error, **office_lists()), 400
-    if office:
-        fields["visiting"] = office
+    form, refused = read_form(payload)
+    if refused:
+        return refused
+    fields, guests, office = form
 
     # A resend of the same form, after a slow answer, gets the first request back.
     key = payload.get("request_key")
@@ -94,6 +85,34 @@ def create_request():
         visit = visits.create(fields, guests, auto_at, office, key)
     except visits.SameRequest as same:
         return jsonify(visitor_view(same.visit)), 200
+    failed = send_to_approver(visit)
+    if failed:
+        return failed
+    # The new request brings new deadlines, so the timer works out when to run next.
+    timer.wake.set()
+    return jsonify(visitor_view(visit)), 201
+
+
+def read_form(payload):
+    """((fields, guests, office), None), or (None, the refusal to send back)."""
+    fields, guests, error = checks.clean_fields(payload)
+    if error:
+        return None, (jsonify(error=error), 400)
+    if blacklist.has(fields["phone"]):
+        blacklist.record_attempt(fields["phone"], fields["name"], blacklist.ASKED,
+                                 fields["visiting"], blacklist.VISITOR_PAGE)
+        return None, (jsonify(error=BLOCKED), 403)
+    office, error = chosen_office(fields["reason"], payload.get("office"))
+    if error:
+        # The page's list may be old: an office was deleted, or the list did not load.
+        return None, (jsonify(error=error, **office_lists()), 400)
+    if office:
+        fields["visiting"] = office
+    return (fields, guests, office), None
+
+
+def send_to_approver(visit):
+    """None when the message went, or kept on an uncertain send. Else the refusal."""
     try:
         approvers = people.approvers_for(people.approver_table(), visit)
         notify.log_template_problem(whatsapp.notify_approver(visit, approvers))
@@ -106,9 +125,7 @@ def create_request():
         visits.delete(visit["reference"])
         log.error("WhatsApp send failed: %s", sending_failed)
         return jsonify(error="Could not reach the approver. Try again."), 502
-    # The new request brings new deadlines, so the timer works out when to run next.
-    timer.wake.set()
-    return jsonify(visitor_view(visit)), 201
+    return None
 
 
 # Made by the visitor's browser: random, so only that browser can know it.

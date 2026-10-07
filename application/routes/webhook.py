@@ -54,28 +54,42 @@ def handle_decide(sender, status, reference, table, help_lines=whatsapp.HELP):
         reference = waiting[0]["reference"]
 
     visit = visits.get(reference)
-    if visit is None:
-        return f"No request has reference {reference}. Check the reference in the request message."
-    if visit["status"] == db.EXPIRED:
-        return EXPIRED_REQUEST.format(reference=reference, hours=config.PASS_HOURS)
-    # Each reason has its own two approvers. Nobody decides another's request.
-    by = access.role(sender, visit, table)
-    if not by:
-        return f"{reference} goes to another approver. You cannot decide it."
+    by, refused = decider(sender, reference, visit, table)
+    if refused:
+        return refused
     main, backup = people.approvers_for(table, visit)
     phone = main if by == db.BY_MAIN else backup
     decided = visits.decide(reference, status, by, phone)
     if not decided:
-        now_status = visits.get(reference)["status"]
-        if now_status == db.EXPIRED:
-            return EXPIRED_REQUEST.format(reference=reference, hours=config.PASS_HOURS)
-        if now_status in db.OPEN_STATUSES:
-            return f"{reference} cannot be approved: the number is on the blacklist."
-        return f"{reference} was already {now_status}."
+        return not_decided(reference)
     # Before the reply to the approver, so the reply is the last message sent.
     if status == db.APPROVED:
         notify.tell_guards(decided, skip=(sender,))
     return f"{reference} is now {status}.\n\n{whatsapp.brief(visit)}"
+
+
+def decider(sender, reference, visit, table):
+    """(main or backup, None) when this approver may decide the visit, else (None, why not)."""
+    if visit is None:
+        return None, (f"No request has reference {reference}."
+                      " Check the reference in the request message.")
+    if visit["status"] == db.EXPIRED:
+        return None, EXPIRED_REQUEST.format(reference=reference, hours=config.PASS_HOURS)
+    # Each reason has its own two approvers. Nobody decides another's request.
+    by = access.role(sender, visit, table)
+    if not by:
+        return None, f"{reference} goes to another approver. You cannot decide it."
+    return by, None
+
+
+def not_decided(reference):
+    """The reply when the decision found the request no longer open."""
+    now_status = visits.get(reference)["status"]
+    if now_status == db.EXPIRED:
+        return EXPIRED_REQUEST.format(reference=reference, hours=config.PASS_HOURS)
+    if now_status in db.OPEN_STATUSES:
+        return f"{reference} cannot be approved: the number is on the blacklist."
+    return f"{reference} was already {now_status}."
 
 
 def handle_gate(guard, sender, action, code, help_lines=whatsapp.HELP):
@@ -89,16 +103,11 @@ def handle_gate(guard, sender, action, code, help_lines=whatsapp.HELP):
     visit, kind = visits.by_code(code)
     if visit is None:
         return f"No pass has {action} code {code}. Use the code on the visitor's pass."
-    if kind != action:
-        return gate.WRONG_KIND[action].format(code=code)
-
-    if visit["status"] != gate.NEEDS[action]:
-        return gate.REFUSALS[action][visit["status"]]
+    why = gate.refusal(visit, action, kind, code, guard)
+    if why:
+        return why
 
     reference = visit["reference"]
-    if action == db.ENTRY and blacklist.has(visit["phone"]):
-        gate.stopped_at_gate(visit, guard)
-        return gate.BLACKLISTED
     # IN only asks for the photo. The photo lets the visitor in, see handle_photo.
     if action == db.ENTRY:
         pending = entries.wait_for_photo(whatsapp.digits(sender), reference, PHOTO_MINUTES)
@@ -234,18 +243,16 @@ def answer_message(sender, text, photo, table, guard):
                                     ("admin", access.is_admin_phone(sender))) if has}
     help_lines = whatsapp.help_text(roles)
     kind, value, key = whatsapp.read_reply(text)
-    if kind == "key":
-        return handle_key(sender, guard, help_lines)
-    if kind == "cancel":
-        return handle_cancel(guard, sender)
-    if kind == "decide":
-        return handle_decide(sender, value, key, table, help_lines)
-    if kind == "gate":
-        return handle_gate(guard, sender, value, key, help_lines)
-    if kind == "staff":
-        return handle_staff(guard, key)
-    if kind == "lookup":
-        return handle_lookup(guard, sender, key, table)
+    handlers = {
+        "key": lambda: handle_key(sender, guard, help_lines),
+        "cancel": lambda: handle_cancel(guard, sender),
+        "decide": lambda: handle_decide(sender, value, key, table, help_lines),
+        "gate": lambda: handle_gate(guard, sender, value, key, help_lines),
+        "staff": lambda: handle_staff(guard, key),
+        "lookup": lambda: handle_lookup(guard, sender, key, table),
+    }
+    if kind in handlers:
+        return handlers[kind]()
     if "approver" in roles:
         return whatsapp.waiting_body(access.waiting_for(sender, table), help_lines)
     return help_lines

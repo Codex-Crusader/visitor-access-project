@@ -23,6 +23,7 @@ GATE_WORDS = {"IN": db.ENTRY, "OUT": db.EXIT}
 # The gate desk or admin number gets its key back.
 KEY_WORD = "KEY"
 CANCEL_WORD = "CANCEL"
+ONE_WORD_COMMANDS = {KEY_WORD: "key", CANCEL_WORD: "cancel"}
 
 # The help each person gets names only the jobs they have. One number can have all three.
 HELP_LINES = {
@@ -311,13 +312,14 @@ def read_reply(body):
     parts = body.translate(PUNCTUATION).strip().split()
     if not parts:
         return "help", None, None
+    return read_command(parts) or read_bare_code(parts)
 
+
+def read_command(parts):
+    """(kind, value, key) for a reply that starts with a command word, or None."""
     word = parts[0].upper()
-
-    if word == KEY_WORD and len(parts) == 1:
-        return "key", None, None
-    if word == CANCEL_WORD and len(parts) == 1:
-        return "cancel", None, None
+    if len(parts) == 1 and word in ONE_WORD_COMMANDS:
+        return ONE_WORD_COMMANDS[word], None, None
     # A code may come with a space in it, as KT 4821, so the rest is joined.
     rest = "".join(parts[1:])
     if word in DECIDE_WORDS:
@@ -330,7 +332,11 @@ def read_reply(body):
         # Whatever was typed goes on, so a wrong code is named in the reply.
         key = first_code(parts[1:], normalize_gate_code)
         return "gate", GATE_WORDS[word], key or rest.upper() or None
+    return None
 
+
+def read_bare_code(parts):
+    """(kind, value, key) for a code sent alone, which asks who it belongs to. Else help."""
     whole = "".join(parts)
     if staff.normalize_code(whole):
         return "staff", None, whole

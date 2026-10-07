@@ -12,7 +12,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-import testdb
+from tests import testdb
 
 os.environ.update(
     META_TOKEN="fake-token", META_PHONE_NUMBER_ID="100000000000000", META_VERIFY_TOKEN="fake",

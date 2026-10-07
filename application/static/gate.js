@@ -30,8 +30,8 @@ let mode = "pass";
 const MODES = {
   pass: {title: "Check a pass", label: "Code on the visitor's pass", placeholder: "KT-4821",
          button: "Check the pass", keyboard: "text"},
-  staff: {title: "Check a staff code", label: "7-digit allow list code", placeholder: "1234567",
-          button: "Check the staff code", keyboard: "numeric"},
+  staff: {title: "Staff entry", label: "7-digit allow list code", placeholder: "1234567",
+          button: "Record staff entry", keyboard: "numeric"},
 };
 
 function setMode(next) {
@@ -48,6 +48,8 @@ function setMode(next) {
   if (mode === "staff") codeBox.setAttribute("pattern", "[0-9]*");
   else codeBox.removeAttribute("pattern");
   codeBox.setAttribute("autocapitalize", mode === "staff" ? "off" : "characters");
+  // Each mode has its own background, so the guard sees at a glance which one is open.
+  document.body.dataset.mode = mode;
 }
 
 let visit = null;
@@ -159,7 +161,7 @@ async function call(url, options) {
     clearTimeout(timer);
   }
   if (r.status === 403) throw new WrongKey("That gate key is not right. Type it again.");
-  if (!r.ok) throw new Error(data.error || `Something went wrong (${r.status})`);
+  if (!r.ok) throw Object.assign(new Error(data.error || `Something went wrong (${r.status})`), {data});
   return data;
 }
 
@@ -218,6 +220,11 @@ function renderBoard() {
     ${board.you ? `<p class="updated">This page uses the key of ${x(board.you)}.</p>` : ""}`;
 }
 
+const SUBTITLES = {
+  pass: "Type the code on the visitor's pass, or tap a name below. For staff, tap Staff code.",
+  staff: "Type the staff member's 7-digit code. The entry is recorded at once, and the name shows for the face check.",
+};
+
 function render() {
   // The key comes first. Without it nothing else can work, so nothing else shows.
   const haveKey = !!key();
@@ -225,13 +232,18 @@ function render() {
   boardBox.hidden = !haveKey;
   tools.hidden = !haveKey;
   el("rekey").hidden = !haveKey;
-  el("sub").textContent = !haveKey ? "First, type the gate key your admin gave you."
-    : mode === "staff" ? "Ask the staff member for their 7-digit allow list code, and type it here."
-      : "Type the code on the visitor's pass, or tap a name below. For staff, tap Staff code.";
+  el("sub").textContent = haveKey ? SUBTITLES[mode] : "First, type the gate key your admin gave you.";
+  if (!haveKey) return renderKeyForm();
 
-  if (!haveKey) {
-    renderLive();
-    out.innerHTML = `
+  renderBoard();
+  out.innerHTML = passArea();
+  const cam = el("cam");
+  if (cam) cam.onchange = () => void takePhoto(cam.files[0]);
+}
+
+function renderKeyForm() {
+  renderLive();
+  out.innerHTML = `
       ${notice ? problem(notice) : ""}
       ${keySent ? banner("good", "Key sent", keySent) : ""}
       <label for="k">Gate key</label>
@@ -239,59 +251,55 @@ function render() {
       <button class="btn" onclick="saveKey()">Save key</button>
       <button class="btn plain" id="forgot" onclick="sendKey()">Forgot gate key?</button>
       <p class="sub">Lost the key the admin made for you alone? Send KEY from your phone to the app's WhatsApp number. You get a new key.</p>`;
-    const box = el("k");
-    box.onkeydown = e => { if (e.key === "Enter") saveKey(); };
-    box.focus();
-    return;
-  }
+  const box = el("k");
+  box.onkeydown = e => { if (e.key === "Enter") saveKey(); };
+  box.focus();
+}
 
-  renderBoard();
+// Under the code box: a wait, a staff entry, a pass, or only a problem.
+function passArea() {
+  if (busy) return working(busy);
+  if (person) return staffView(person);
+  if (!visit) return notice ? problem(notice) : "";
+  return visitView(visit);
+}
 
-  if (busy) {
-    out.innerHTML = working(busy);
-    return;
-  }
+// When the visit was decided, and by whom.
+function decidedFact(v) {
+  if (!v.decided_at) return "";
+  const label = v.status === "declined" ? "Declined"
+    : v.decided_by === "auto" ? "Approved automatically, no person answered" : "Approved";
+  return fact(label, hm(v.decided_at));
+}
 
-  if (person) {
-    out.innerHTML = staffView(person);
-    return;
-  }
+// A closed visit comes with times only, so nothing personal shows.
+function visitDetails(v) {
+  if (v.status === "closed") return "";
+  return `
+      ${fact("Name", v.name)}
+      ${fact("Visiting", v.visiting)}
+      ${fact("Reason", v.reason)}
+      ${v.guests && v.guests.length ? fact("With", v.guests.join(", ")) : ""}
+      ${decidedFact(v)}
+      ${v.status === "approved" && v.expires_at ? fact("Valid until", dayHm(v.expires_at)) : ""}`;
+}
 
-  if (!visit) {
-    out.innerHTML = notice ? problem(notice) : "";
-    return;
-  }
-
+function visitView(v) {
   // A blacklisted number never enters, whatever its pass says.
-  const [tone, title, line] = visit.blacklisted ? BLACKLISTED
-    : BANNER[visit.status] || ["wait", visit.status, ""];
-
-  // A closed visit comes with times only, so nothing personal shows.
-  const closed = visit.status === "closed";
-  const details = closed ? "" : `
-      ${fact("Name", visit.name)}
-      ${fact("Visiting", visit.visiting)}
-      ${fact("Reason", visit.reason)}
-      ${visit.guests && visit.guests.length ? fact("With", visit.guests.join(", ")) : ""}
-      ${visit.decided_at ? fact(visit.status === "declined" ? "Declined"
-        : visit.decided_by === "auto" ? "Approved automatically, no person answered" : "Approved",
-        hm(visit.decided_at)) : ""}
-      ${visit.status === "approved" && visit.expires_at ? fact("Valid until", dayHm(visit.expires_at)) : ""}`;
-
-  out.innerHTML = `
+  const [tone, title, line] = v.blacklisted ? BLACKLISTED
+    : BANNER[v.status] || ["wait", v.status, ""];
+  return `
     ${notice ? problem(notice) : ""}
     ${banner(tone, title, line)}
     <div class="facts">
-      ${visit.code ? fact(visit.code_kind === "entry" ? "Entry code" : "Exit code", visit.code) : ""}
-      ${fact("Reference", visit.reference)}
-      ${details}
-      ${visit.entered_at ? fact("Entered", hm(visit.entered_at)) : ""}
-      ${visit.exited_at ? fact("Exited", hm(visit.exited_at)) : ""}
+      ${v.code ? fact(v.code_kind === "entry" ? "Entry code" : "Exit code", v.code) : ""}
+      ${fact("Reference", v.reference)}
+      ${visitDetails(v)}
+      ${v.entered_at ? fact("Entered", hm(v.entered_at)) : ""}
+      ${v.exited_at ? fact("Exited", hm(v.exited_at)) : ""}
     </div>
-    ${visit.blacklisted ? "" : nextStep(visit)}
+    ${v.blacklisted ? "" : nextStep(v)}
     <button class="btn plain" onclick="clear_()">Next visitor</button>`;
-  const cam = el("cam");
-  if (cam) cam.onchange = () => void takePhoto(cam.files[0]);
 }
 
 // Redraws the phone photo as a small JPEG with no metadata. Tests replace it: jsdom has no canvas.
@@ -379,7 +387,7 @@ async function look() {
     render();
     return;
   }
-  await (STAFF_CODE.test(code) ? showStaff(code) : show(code));
+  await (STAFF_CODE.test(code) ? recordStaff(code) : show(code));
 }
 
 // What the guard reads after the entry: a repeat is not recorded twice, a failed message says so.
@@ -389,47 +397,27 @@ function entryLine(p) {
     + (p.told === false ? "The WhatsApp message to them could not be sent." : "A WhatsApp message about it was sent to them.");
 }
 
-// An allow list code shows the name first, so the guard can check the face before the entry.
+// A staff entry is recorded at once. The name and tag then show large, for the face check,
+// until the guard types the next code: the box is empty and ready, so there is no extra tap.
 function staffView(p) {
   const top = p.blacklisted ? banner(...BLACKLISTED)
-    : p.entered_at
-      ? banner("good", p.new === false ? "Already recorded" : "Entry recorded", entryLine(p))
-      : banner("good", "On the allow list", "Check that this is them, then record the entry.");
-  const canEnter = !p.entered_at && !p.blacklisted;
+    : banner("good", p.new === false ? "Already recorded" : "Entry recorded", entryLine(p));
   return `${notice ? problem(notice) : ""}
     ${top}
     <div class="who"><b>${x(p.name)}</b>${p.tag ? `<span>${x(p.tag)}</span>` : ""}</div>
     <div class="facts">${fact("Allow list code", p.code)}</div>
-    ${canEnter ? `<button class="btn go" id="staff-enter" onclick="enterStaff()">Record entry</button>` : ""}
-    <button class="btn plain" onclick="clear_()">Next person</button>`;
+    ${p.blacklisted ? "" : `<p class="sub">If this is not the person in front of you, do not let them in, and tell the admin.</p>`}`;
 }
 
-async function showStaff(code) {
+// One action: the code records the entry. The page stays in Staff code mode, with the code
+// box empty and focused, ready for the next person.
+async function recordStaff(code) {
   const mine = ++latest;
   visit = null;
   person = null;
   photo = "";
   notice = "";
-  busy = "Checking the allow list code";
-  render();
-  try {
-    const found = await call(`/api/staff/${code}`);
-    if (mine !== latest) return;
-    person = found;
-  } catch (err) {
-    if (mine !== latest) return;
-    busy = "";
-    if (err instanceof WrongKey) return forgetKey(err.message);
-    notice = err.message;
-  }
-  busy = "";
-  render();
-}
-
-async function enterStaff() {
-  const mine = ++latest;
-  const code = person.code;
-  notice = "";
+  if (mode !== "staff") setMode("staff");
   busy = "Recording the entry";
   render();
   try {
@@ -439,10 +427,14 @@ async function enterStaff() {
   } catch (err) {
     if (mine !== latest) return;
     if (err instanceof WrongKey) { busy = ""; return forgetKey(err.message); }
-    notice = err.message;
+    // A blacklisted number comes back with its name, so the banner can say who it is.
+    if (err.data && err.data.blacklisted) person = err.data;
+    else notice = err.message;
   }
   busy = "";
+  codeBox.value = "";
   render();
+  codeBox.focus();
 }
 
 // Opens a pass by the code the guard typed, or by reference after a tap.
@@ -565,5 +557,6 @@ setInterval(gateIdle, 60000);
 setInterval(() => { if (!document.hidden) void loadBoard(); }, BOARD_EVERY);
 document.addEventListener("visibilitychange", () => { if (!document.hidden) void loadBoard(); });
 gateIdle();
+setMode(mode);
 render();
 void loadBoard();

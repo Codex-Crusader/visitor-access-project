@@ -1,6 +1,10 @@
 """Checks the .env values and sends one test message. Run this before a demo."""
 
 import sys
+from pathlib import Path
+
+# The app's modules are one folder up.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from typing import NoReturn
 
 

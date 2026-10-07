@@ -151,19 +151,11 @@ def gate_action(key, action):
     visit, kind = visits.by_code(code) if code else (None, None)
     if visit is None:
         return jsonify(error="No pass has that code. Type the code on the visitor's pass."), 404
-    if kind != action:
-        return jsonify(error=WRONG_KIND[action].format(code=code),
-                       visit=typed_pass(visit, code, kind)), 409
-
-    if visit["status"] != NEEDS[action]:
-        return jsonify(error=REFUSALS[action][visit["status"]],
-                       visit=typed_pass(visit, code, kind)), 409
+    why = refusal(visit, action, kind, code, guard)
+    if why:
+        return jsonify(error=why, visit=typed_pass(visit, code, kind)), 409
 
     # The update itself decides. Two guards pressing at once must not both win.
-    if action == db.ENTRY and blacklist.has(visit["phone"]):
-        stopped_at_gate(visit, guard)
-        return jsonify(error=BLACKLISTED, visit=typed_pass(visit, code, kind)), 409
-
     if action == db.ENTRY:
         # Checked last, so a pass that cannot enter never asks for a photo.
         photo = checks.read_photo(request.get_json(silent=True))
@@ -180,9 +172,21 @@ def gate_action(key, action):
     return jsonify(typed_pass(done, code, kind))
 
 
+def refusal(visit, action, kind, code, guard):
+    """Why this code cannot do this action now, or None. The page and WhatsApp share it."""
+    if kind != action:
+        return WRONG_KIND[action].format(code=code)
+    if visit["status"] != NEEDS[action]:
+        return REFUSALS[action][visit["status"]]
+    if action == db.ENTRY and blacklist.has(visit["phone"]):
+        stopped_at_gate(visit, guard)
+        return BLACKLISTED
+    return None
+
+
 NO_SUCH_CODE = "No one on the allow list has that code."
 # Allow list calls one guard may make in a minute, so a stolen key cannot list the names.
-# The gate page makes two for each person, so this lets one guard take 30 people a minute.
+# The gate page makes one for each person, so one guard can take 60 people a minute.
 CODES_PER_MINUTE = 60
 TOO_MANY_CODES = "Too many allow list codes in a minute. Wait a minute and try again."
 
@@ -221,6 +225,6 @@ def staff_entry(code):
         return jsonify(error=NO_SUCH_CODE), 404
     if blacklist.has(person["phone"]):
         stopped_code(person, guard)
-        return jsonify(error=BLACKLISTED), 409
+        return jsonify(error=BLACKLISTED, **staff_view(person)), 409
     stamp, new, told = notify.staff_entered(person, guard)
     return jsonify(**staff_view(person), entered_at=stamp, new=new, told=told)

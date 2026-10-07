@@ -41,7 +41,11 @@ button{font:inherit;color:inherit;cursor:pointer;border:0;background:none}
  background:var(--goBg);color:var(--go);font-size:.8rem;font-weight:650;white-space:nowrap}
 .live i{width:8px;height:8px;border-radius:50%;background:currentColor}
 .live.off{background:var(--waitBg);border-color:var(--waitLn);color:var(--wait)}
-.view{padding:20px 22px calc(34px + env(safe-area-inset-bottom))}
+.view{padding:20px 22px calc(34px + env(safe-area-inset-bottom));transition:background .15s ease}
+/* Visitor passes on a light blue, staff entries on a light green: one look tells the mode. */
+body[data-mode=pass] .view{background:#F3F7FD}
+body[data-mode=staff] .view{background:#EEF8F2}
+body[data-mode=staff] .modes button[aria-selected=true]{color:var(--go)}
 .hero{margin-bottom:20px}
 .hero h2{margin:0 0 6px;font-size:1.62rem;font-weight:750;letter-spacing:-.03em;line-height:1.16}
 .sub{margin:0 0 14px;color:var(--soft);font-size:.96rem}

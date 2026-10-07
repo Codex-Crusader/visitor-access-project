@@ -14,12 +14,15 @@ def tool(name: str) -> str | None:
     return shutil.which(name, path=here) or shutil.which(name)
 
 
+# Each server test file starts its own clean database, so one failure names its topic.
+SERVER_TESTS = sorted(str(p) for p in Path("tests").glob("test_*.py")
+                      if p.name != "test_concurrency.py")
 CHECKS = [
-    ("server tests", [sys.executable, "test_app.py"]),
-    ("stress test", [sys.executable, "test_concurrency.py"]),
-    ("page tests", [tool("node"), "test_form.js"] if tool("node") else None),
+    *((f"server: {Path(name).stem[5:]}", [sys.executable, name]) for name in SERVER_TESTS),
+    ("stress test", [sys.executable, "tests/test_concurrency.py"]),
+    ("page tests", [tool("node"), "tests/test_form.js"] if tool("node") else None),
     ("ruff", [tool("ruff"), "check", "."] if tool("ruff") else None),
-    ("eslint", [tool("npx"), "--no-install", "eslint", "static", "test_form.js"]
+    ("eslint", [tool("npx"), "--no-install", "eslint", "static", "tests/test_form.js"]
      if tool("npx") else None),
 ]
 MISSING = {
@@ -43,7 +46,7 @@ def main():
         results.append((name, "passed" if passed else "FAILED"))
     print("\n=== summary")
     for name, result in results:
-        print(f"{name:<13} {result}")
+        print(f"{name:<18} {result}")
     return 0 if all(result == "passed" for _, result in results) else 1
 
 

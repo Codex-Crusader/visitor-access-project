@@ -4,8 +4,13 @@ import base64
 import io
 import os
 import threading
+import sys
 import time
 from collections import Counter
+from pathlib import Path
+
+# The app's modules are one folder up.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import testdb
 

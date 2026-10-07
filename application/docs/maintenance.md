@@ -172,14 +172,17 @@ a request. Each one has a 7-digit allow list code.
 1. The person says their code to you.
 2. On WhatsApp, send the code, for example `4569918`. You can also send
    `IN 4569918`. The entry is recorded at once.
-3. On the gate page, tap Staff code at the top. The phone shows the number
-   keypad. Type the code and tap "Check the staff code". The page shows the
-   name in large letters, with their tag, such as their department. Tap
-   Record entry. A code typed in the Visitor pass mode works too.
+3. On the gate page, tap Staff code at the top. The background turns light
+   green, and the phone shows the number keypad. Type the code and tap
+   "Record staff entry", or press Enter. The entry is recorded at once, and
+   the page shows the name in large letters, with their tag, such as their
+   department. A code typed in the Visitor pass mode works too, and switches
+   the page to Staff code.
 4. Read the name. If it is not the person in front of you, do not let them
    in, and tell the admin.
-5. Tap Next person. The page goes back to Visitor pass, for the next
-   visitor.
+5. The page stays in Staff code, with the code box empty, so type the next
+   person's code at once. Tap Visitor pass for a visitor: its background is
+   light blue.
 
 The person gets a WhatsApp message about the entry, with the time and your
 name, but not your number. The reply tells you if that message could not be sent. The admin page
@@ -189,8 +192,8 @@ the allow list.
 If the same code comes again within 2 minutes, from you or from another
 guard, the reply says "Already recorded" with the first time. Nothing new is
 recorded, and no second message is sent. One guard can try 60 codes in a
-minute. The gate page uses two of those for each person, the check and the
-entry, so a guard can take 30 people a minute. After that, the reply says
+minute. The gate page uses one of those for each person, so a guard can
+take 60 people a minute. After that, the reply says
 to wait a minute.
 
 ### The blacklist
@@ -659,21 +662,26 @@ both linters, and ends with a list of what passed. Each line must say
 .venv\Scripts\python.exe run_tests.py
 ```
 
-1. `test_app.py` runs the whole flow with WhatsApp stubbed out. It sends no
-   message.
-2. `test_concurrency.py` makes many requests and many guards at the same
+1. The `tests/test_*.py` files run the whole flow with WhatsApp stubbed out.
+   They send no message. Each file covers one topic and starts on an empty
+   database, so you can run one file alone. `tests/kit.py` holds what they
+   share.
+2. `tests/test_concurrency.py` makes many requests and many guards at the same
    moment, and checks that each code is unique and each entry happens once.
    It also adds 20 guards at once, and checks that each guard gets a
    different key, each visit names the guard who let the visitor in, and
    each guard gets one message for each approval.
-3. `test_form.js` loads the three pages in a real DOM with jsdom.
+3. `tests/test_form.js` loads the three pages in a real DOM with jsdom.
 4. `ruff` and `eslint` are the linters. Their settings files give the reason
    for each rule that they turn off. The important one is `no-implicit-globals`. The
    pages have no build step, so each button calls a global function from an
-   `onclick` attribute.
+   `onclick` attribute. The linters also limit complexity: a Python function
+   can have at most 8 branches, and a page function at most 10. If a change
+   goes over the limit, split the function into named parts.
 
-To use another Postgres for the tests, set `TEST_DATABASE_URL`. The tests
-write and delete rows, so never point it at the live database.
+To use another Postgres for the tests, set `TEST_DATABASE_URL`. Each test
+file deletes every table in that database first, so never point it at the
+live database.
 
 ## The WhatsApp message list
 

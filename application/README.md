@@ -141,7 +141,6 @@ visitor, `/gate` for the guard and `/admin` for the admin.
 | `tags.py`                              | The tags that group the offices and the allow list                     |
 | `whatsapp.py`                          | Meta API calls, message text, and command reading                      |
 | `config.py`                            | Settings read from the environment                                     |
-| `check_setup.py`                       | Checks your settings and sends one test message                        |
 | `gunicorn.conf.py`                     | Starts and stops the database and timer in the worker                  |
 | `render.yaml`                          | A record of the Render settings                                        |
 | `static/index.html`, `static/app.js`   | The visitor page                                                       |
@@ -149,10 +148,12 @@ visitor, `/gate` for the guard and `/admin` for the admin.
 | `static/admin.html`, `static/admin.js` | The admin page                                                         |
 | `static/shared.js`                     | The CSV download for admin, and the forgot-key call for gate and admin |
 | `static/sw.js`                         | Keeps the visitor page on the phone, so it opens offline               |
-| `test_app.py`                          | Runs the whole flow with WhatsApp stubbed out                          |
-| `test_concurrency.py`                  | Makes many calls at once to check the races                            |
 | `run_tests.py`                         | Runs every test and both linters with one command                      |
-| `test_form.js`                         | Checks the three pages in a real DOM with jsdom                        |
-| `testdb.py`                            | Starts a throwaway Postgres for the two Python tests                   |
+| `tests/test_*.py`                      | Run the whole flow with WhatsApp stubbed out, one topic a file         |
+| `tests/kit.py`                         | The settings, clean database and helpers that the tests share          |
+| `tests/test_concurrency.py`            | Makes many calls at once to check the races                            |
+| `tests/test_form.js`                   | Checks the three pages in a real DOM with jsdom                        |
+| `tests/testdb.py`                      | Starts a throwaway Postgres for the Python tests                       |
+| `tools/check_setup.py`                 | Checks your settings and sends one test message                        |
 | `ruff.toml`, `eslint.config.mjs`       | Linter settings, and why some rules are off                            |
 | `tools/whatsapp_messages.py`           | Writes docs/whatsapp-messages.md by running the app                    |

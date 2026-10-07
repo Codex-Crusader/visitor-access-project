@@ -16,7 +16,7 @@ from pathlib import Path
 # The app's modules are one folder up.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-import testdb
+from tests import testdb
 
 os.environ.update(
     META_TOKEN="fake-token",
@@ -229,7 +229,7 @@ def take_pictures(browser, folder, codes):
     desk.click("#modes >> text=Staff code")
     desk.fill("#code", codes["Dr Anita Rao"])
     desk.click("#look")
-    desk.wait_for_selector("text=On the allow list")
+    desk.wait_for_selector("text=Entry recorded")
     save(desk, folder, "app-07-gate-staff.png", "#out *")
 
     admin = browser.new_context(**DESKTOP)
@@ -240,7 +240,7 @@ def take_pictures(browser, folder, codes):
     board.screenshot(path=os.path.join(folder, "app-06-admin.png"), full_page=True)
     print("saved app-06-admin.png")
     board.click("#tabs >> text=Allow list")
-    board.wait_for_selector("text=Dr Anita Rao")
+    board.wait_for_selector("#s-table >> text=Dr Anita Rao")
     board.screenshot(path=os.path.join(folder, "app-08-admin-allow.png"), full_page=True)
     print("saved app-08-admin-allow.png")
 

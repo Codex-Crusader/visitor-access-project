@@ -24,7 +24,8 @@ def local(stamp, shape="%Y-%m-%d %H:%M"):
     """A stored UTC time as campus time, as 2026-10-06 16:05. A spreadsheet reads it as a date."""
     if not stamp:
         return ""
-    return datetime.fromisoformat(stamp).astimezone(config.WORK_TIMEZONE).strftime(shape)
+    moment: datetime = datetime.fromisoformat(stamp)
+    return moment.astimezone(config.WORK_TIMEZONE).strftime(shape)
 
 
 STATUS_WORDS = {

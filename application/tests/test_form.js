@@ -3,7 +3,7 @@ const fs = require("fs");
 const path = require("path");
 const {JSDOM} = require("jsdom");
 
-const ROOT = path.join(__dirname, "static");
+const ROOT = path.join(__dirname, "..", "static");
 const read = name => fs.readFileSync(path.join(ROOT, name), "utf8");
 
 let failures = 0;
@@ -1131,28 +1131,36 @@ async function staffGateChecks() {
   const byId = id => desk.document.getElementById(id);
   desk.eval('localStorage.setItem("gatekey","k")');
   desk.eval("render()");
+  ok("visitor mode has its own background", desk.document.body.dataset.mode === "pass");
   desk.document.querySelector('[data-mode="staff"]').click();
-  ok("Staff code opens the number keypad", byId("code").inputMode === "numeric"
-     && byId("code").getAttribute("pattern") === "[0-9]*" && byId("look").textContent === "Check the staff code"
-     && byId("sub").textContent.includes("7-digit"));
+  ok("Staff code opens the number keypad, on the staff background", byId("code").inputMode === "numeric"
+     && byId("code").getAttribute("pattern") === "[0-9]*" && byId("look").textContent === "Record staff entry"
+     && byId("sub").textContent.includes("7-digit") && desk.document.body.dataset.mode === "staff");
   byId("code").value = "123 4567";
   await desk.eval("look()");
-  ok("seven digits ask for a staff member, not a pass",
-     calls.some(([u, m]) => u === "/api/staff/1234567" && m === "GET")
+  ok("one action records the entry: no check first, no pass lookup",
+     calls.some(([u, m]) => u === "/api/staff/1234567/entry" && m === "POST")
+     && !calls.some(([u, m]) => u === "/api/staff/1234567" && m === "GET")
      && !calls.some(([u]) => u.startsWith("/api/pass/")));
-  ok("the name shows before the entry", byId("out").innerHTML.includes("Dr Dev")
-     && !calls.some(([u]) => u.endsWith("/entry")));
-  byId("staff-enter").click();
-  await tick(); await tick();
-  ok("Record staff entry posts the code", calls.some(([u, m]) => u === "/api/staff/1234567/entry" && m === "POST"));
-  ok("it says the entry is recorded", byId("out").innerHTML.includes("Entry recorded") && !byId("staff-enter"));
-  ok("the name and the tag show large, for the face check", !!byId("out").querySelector(".who b"));
+  ok("it says the entry is recorded, with the name and tag large for the face check",
+     byId("out").innerHTML.includes("Entry recorded") && !!byId("out").querySelector(".who b")
+     && byId("out").textContent.includes("Dr Dev"));
+  ok("the page stays in Staff code mode, the box empty and ready for the next person",
+     desk.document.body.dataset.mode === "staff" && byId("code").value === ""
+     && desk.document.activeElement === byId("code") && !byId("out").textContent.includes("Next person"));
   desk.eval("clear_()");
-  ok("Next person clears it, and goes back to the visitor pass", byId("out").innerHTML === ""
-     && byId("code").inputMode === "text" && byId("look").textContent === "Check the pass");
   byId("code").value = "1234567";
   await desk.eval("look()");
-  ok("7 digits in visitor mode still find the staff member", calls.filter(([u]) => u === "/api/staff/1234567").length === 2);
+  ok("7 digits in visitor mode record the entry and switch to Staff code mode",
+     calls.filter(([u]) => u === "/api/staff/1234567/entry").length === 2
+     && desk.document.body.dataset.mode === "staff");
+  // A blacklisted number: the banner with the name, and no entry.
+  desk.fetch = () => Promise.resolve({status: 409, ok: false, json: () => Promise.resolve({
+    error: "On the blacklist.", code: "7654321", name: "Kavita", tag: "", blacklisted: true})});
+  byId("code").value = "7654321";
+  await desk.eval("look()");
+  ok("a blacklisted code shows the banner and the name", byId("out").textContent.includes("On the blacklist")
+     && byId("out").textContent.includes("Kavita") && !byId("out").textContent.includes("Entry recorded"));
 }
 
 // ------------------------------------------- staff, offices and admins
@@ -1345,8 +1353,8 @@ async function blacklistChecks() {
   ok("the banner says do not let them in", out().includes("On the blacklist")
      && !out().includes("Let them in") && !out().includes("Record entry"));
   desk.eval('visit = null; person = {code:"1234567", name:"Kavita", blacklisted:true}; render()');
-  ok("an allow list code for that number offers no entry", out().includes("On the blacklist")
-     && !desk.document.getElementById("staff-enter"));
+  ok("an allow list code for that number says no entry", out().includes("On the blacklist")
+     && !out().includes("Entry recorded"));
 }
 
 // ------------------------------------------------------------- worst cases

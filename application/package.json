@@ -3,8 +3,8 @@
   "private": true,
   "description": "Tooling for the two web pages. The app itself uses no npm package.",
   "scripts": {
-    "test": "node test_form.js",
-    "lint": "eslint static test_form.js"
+    "test": "node tests/test_form.js",
+    "lint": "eslint static tests/test_form.js"
   },
   "devDependencies": {
     "@types/node": "26.6.3",

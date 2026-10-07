@@ -1,4 +1,4 @@
-// Settings for `npx eslint static test_form.js`.
+// Settings for `npx eslint static tests/test_form.js`.
 //
 // Two rules are off on purpose rather than because they are noisy.
 //
@@ -12,7 +12,7 @@
 // the markup is the only thing that calls them.
 export default [
   {
-    files: ["static/*.js", "test_form.js"],
+    files: ["static/*.js", "tests/test_form.js"],
     languageOptions: {
       ecmaVersion: 2022,
       sourceType: "script",
@@ -40,5 +40,11 @@ export default [
       "eqeqeq": "error",
       "no-unused-vars": ["error", {vars: "local", args: "after-used"}],
     },
+  },
+  {
+    // A page function with more branches than this is split, so each part reads on one screen.
+    // The tests are long lists of checks, so the limit is for the pages only.
+    files: ["static/*.js"],
+    rules: {complexity: ["error", 10]},
   },
 ];

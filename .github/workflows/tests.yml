@@ -36,22 +36,27 @@ jobs:
         with:
           python-version: ${{ matrix.python }}
       - run: pip install -r requirements.txt
-      # Each test script expects an empty database of its own.
-      - name: Make one empty database per test script
+      # Each server test file empties its database first. The stress test has its own.
+      - name: Make the test databases
         env:
           PGPASSWORD: postgres
         run: |
           for name in app_test concurrency_test; do
             psql -h localhost -U postgres -c "CREATE DATABASE $name"
           done
-      - name: test_app.py
+      - name: tests/test_*.py
         env:
           TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/app_test
-        run: python test_app.py
-      - name: test_concurrency.py
+        run: |
+          for file in tests/test_*.py; do
+            if [ "$file" = tests/test_concurrency.py ]; then continue; fi
+            echo "=== $file"
+            python "$file"
+          done
+      - name: tests/test_concurrency.py
         env:
           TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/concurrency_test
-        run: python test_concurrency.py
+        run: python tests/test_concurrency.py
 
   pages:
     name: Page tests and lint
@@ -72,12 +77,12 @@ jobs:
       - name: Install the page tools
         working-directory: application
         run: npm ci --no-audit --no-fund
-      - name: test_form.js
+      - name: tests/test_form.js
         working-directory: application
-        run: node test_form.js
+        run: node tests/test_form.js
       - name: eslint
         working-directory: application
-        run: npx --no-install eslint static test_form.js
+        run: npx --no-install eslint static tests/test_form.js
       - name: test_demo.js
         env:
           NODE_PATH: application/node_modules

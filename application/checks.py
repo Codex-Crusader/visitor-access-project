@@ -49,33 +49,43 @@ def clean_fields(payload):
     """Return (fields, guests, error)."""
     fields = {}
     for key in FIELDS:
-        raw = str(payload.get(key, ""))
-        if len(raw) > MAX_LENGTH:
-            return None, None, f"{key} is too long"
-        value = clean_text(raw)
-        if value is None:
-            return None, None, f"{key} has characters that are not allowed"
-        if not value:
-            return None, None, f"{key} is required"
+        value, error = clean_field(key, payload.get(key, ""))
+        if error:
+            return None, None, error
         fields[key] = value
 
     if not visitor_phone_ok(fields["phone"]):
         return None, None, "phone must be 10 digits, or + and the country code"
-
-    raw_guests = payload.get("guests") or []
-    if not isinstance(raw_guests, list):
-        return None, None, "guests must be a list"
-    # Refused, not cut short: a cut list would let in fewer people than the visitor named.
-    if len(raw_guests) > MAX_GUESTS:
-        return None, None, f"Up to {MAX_GUESTS} people can come with you."
-    guests = []
-    for guest in raw_guests:
-        name = clean_text(str(guest)[:MAX_LENGTH])
-        if name is None:
-            return None, None, "guests have characters that are not allowed"
-        if name:
-            guests.append(name)
+    guests, error = clean_guests(payload.get("guests") or [])
+    if error:
+        return None, None, error
     return fields, guests, None
+
+
+def clean_field(key, given):
+    """(value, None), or (None, why the field is refused)."""
+    raw = str(given)
+    if len(raw) > MAX_LENGTH:
+        return None, f"{key} is too long"
+    value = clean_text(raw)
+    if value is None:
+        return None, f"{key} has characters that are not allowed"
+    if not value:
+        return None, f"{key} is required"
+    return value, None
+
+
+def clean_guests(given):
+    """(names, None), or (None, why the list is refused). Empty names are dropped."""
+    if not isinstance(given, list):
+        return None, "guests must be a list"
+    # Refused, not cut short: a cut list would let in fewer people than the visitor named.
+    if len(given) > MAX_GUESTS:
+        return None, f"Up to {MAX_GUESTS} people can come with you."
+    names = [clean_text(str(guest)[:MAX_LENGTH]) for guest in given]
+    if None in names:
+        return None, "guests have characters that are not allowed"
+    return [name for name in names if name], None
 
 
 PHONE = re.compile(r"^\+[1-9]\d{7,14}$")

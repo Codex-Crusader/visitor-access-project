@@ -381,7 +381,7 @@ change on its own. Make one in the Neon console under Branches.
    `MAIN_APPROVER`.
 
    ```
-   .venv\Scripts\python.exe check_setup.py
+   .venv\Scripts\python.exe tools\check_setup.py
    ```
 
 3. Start the server.
