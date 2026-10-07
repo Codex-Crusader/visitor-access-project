@@ -33,8 +33,9 @@ by face.
 
 If nobody answers in 15 minutes, the request goes to a backup approver, or
 the approver gets a reminder. In working hours, a request that nobody answers
-in 30 minutes is approved automatically. The university can turn this off
-with `AUTO_APPROVE_MINUTES=0`.
+in 30 minutes is approved automatically. An admin can change that time for
+each reason and each office on the admin page, or set it to 0, so that a
+person must always decide.
 
 The app is designed for weak mobile signal. The visitor page and its pass
 work with no signal, and the pages check for news less often when the signal
@@ -208,16 +209,27 @@ was checked, guard's name, time out.
    by the campus ID card. Write their name and time.
 4. The blacklist does not work offline. Keep a printed copy of the
    blacklist at the gate, and print a new one after each change.
-5. When the system works again, do not record those entries in the app: the
-   times would be wrong. The paper log is the record for that period. A super
-   admin keeps it with that week's downloaded logs.
+5. When the system works again, and a visitor from the paper log with a
+   pass code leaves, the guard first records the entry: the entry code and a
+   photo, as for a new entry. The visitor's pass then shows the exit code,
+   and the guard records the exit. The paper log keeps the real time in.
+6. For the visitors who left while the system was down, record nothing in
+   the app. Their pass stays usable until it expires, `PASS_HOURS` after the
+   request, because the app cannot cancel an approved pass. Until then,
+   before a guard lets someone in with a code, the guard makes sure that the
+   code is not in the paper log.
+7. The same day, a super admin compares the paper log with the visit log on
+   the admin page. Each line needs a pass code or the name of the approver
+   who answered. Report a line with neither to the security office.
+8. A super admin keeps the paper pages with that week's downloaded logs, for
+   `RETAIN_DAYS`.
 
 If only WhatsApp is down, the gate page still works for passes that are
 already approved. New requests cannot reach approvers. Use step 2 for new
 visitors.
 
 Test this procedure once each term: turn off the gate phone's data and walk
-through steps 1 to 5.
+through steps 1 to 8.
 
 ## Security
 

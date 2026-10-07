@@ -24,13 +24,9 @@ os.environ.update(
 )
 
 import app as application
-import config
-import db
-import limits
-import people
-import timer
-import visits
-import whatsapp
+from core import config, db, limits
+from models import people, visits
+from services import timer, whatsapp
 
 OUT = Path(__file__).resolve().parent.parent / "docs" / "whatsapp-messages.md"
 ADMIN = {"X-Admin-Key": "demo-admin-key-long-enough"}

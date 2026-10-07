@@ -13,15 +13,15 @@ from kit import (
     new_request, payload, say, sent, snap, templates,
 )
 import app as application
-import access
-import config
-import db
-import entries
-import limits
-import people
-import timer
-import visits
-import whatsapp
+from routes import access
+from core import config
+from core import db
+from models import entries
+from core import limits
+from models import people
+from services import timer
+from models import visits
+from services import whatsapp
 
 print("each reason has its own two approvers")
 
@@ -85,7 +85,8 @@ assert "Leave the backup empty" in set_pair(NEW_MAIN, NEW_MAIN).get_json()["fiel
 # An empty backup: the approver is both, and the escalation is a reminder to them.
 alone = set_pair(NEW_MAIN, "")
 assert alone.status_code == 200
-assert {"reason": "Event", "main": NEW_MAIN, "backup": NEW_MAIN} in alone.get_json()["approvers"]
+assert {"reason": "Event", "main": NEW_MAIN, "backup": NEW_MAIN,
+        "auto_minutes": None} in alone.get_json()["approvers"]
 lonely = client.post("/api/requests", json={**payload, "reason": "Event"}).get_json()
 with db.connect() as conn:
     conn.execute("UPDATE visits SET created_at = %s WHERE reference = %s",
@@ -96,7 +97,7 @@ assert templates[-1][0] == NEW_MAIN and templates[-1][1][1].startswith("Reminder
 visits.decide(lonely["reference"], db.DECLINED, db.BY_MAIN)
 saved = set_pair("+91 90000-00011", NEW_BACKUP)
 assert saved.status_code == 200, saved.get_json()
-event_row = {"reason": "Event", "main": NEW_MAIN, "backup": NEW_BACKUP}
+event_row = {"reason": "Event", "main": NEW_MAIN, "backup": NEW_BACKUP, "auto_minutes": None}
 assert event_row in saved.get_json()["approvers"]
 assert event_row in client.get("/api/admin/summary", headers=ADMIN).get_json()["approvers"]
 event = client.post("/api/requests", json={**payload, "reason": "Event"}).get_json()
@@ -121,14 +122,14 @@ def ist(day, hour, minute=0):
 
 
 # Monday 5, Saturday 10 and Sunday 11 October 2026.
-assert timer.auto_approve_time(ist(5, 9, 59)) is None
-assert timer.auto_approve_time(ist(5, 10)) == "2026-10-05T05:00:00+00:00"
-assert timer.auto_approve_time(ist(5, 16, 59)) == "2026-10-05T11:59:00+00:00"
-assert timer.auto_approve_time(ist(5, 17)) is None
-assert timer.auto_approve_time(ist(10, 12)) is not None
-assert timer.auto_approve_time(ist(11, 12)) is None
+assert timer.auto_approve_time(ist(5, 9, 59), 30) is None
+assert timer.auto_approve_time(ist(5, 10), 30) == "2026-10-05T05:00:00+00:00"
+assert timer.auto_approve_time(ist(5, 16, 59), 30) == "2026-10-05T11:59:00+00:00"
+assert timer.auto_approve_time(ist(5, 17), 30) is None
+assert timer.auto_approve_time(ist(10, 12), 30) is not None
+assert timer.auto_approve_time(ist(11, 12), 30) is None
 # 04:30 UTC is 10:00 in India, so it counts.
-assert timer.auto_approve_time(datetime(2026, 10, 5, 4, 30, tzinfo=timezone.utc)) \
+assert timer.auto_approve_time(datetime(2026, 10, 5, 4, 30, tzinfo=timezone.utc), 30) \
     == "2026-10-05T05:00:00+00:00"
 
 due, with_backup, declined, not_yet = (new_request() for _ in range(4))
@@ -160,13 +161,86 @@ private = {"decided_by", "decided_phone", "auto_approve_at"}
 assert not private & view.keys(), "the visitor must not see it"
 # The answer to a new request is the visitor's too, also in working hours.
 real_auto_time = timer.auto_approve_time
-timer.auto_approve_time = lambda _moment: "2999-01-01T00:00:00+00:00"
+timer.auto_approve_time = lambda _moment, _minutes: "2999-01-01T00:00:00+00:00"
 in_hours = client.post("/api/requests", json=payload)
 timer.auto_approve_time = real_auto_time
 assert in_hours.status_code == 201
 assert visits.get(in_hours.get_json()["reference"])["auto_approve_at"], "the server keeps the time"
 assert not private & in_hours.get_json().keys(), "the new request must not tell the visitor"
 print("  10:00 to 16:59 Monday to Saturday only, a NO first wins, approvers told once")
+
+print("each reason and each office has its own time to approve by itself")
+student = {"reason": "See a student", "office": None}
+table = people.approver_table()
+assert people.auto_minutes_for(table, student) == config.AUTO_APPROVE_MINUTES == 30
+assert next(row for row in client.get("/api/admin/summary", headers=ADMIN).get_json()["approvers"]
+            if row["reason"] == "See a student")["auto_minutes"] is None, "not set: the default"
+pair = {"reason": "See a student", "main": "+" + APPROVER, "backup": ""}
+for wrong in ("abc", "-5", "2000", "1.5", True):
+    refused_time = client.post("/api/admin/approvers", headers=ADMIN,
+                               json={**pair, "auto_minutes": wrong})
+    assert refused_time.status_code == 400, wrong
+    assert "0 means never" in refused_time.get_json()["fields"]["auto_minutes"], wrong
+
+# An open request that approves by itself moves to the new time. One with no time keeps none.
+waits, out_of_hours = new_request(), new_request()
+created = datetime.fromisoformat(visits.get(waits["reference"])["created_at"])
+with db.connect() as conn:
+    conn.execute("UPDATE visits SET auto_approve_at = %s WHERE reference = %s",
+                 (timer.after(created, 30), waits["reference"]))
+db.forget_cache()
+set_time = client.post("/api/admin/approvers", headers=ADMIN, json={**pair, "auto_minutes": "45"})
+assert set_time.status_code == 200, set_time.get_json()
+assert next(row for row in set_time.get_json()["approvers"]
+            if row["reason"] == "See a student")["auto_minutes"] == 45
+assert people.auto_minutes_for(people.approver_table(), student) == 45
+assert visits.get(waits["reference"])["auto_approve_at"] == timer.after(created, 45)
+assert visits.get(out_of_hours["reference"])["auto_approve_at"] is None
+assert "after 45 minutes" in client.get("/api/admin/summary", headers=ADMIN).get_json()[
+    "changes"][0]["detail"], "the change log says it"
+# Other reasons keep the default, and a typed-in reason uses Other's time.
+assert people.auto_minutes_for(people.approver_table(), {"reason": "Delivery"}) == 30
+client.post("/api/admin/approvers", headers=ADMIN,
+            json={"reason": "Other", "main": "+" + APPROVER, "backup": "", "auto_minutes": 10})
+assert people.auto_minutes_for(people.approver_table(), {"reason": "A parcel"}) == 10
+# 0: a person must decide. The open request stops waiting for the timer.
+client.post("/api/admin/approvers", headers=ADMIN, json={**pair, "auto_minutes": 0})
+assert visits.get(waits["reference"])["auto_approve_at"] is None
+assert people.auto_minutes_for(people.approver_table(), student) == 0
+assert timer.auto_approve_time(datetime(2026, 10, 5, 5, 0, tzinfo=timezone.utc), 0) is None
+# The message to the approvers names the time of that reason.
+client.post("/api/admin/approvers", headers=ADMIN, json={**pair, "auto_minutes": 20})
+with db.connect() as conn:
+    conn.execute("UPDATE visits SET auto_approve_at = %s WHERE reference = %s",
+                 ("2020-01-01T00:00:00+00:00", out_of_hours["reference"]))
+db.forget_cache()
+before = len(sent)
+timer.auto_approve_due()
+assert any("within 20 minutes" in body for _, body in sent[before:]), sent[before:]
+# Empty goes back to the default.
+client.post("/api/admin/approvers", headers=ADMIN, json={**pair, "auto_minutes": ""})
+client.post("/api/admin/approvers", headers=ADMIN,
+            json={"reason": "Other", "main": "+" + APPROVER, "backup": "", "auto_minutes": None})
+assert people.approver_table()["auto"]["reasons"] == {}
+# An office has its own time, set by the office's Time button.
+office = {"name": "Exams", "main": "+919000000041", "backup": ""}
+assert client.post("/api/admin/offices", headers=ADMIN, json=office).status_code == 200
+at_exams = {"reason": config.OFFICE_REASON, "office": "Exams"}
+assert people.auto_minutes_for(people.approver_table(), at_exams) == 30
+timed = client.post("/api/admin/offices/auto", headers=ADMIN,
+                    json={"name": "Exams", "auto_minutes": "15"})
+assert timed.status_code == 200, timed.get_json()
+assert [o["auto_minutes"] for o in timed.get_json()["offices"] if o["name"] == "Exams"] == [15]
+assert people.auto_minutes_for(people.approver_table(), at_exams) == 15
+assert client.post("/api/admin/offices/auto", headers=ADMIN,
+                   json={"name": "Nowhere", "auto_minutes": 5}).status_code == 404
+assert client.post("/api/admin/offices/auto", headers=ADMIN,
+                   json={"name": "Exams", "auto_minutes": "x"}).status_code == 400
+assert client.post("/api/admin/offices/auto", json={"name": "Exams"}).status_code == 403
+client.post("/api/admin/offices/remove", headers=ADMIN, json={"name": "Exams"})
+for case in (waits, out_of_hours):
+    say(APPROVER, f"NO {case['reference']}")
+print("  default 30, 0 means never, open requests move, offices too, the change log says it")
 
 print("a pass works for PASS_HOURS after the request, then never again")
 assert config.PASS_HOURS == 48

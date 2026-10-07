@@ -5,9 +5,8 @@ from datetime import datetime
 
 import requests
 
-import config
-import db
-import staff
+from core import config, db
+from models import staff
 
 API_URL = f"https://graph.facebook.com/v21.0/{config.META_PHONE_NUMBER_ID}/messages"
 TIMEOUT_SECONDS = 15

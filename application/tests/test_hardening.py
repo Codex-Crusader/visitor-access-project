@@ -12,18 +12,18 @@ from kit import (
 )
 import app as application
 from routes import gate as gate_routes
-import audit
-import blacklist
-import checks
-import config
-import db
-import export
-import limits
-import people
-import redaction
-import timer
-import visits
-import whatsapp
+from models import audit
+from models import blacklist
+from core import checks
+from core import config
+from core import db
+from services import export
+from core import limits
+from models import people
+from core import redaction
+from services import timer
+from models import visits
+from services import whatsapp
 
 print("bugs found in the hunt stay fixed")
 limits.forget_hits()
@@ -68,7 +68,7 @@ def unsure(*_args, **_kwargs):
 
 real_template, real_auto_time = whatsapp.send_template, timer.auto_approve_time
 whatsapp.send_template = unsure
-timer.auto_approve_time = lambda _moment: db.now()  # as if made in working hours
+timer.auto_approve_time = lambda _moment, _minutes: db.now()  # as if made in working hours
 try:
     kept = client.post("/api/requests", json={**payload, "request_key": "u" * 32})
 finally:

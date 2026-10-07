@@ -29,12 +29,12 @@ os.environ.update(
 from PIL import Image
 
 import app as application
-import db
-import checks
-import entries
-import people
-import visits
-import whatsapp
+from core import db
+from core import checks
+from models import entries
+from models import people
+from models import visits
+from services import whatsapp
 
 lock = threading.Lock()
 sent = []

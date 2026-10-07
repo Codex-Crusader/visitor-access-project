@@ -6,7 +6,7 @@ from collections import deque
 
 from flask import request
 
-import config
+from core import config
 
 # (bucket, caller) -> times of allowed calls, oldest first. O(1) per call on average.
 _hits = {}

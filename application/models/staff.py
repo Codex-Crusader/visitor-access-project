@@ -6,7 +6,7 @@ from types import MappingProxyType
 
 from psycopg import errors
 
-import db
+from core import db
 
 # A staff code is 7 digits, so it never looks like a reference (4-5) or a gate code.
 CODE_DIGITS = 7

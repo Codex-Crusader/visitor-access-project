@@ -9,6 +9,7 @@ import psycopg
 import re
 import time
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from psycopg_pool import PoolTimeout
 
 # The kit comes first: it sets the settings and a clean database before the app loads.
@@ -17,18 +18,19 @@ from kit import (
     finish, new_request, say,
 )
 import app as application
-import config
-import db
-import limits
-import migrations
-import pages
-import people
-import timer
-import visits
-import whatsapp
+from core import config
+from core import db
+from core import limits
+from core import migrations
+from routes import pages
+from models import people
+from services import timer
+from models import visits
+from services import whatsapp
 
 print("pages are served")
-for path in ("/", "/app.js", "/gate", "/gate.js", "/admin", "/admin.js", "/shared.js", "/sw.js"):
+for path in ("/", "/visitor.js", "/gate", "/gate.js", "/admin", "/admin.js", "/shared.js",
+             "/sw.js"):
     assert client.get(path).status_code == 200, path
 
 print("every answer carries the security headers")
@@ -139,7 +141,7 @@ finally:
 print(f"  schema at version {len(migrations.MIGRATIONS)}, a new column added, visits kept")
 
 print("scripts are cached by version, pages are checked")
-for path, script in (("/", "app.js"), ("/gate", "gate.js"), ("/admin", "admin.js")):
+for path, script in (("/", "visitor.js"), ("/gate", "gate.js"), ("/admin", "admin.js")):
     shown = client.get(path)
     assert shown.headers["Cache-Control"] == "no-cache", shown.headers
     address = f"{script}?v={pages.SCRIPT_VERSIONS[script]}"
@@ -185,6 +187,16 @@ try:
         call()
         trips.clear()
         assert call().status_code == 200 and len(trips) == 0, (label, len(trips))
+    # Each WhatsApp message and each new request reads the approvers. They stay in memory too.
+    people.approver_table()
+    trips.clear()
+    assert people.approver_table()["reasons"] and len(trips) == 0, len(trips)
+    # The gate page sends the board's tag back. An unchanged board is an empty 304.
+    board_tag = gate_board().headers["ETag"]
+    unchanged = client.get("/api/gate/board",
+                           headers={"X-Gate-Key": ravi_key, "If-None-Match": board_tag})
+    assert unchanged.status_code == 304 and not unchanged.data, unchanged.status_code
+    assert gate_board().headers["Cache-Control"] == "no-store"
     # A write makes them stale, so the next read goes to the database once.
     exit_code = exit_of(counted)
     client.post(f"/api/pass/{exit_code}/exit", headers=KEY)
@@ -213,15 +225,27 @@ finally:
     db.connect = real_connect
 print("  status check 1, pass lookup 1, entry 2; a repeated poll 0 until the next write")
 
+print("each folder imports only from the folders before it")
+LAYERS = ("core", "models", "services", "routes")
+backwards = []
+for rank, folder in enumerate(LAYERS):
+    for source in Path(APP_DIR, folder).glob("*.py"):
+        for node in ast.walk(ast.parse(source.read_text(encoding="utf-8"))):
+            if isinstance(node, ast.ImportFrom) and node.module in LAYERS[rank + 1:]:
+                backwards.append(f"{folder}/{source.name} imports {node.module}")
+assert not backwards, backwards
+print("  core, then models, then services, then routes")
+
 print("every write to a cached table clears the cache")
 # A new write function that forgets @writes fails here, not as stale pages later.
 # {table} is the guards or admins table in people.py.
 CACHED_TABLES = re.compile(
     r"\b(INSERT INTO|UPDATE|DELETE FROM)\s+"
-    r"((visits|guards|admins|offices|staff|blacklist|photos|gate_codes)\b|\{table})")
+    r"((visits|guards|admins|offices|approvers|reason_auto|staff|blacklist|photos|gate_codes)\b"
+    r"|\{table})")
 forgot = []
-for module in ("db.py", "visits.py", "entries.py", "people.py", "staff.py", "blacklist.py",
-               "tags.py"):
+for module in ("core/db.py", "models/visits.py", "models/entries.py", "models/people.py",
+               "models/staff.py", "models/blacklist.py", "models/tags.py"):
     with open(os.path.join(APP_DIR, module),
               encoding="utf-8") as db_file:
         db_source = db_file.read()

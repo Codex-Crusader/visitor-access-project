@@ -263,7 +263,8 @@ function privacyView(){
     <p class="sm">This phone keeps a copy of your pass, so it opens without a
     signal: your name, your guests, the code and the times. Not your phone
     number or address. The copy is deleted when you check out or start
-    a new request.</p>`;
+    a new request. It also keeps the campus office list and the gate desk
+    number, so the form opens without a signal.</p>`;
 }
 
 const helpView=()=>`<h2>Getting help</h2>
@@ -504,8 +505,7 @@ async function send(){
   }catch(err){
     // The office list on this page was old. Take the server's list and ask again.
     if(err instanceof Refused&&Array.isArray(err.data.offices)){
-      S.cfg.offices=err.data.offices;
-      S.cfg.office_groups=err.data.office_groups||[];
+      keepCfg({...S.cfg,offices:err.data.offices,office_groups:err.data.office_groups||[]});
       S.f.office="";
       S.err="";
       S.hist=["home","step1"];
@@ -597,8 +597,21 @@ function openSaved(answer){
   else keep(v);
 }
 
+// The last settings this phone got, so the office list and the gate desk number work offline.
+function savedCfg(){
+  try{
+    const c=JSON.parse(localStorage.getItem("cfg")||"null");
+    if(c&&Array.isArray(c.offices))S.cfg=c;
+  }catch{/* the built-in defaults */}
+}
+function keepCfg(c){
+  S.cfg=c;
+  try{localStorage.setItem("cfg",JSON.stringify(c))}catch{/* this page view only */}
+}
+
 async function start(){
-  // The last pass this phone saw shows at once, before any network answer.
+  // The last pass and settings this phone saw show at once, before any network answer.
+  savedCfg();
   const p=saved();
   if(p){S.visit=p.visit;S.seen=p.seen}
   else restoreDraft();
@@ -607,8 +620,8 @@ async function start(){
   let tok=S.visit&&S.visit.token;
   try{tok=tok||localStorage.getItem("tok")}catch{/* nothing stored */}
   const [cfg,visit]=await Promise.allSettled([load("/api/config"),tok?load(`/api/visit/${tok}`):null]);
-  // No settings mean the built-in defaults, which are good enough to start.
-  if(cfg.status==="fulfilled")S.cfg=cfg.value;
+  // No answer keeps the saved settings, or the built-in defaults, which are good enough to start.
+  if(cfg.status==="fulfilled")keepCfg(cfg.value);
   if(tok)openSaved(visit);
   render();
   window.addEventListener("online",pollNow);

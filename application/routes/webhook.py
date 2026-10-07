@@ -5,19 +5,10 @@ import logging
 
 from flask import Blueprint, request
 
-import access
-import audit
-import blacklist
-import config
-import db
-import entries
-import limits
-import notify
-import people
-import staff
-import visits
-import whatsapp
-from routes import gate
+from core import config, db, limits
+from models import audit, blacklist, entries, people, staff, visits
+from routes import access, gate
+from services import notify, whatsapp
 
 # The same logger as app.logger, so every message reaches one place.
 log = logging.getLogger("app")

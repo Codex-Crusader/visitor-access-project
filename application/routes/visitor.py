@@ -6,17 +6,10 @@ from datetime import datetime, timezone
 
 from flask import Blueprint, jsonify, request
 
-import blacklist
-import checks
-import config
-import db
-import limits
-import notify
-import pages
-import people
-import timer
-import visits
-import whatsapp
+from core import checks, config, db, limits
+from models import blacklist, people, visits
+from routes import pages
+from services import notify, timer, whatsapp
 
 # The same logger as app.logger, so every message reaches one place.
 log = logging.getLogger("app")
@@ -80,7 +73,9 @@ def create_request():
     # Counted only here, so a refused or repeated form never uses up the campus's hour.
     if limits.too_many("request-all", config.REQUESTS_PER_HOUR_ALL, 3600, who="campus"):
         return jsonify(error="The campus has too many requests right now. Call the gate desk."), 429
-    auto_at = timer.auto_approve_time(datetime.now(timezone.utc))
+    minutes = people.auto_minutes_for(people.approver_table(),
+                                      {"reason": fields["reason"], "office": office})
+    auto_at = timer.auto_approve_time(datetime.now(timezone.utc), minutes)
     try:
         visit = visits.create(fields, guests, auto_at, office, key)
     except visits.SameRequest as same:

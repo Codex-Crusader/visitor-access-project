@@ -88,6 +88,8 @@ let editing = null;     // the reason whose approvers are being changed
 let fieldErrors = {};
 let draft = null;       // the numbers typed in the open editor
 let approverNote = "";
+// Minutes before a working-hours request approves by itself, where no time is set. 0 is never.
+let autoDefault = 30;
 // The waiting requests for the Today page: the first page of them.
 let waiting = [];
 let waitingMore = false;
@@ -438,9 +440,16 @@ async function loadWaiting() {
 }
 
 // ------------------------------------------------------------------- approvers
+// When requests approve by themselves. null uses the server's default.
+const autoWords = m => m ? `After ${m} min` : "Never";
+const autoCell = m => m === null || m === undefined
+  ? `${autoWords(autoDefault)} <span class="fixed">(default)</span>` : autoWords(m);
+const AUTO_HINT = () => `Only for a request made in working hours with no answer. Empty: the default,
+  ${autoWords(autoDefault).toLowerCase()}. 0: never.`;
+
 function approverRow(a) {
   if (a.reason !== editing) {
-    return `<tr><td>${x(a.reason)}</td><td>${x(a.main)}</td><td>${backupCell(a)}</td>
+    return `<tr><td>${x(a.reason)}</td><td>${x(a.main)}</td><td>${backupCell(a)}</td><td>${autoCell(a.auto_minutes)}</td>
       <td class="acts"><button class="small edit" data-edit="${x(a.reason)}">Change</button></td></tr>`;
   }
   const field = (name, label, value) => `<div>
@@ -449,9 +458,14 @@ function approverRow(a) {
         placeholder="+919876543210">
       ${fieldErrors[name] ? `<p class="err">${x(fieldErrors[name])}</p>` : ""}</div>`;
   // The approver as their own backup shows an empty backup box.
-  const typed = draft || {...a, backup: a.backup === a.main ? "" : a.backup};
-  return `<tr><td colspan="4"><b>${x(a.reason)}</b>
+  const typed = draft || {...a, backup: a.backup === a.main ? "" : a.backup, auto: a.auto_minutes ?? ""};
+  return `<tr><td colspan="5"><b>${x(a.reason)}</b>
       <div class="pair">${field("main", "Approver", typed.main)}${field("backup", "Backup approver (you may leave it empty)", typed.backup)}</div>
+      <div class="pair"><div>
+        <label for="ap-auto">Approve by itself after (minutes)</label>
+        <input id="ap-auto" type="text" inputmode="numeric" maxlength="4" autocomplete="off" value="${x(typed.auto)}">
+        <p class="hint">${AUTO_HINT()}</p>
+        ${fieldErrors.auto_minutes ? `<p class="err">${x(fieldErrors.auto_minutes)}</p>` : ""}</div></div>
       <div class="pair gap-top">
         <button class="btn" id="ap-save">Save</button>
         <button class="btn plain" id="ap-cancel">Cancel</button></div></td></tr>`;
@@ -459,7 +473,8 @@ function approverRow(a) {
 
 function renderApprovers() {
   if (!el("approvers")) return;
-  el("approvers").innerHTML = `<table><thead><tr><th>Reason</th><th>Approver</th><th>Backup</th><th></th></tr></thead>
+  el("approvers").innerHTML = `<table><thead><tr><th>Reason</th><th>Approver</th><th>Backup</th>
+    <th>Approves by itself</th><th></th></tr></thead>
     <tbody>${approvers.map(approverRow).join("")}</tbody></table>`;
   el("approver-note").innerHTML = approverNote ? `<div class="note good">${x(approverNote)}</div>` : "";
   labelCells(el("approvers"));
@@ -471,7 +486,8 @@ function renderApprovers() {
 
 async function saveApprovers() {
   const main1 = el("ap-main").value.trim(), backup = el("ap-backup").value.trim();
-  draft = {main: main1, backup};
+  const auto = el("ap-auto").value.trim();
+  draft = {main: main1, backup, auto};
   fieldErrors = {};
   if (!main1) fieldErrors.main = "Type the approver's number.";
   if (fieldErrors.main) return renderApprovers();
@@ -479,7 +495,7 @@ async function saveApprovers() {
   // The admin can open another reason meanwhile. The answer speaks for this one.
   const reason = editing;
   try {
-    const saved = await call("/api/admin/approvers", {reason, main: main1, backup});
+    const saved = await call("/api/admin/approvers", {reason, main: main1, backup, auto_minutes: auto});
     approvers = saved.approvers;
     approverNote = `Saved. New and open requests for ${reason} now go to these numbers.`;
     if (editing === reason) { editing = null; draft = null; }
@@ -632,6 +648,40 @@ async function renameTag(kind) {
   }
 }
 
+// Asks for an office's time to approve by itself. Resolves the typed text, or null for Cancel.
+function askMinutes(title, current) {
+  return new Promise(done => {
+    el("over").innerHTML = `<div class="sheet" role="dialog" aria-modal="true" aria-labelledby="auto-title">
+      <div class="box"><h2 id="auto-title">${x(title)}</h2>
+        <label for="auto-new">Approve by itself after (minutes)</label>
+        <input id="auto-new" type="text" inputmode="numeric" maxlength="4" autocomplete="off" value="${x(current)}">
+        <p class="hint">${AUTO_HINT()}</p>
+        <button class="btn" id="auto-save">Save</button>
+        <button class="btn plain" id="auto-no">Cancel</button></div></div>`;
+    const sheet = el("over").firstElementChild;
+    const giveBack = holdFocus(sheet);
+    const close = answer => { el("over").innerHTML = ""; giveBack(); done(answer); };
+    el("auto-save").onclick = () => close(el("auto-new").value.trim());
+    el("auto-no").onclick = () => close(null);
+    el("auto-new").onkeydown = e => { if (e.key === "Enter") close(el("auto-new").value.trim()); };
+    sheet.onclick = e => { if (e.target === sheet) close(null); };
+    sheet.onkeydown = e => { if (e.key === "Escape") close(null); };
+    el("auto-new").focus();
+  });
+}
+
+async function setOfficeAuto(name, current) {
+  const minutes = await askMinutes(`When ${name} approves by itself`, current);
+  if (minutes === null || minutes === current) return;
+  const answer = await teamCall("offices", "/api/admin/offices/auto", {name, auto_minutes: minutes});
+  if (answer) {
+    const office = team.offices.find(o => o.name === name);
+    notes.offices = {tone: "good", html: `${x(name)}: ${autoCell(office ? office.auto_minutes : null)}.`
+      + " Open requests that approve by themselves have the new time."};
+    renderTeam();
+  }
+}
+
 function onTagBar(kind, e) {
   const hit = e.target.closest("button");
   if (!hit) return;
@@ -655,10 +705,11 @@ const TABLES = {
         <td><code>${x(p.code)}</code></td><td>${tagCell(p)}</td><td>${day(p.added_at)}</td>
         <td class="acts">${tagButton("staff", p, p.name)}
           ${del("staff", p.code, `${p.name} ${p.code}`)}</td></tr>`)),
-  offices: () => table(["Office", "Approver", "Backup", "Tag", ""],
-    tagged("offices", "No offices yet. Visitors type the office's name.", 5, o => `<tr><td>${x(o.name)}</td>
-        <td>${x(o.main)}</td><td>${backupCell(o)}</td><td>${tagCell(o)}</td>
-        <td class="acts">${tagButton("offices", o, o.name)}
+  offices: () => table(["Office", "Approver", "Backup", "Approves by itself", "Tag", ""],
+    tagged("offices", "No offices yet. Visitors type the office's name.", 6, o => `<tr><td>${x(o.name)}</td>
+        <td>${x(o.main)}</td><td>${backupCell(o)}</td><td>${autoCell(o.auto_minutes)}</td><td>${tagCell(o)}</td>
+        <td class="acts"><button class="small edit" data-auto="${x(o.name)}" data-minutes="${x(o.auto_minutes ?? "")}">Time</button>
+          ${tagButton("offices", o, o.name)}
           ${del("offices", o.name, o.name)}</td></tr>`)),
   blacklist: () => table(["Name", "Phone number", "Reason", "Added", ""], team.blacklist.length
     ? team.blacklist.map(b => `<tr><td>${x(b.name)}</td><td>${x(b.phone)}</td><td>${x(b.reason || "—")}</td>
@@ -904,6 +955,7 @@ function onTableClick(e) {
   if (d.delete) void remove(d.delete, d.id, d.label);
   else if (d.newkey) void renewKey(d.newkey, d.id);
   else if (d.retag) void retag(d.retag, d.id, d.tag, d.label);
+  else if (d.auto) void setOfficeAuto(d.auto, d.minutes);
   else if (d.more) { views[d.more].limit += PAGE; renderTagged(d.more); }
   else if (d.super) void setSuper(d.super, d.on === "true", d.label);
 }
@@ -1099,6 +1151,9 @@ const PANELS = `
     `A visitor who picks See an office then picks one of the offices. With no offices here, the
     visitor types the office's name, and the request goes to the approvers for Other. A tag, such
     as a building, puts offices into groups, here and in the visitor's list.`,
+    `Approves by itself: a request made in working hours with no answer is approved after this
+    time. Change it for a reason, or tap Time on an office. Empty uses the default. 0 means a
+    person must always decide. A change also moves the open requests that wait for it.`,
     `While the app uses Meta's test number, also add each new number to the recipient list in
     Meta's API Setup page.`)}
   </section>
@@ -1288,12 +1343,13 @@ async function loadSummary() {
     const s = await call("/api/admin/summary");
     counts = s.counts;
     approvers = s.approvers;
+    autoDefault = s.auto_approve_minutes ?? autoDefault;
     for (const name of Object.keys(team)) if (name in s) team[name] = s[name];
     renderGaps(s.setup_gaps || []);
     if (el("rules")) {
-      const auto = s.auto_approve_minutes
+      const auto = s.work_days
         ? ` A request made ${s.work_days.join(", ")}, ${s.work_hours[0]}:00 to ${s.work_hours[1]}:00,`
-          + ` is approved automatically after ${s.auto_approve_minutes} minutes with no answer.`
+          + " with no answer, is approved automatically after the time in its row."
         : "";
       el("rules").textContent = `A request is sent again, to the backup or as a reminder, after ${s.escalate_minutes} minutes`
         + ` with no answer.${auto} A pass works for ${s.pass_hours} hours after the request.`

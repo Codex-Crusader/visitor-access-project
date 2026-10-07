@@ -320,7 +320,13 @@ Cancel to keep it.
    Write each one with `+` and the country code, like `+919876543210`. The
    backup must be a different person. With no backup, the approver gets a
    reminder instead.
-4. Tap Save both numbers.
+4. In "Approve by itself after (minutes)", type the time for automatic
+   approval in working hours. Leave it empty for the default, 30 minutes.
+   Type 0 if a person must always decide.
+5. Tap Save.
+
+For an office, tap Time on its row to set the same time. A change of time
+also moves the open requests that wait for automatic approval.
 
 The change works at once. New requests go to the new numbers. The old numbers
 can no longer decide that reason's requests, also the requests already sent
@@ -338,6 +344,22 @@ the allow list. Nobody needs the Meta page for those changes. Two Meta rules
 stay: a plain-text message reaches a person only if they wrote to the app's
 number in the last 24 hours, and the business number, the token and the
 templates are changed in Meta, not on the admin page.
+
+### Before you make someone an approver
+
+An approver decides who enters the campus, so check each new number:
+
+1. Get the written approval of the head of that office, or of the security
+   office, for this person as approver.
+2. Phone the person on the number, and make sure that it is their own
+   WhatsApp number, not a shared or office phone.
+3. Save the number on the admin page.
+4. Ask the person to send any message, such as "hi", to the app's WhatsApp
+   number. An approver gets the reply "No request is waiting for you." with
+   the YES and NO commands. If no reply comes, the number on the admin page
+   is wrong. Correct it at once.
+
+The change log keeps who saved each number and when.
 
 ### Manage the offices
 
@@ -608,7 +630,7 @@ the same.
 ### Database changes
 
 The app builds and changes its tables by itself when it starts.
-`migrations.py` holds the list `MIGRATIONS`, which is the schema changes in
+`core/migrations.py` holds the list `MIGRATIONS`, which is the schema changes in
 order. The table
 `schema_migrations` records the steps that this database already ran, and
 each start runs only the new steps.
@@ -866,12 +888,20 @@ so work that became due while the server slept is done on wake.
    copy holds no phone number and no address.
 2. A service worker, `static/sw.js`, keeps the visitor page and its script on
    the phone. The page opens with no signal.
-3. The status check stops while the page is hidden. It runs again when the
+3. The phone also keeps the last settings: the office list and the gate desk
+   number. With no signal, the form still shows the offices.
+4. The status check stops while the page is hidden. It runs again when the
    page shows, or when the phone comes back online. After failures, it waits
-   longer each time, up to 30 seconds.
-4. Each script's address holds a hash of its content, so the browser keeps
+   longer each time, up to 60 seconds.
+5. An unchanged status, and an unchanged gate board, cost an empty answer
+   (304). The page sends back a tag of what it has, and the server sends
+   an empty answer when nothing changed. The gate board refreshes every 30
+   seconds, so this saves most of its data.
+6. Each script's address holds a hash of its content, so the browser keeps
    each version for a year. The pages are checked on each load.
-5. The gate page needs a signal to check a pass. With no signal, the guard
+7. On Render, Cloudflare compresses every answer with Brotli. On a university
+   server, turn on gzip or Brotli at the HTTPS proxy, such as nginx.
+8. The gate page needs a signal to check a pass. With no signal, the guard
    cannot check any pass, on the page or on WhatsApp.
 
 ### Fixed times in the code
@@ -880,7 +910,7 @@ so work that became due while the server slept is done on wake.
 |-----------------|---------------------|-------|-------------------------------------------|
 | `PHOTO_MINUTES` | `routes/webhook.py` | 10    | Minutes the guard has to send the photo   |
 | `LONG_HOURS`    | `static/gate.js`    | 8     | Hours inside before the row turns yellow  |
-| `IDLE_SECONDS`  | `timer.py`          | 3600  | The longest sleep of the background timer |
+| `IDLE_SECONDS`  | `services/timer.py` | 3600  | The longest sleep of the background timer |
 
 ### The database connections
 

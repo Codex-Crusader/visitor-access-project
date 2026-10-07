@@ -14,12 +14,12 @@ def fail(message) -> NoReturn:
 
 
 try:
-    import config
+    from core import config
 except RuntimeError as missing:
     fail(f"{missing}. Open .env and fill that value in.")
 
 # After config, so a missing setting reads as a sentence, not a stack trace.
-import whatsapp  # noqa: E402
+from services import whatsapp  # noqa: E402
 
 for name in ("MAIN_APPROVER", "BACKUP_APPROVER", "GATE_DESK_PHONE", "ADMIN_PHONE"):
     value = getattr(config, name)
@@ -40,8 +40,8 @@ if not config.META_APP_SECRET:
     print("WARNING: never use ALLOW_UNSIGNED_WEBHOOK in production. Set META_APP_SECRET.")
 
 # Runs the migrations, so a wrong DATABASE_URL shows here, not at the first visit.
-import db  # noqa: E402
-import people  # noqa: E402
+from core import db  # noqa: E402
+from models import people  # noqa: E402
 
 try:
     version = db.init()

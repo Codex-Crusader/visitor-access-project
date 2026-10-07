@@ -228,6 +228,17 @@ ALTER TABLE visits ADD CONSTRAINT visits_decided_by_known CHECK (decided_by IS N
 ALTER TABLE gate_codes ADD CONSTRAINT gate_codes_kind_known CHECK (kind IN ('entry', 'exit'))
   NOT VALID;
 """,
+    # 10: each reason and each office has its own time for automatic approval.
+    """
+-- Minutes before a working-hours request with no answer is approved by itself.
+-- No row, or an empty value, is AUTO_APPROVE_MINUTES. 0 is never.
+CREATE TABLE reason_auto (
+  reason     TEXT PRIMARY KEY,
+  minutes    INTEGER NOT NULL CHECK (minutes >= 0),
+  changed_at TEXT NOT NULL
+);
+ALTER TABLE offices ADD COLUMN auto_minutes INTEGER CHECK (auto_minutes >= 0);
+""",
 ]
 
 # Advisory lock id, so two starting instances never run a step twice.

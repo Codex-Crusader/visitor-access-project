@@ -4,12 +4,9 @@ import logging
 import threading
 from datetime import datetime, timedelta, timezone
 
-import config
-import db
-import notify
-import people
-import visits
-import whatsapp
+from core import config, db
+from models import people, visits
+from services import notify, whatsapp
 
 # The same logger as app.logger, so every message reaches one place.
 log = logging.getLogger("app")
@@ -21,17 +18,41 @@ BACKGROUND_SECONDS = 30
 IDLE_SECONDS = 3600
 
 
-def auto_approve_time(moment):
-    """When a request made at moment is approved by itself, as UTC, or None out of hours."""
-    if not config.AUTO_APPROVE_MINUTES:
+def auto_approve_time(moment, minutes):
+    """When a request made at moment is approved by itself, as UTC. None out of hours, or for 0."""
+    if not minutes:
         return None
     local = moment.astimezone(config.WORK_TIMEZONE)
     if local.weekday() not in config.WORK_DAYS:
         return None
     if not config.WORK_START <= local.hour < config.WORK_END:
         return None
-    due = moment + timedelta(minutes=config.AUTO_APPROVE_MINUTES)
+    return after(moment, minutes)
+
+
+def after(moment, minutes):
+    """The time minutes after moment, in the same form as auto_approve_at."""
+    due = moment + timedelta(minutes=minutes)
     return due.astimezone(timezone.utc).isoformat(timespec="seconds")
+
+
+def retime_open_requests(table):
+    """Give each open request that approves by itself the time its reason or office has now.
+
+    A request with no time keeps none: made out of hours, or never seen for sure by an approver.
+    Returns how many moved."""
+    moved = 0
+    for visit in visits.open_requests():
+        if not visit["auto_approve_at"]:
+            continue
+        minutes = people.auto_minutes_for(table, visit)
+        due = after(datetime.fromisoformat(visit["created_at"]), minutes) if minutes else None
+        if due != visit["auto_approve_at"]:
+            visits.move_auto_approval(visit["reference"], due)
+            moved += 1
+    if moved:
+        wake.set()
+    return moved
 
 
 def escalate_due():
@@ -61,7 +82,7 @@ def auto_approve_due():
         done = visits.decide(visit["reference"], db.APPROVED, db.BY_AUTO)
         if done is None:
             continue
-        body = whatsapp.auto_approved_body(done, config.AUTO_APPROVE_MINUTES)
+        body = whatsapp.auto_approved_body(done, people.auto_minutes_for(table, done))
         # Plain text: lost to an approver quiet for 24 hours. The approval stands.
         approvers = people.approvers_for(table, done)
         for phone in dict.fromkeys(approvers):

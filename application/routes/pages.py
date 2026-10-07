@@ -9,14 +9,17 @@ from flask import Blueprint, Response, request
 bp = Blueprint("pages", __name__)
 
 
-STATIC = Path(__file__).parent / "static"
+# Served as they are: scripts, styles, the service worker.
+STATIC = Path(__file__).parent.parent / "static"
+# The three pages, served by the routes below with their script versions filled in.
+PAGE_DIR = Path(__file__).parent.parent / "pages"
 
 
 def short_hash(data: bytes):
     return hashlib.sha256(data).hexdigest()[:10]
 
 
-# Scripts and styles load as app.js?v=<hash>, kept for a year. Pages are checked on every load.
+# Scripts and styles load as visitor.js?v=<hash>, kept for a year. Pages are checked on every load.
 SCRIPT_VERSIONS = {path.name: short_hash(path.read_bytes())
                    for pattern in ("*.js", "*.css") for path in STATIC.glob(pattern)}
 FILE_TAG = re.compile(r'(<script src="|<link rel="stylesheet" href=")([\w.-]+\.(?:js|css))"')
@@ -27,8 +30,8 @@ def with_versions(html):
 
 
 PAGES = {
-    name: with_versions((STATIC / name).read_text(encoding="utf-8"))
-    for name in ("index.html", "gate.html", "admin.html")
+    name: with_versions((PAGE_DIR / name).read_text(encoding="utf-8"))
+    for name in ("visitor.html", "gate.html", "admin.html")
 }
 PAGE_TAGS = {name: short_hash(html.encode()) for name, html in PAGES.items()}
 
@@ -64,7 +67,7 @@ SECURITY_HEADERS = {
 
 @bp.get("/")
 def index():
-    return page("index.html")
+    return page("visitor.html")
 
 
 @bp.get("/gate")

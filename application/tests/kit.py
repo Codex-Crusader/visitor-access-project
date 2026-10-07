@@ -42,10 +42,10 @@ with psycopg.connect(os.environ["DATABASE_URL"], autocommit=True) as fresh:
     fresh.execute("CREATE SCHEMA public")
 
 import app as application
-import db
-import checks
-import visits
-import whatsapp
+from core import db
+from core import checks
+from models import visits
+from services import whatsapp
 
 sent = []
 whatsapp.send = lambda to, body: sent.append((to, body))

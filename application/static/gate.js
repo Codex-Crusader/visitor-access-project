@@ -64,6 +64,8 @@ let busy = "";
 let board = null;
 let boardAt = null;
 let boardError = "";
+// The tag of the board on screen. The server answers 304 while the board is the same.
+let boardTag = "";
 // True for one refresh after the lists came back from a failed refresh.
 let reconnected = false;
 // Each lookup, entry and exit takes a number. A slower, older answer is dropped,
@@ -91,6 +93,7 @@ function forgetKey(why = "") {
   board = null;
   boardAt = null;
   boardError = "";
+  boardTag = "";
   render();
 }
 
@@ -144,8 +147,8 @@ function nextStep(v) {
 const problem = t => banner("bad", "Cannot do that", t);
 const working = t => `<div class="state wait"><span class="spin"></span><div><h2>${x(t)}</h2><p>This can take up to a minute if the server was asleep.</p></div></div>`;
 
-// The try covers the network only. A refusal is raised after it.
-async function call(url, options) {
+// The answer and its JSON. The try covers the network only.
+async function answer(url, options) {
   const stop = new AbortController();
   const timer = setTimeout(() => stop.abort(), CALL_TIMEOUT);
   let r, data;
@@ -160,9 +163,18 @@ async function call(url, options) {
   } finally {
     clearTimeout(timer);
   }
+  return [r, data];
+}
+
+// A refusal is raised here, after the network part.
+function checked(r, data) {
   if (r.status === 403) throw new WrongKey("That gate key is not right. Type it again.");
   if (!r.ok) throw Object.assign(new Error(data.error || `Something went wrong (${r.status})`), {data});
   return data;
+}
+
+async function call(url, options) {
+  return checked(...await answer(url, options));
 }
 
 // "2 h 10 min" since a time, for how long someone has been inside.
@@ -340,7 +352,12 @@ async function takePhoto(file) {
 async function loadBoard() {
   if (!key()) return;
   try {
-    board = await call("/api/gate/board");
+    const [r, data] = await answer("/api/gate/board",
+      board && boardTag ? {headers: {"If-None-Match": boardTag}} : {});
+    if (r.status !== 304) {
+      board = checked(r, data);
+      boardTag = r.headers.get("ETag") || "";
+    }
     // After a drop, the guard reads once that the lists are fresh again.
     reconnected = !!boardError;
     boardAt = new Date().toISOString();

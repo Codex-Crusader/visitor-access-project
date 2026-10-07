@@ -1,17 +1,13 @@
 """The admin page's lists: guards, admins, offices, the allow list and the blacklist."""
 
+import re
+
 from flask import Blueprint, jsonify, request
 
-import access
-import audit
-import blacklist
-import checks
-import config
-import notify
-import people
-import staff
-import tags
-import whatsapp
+from core import checks, config
+from models import audit, blacklist, people, staff, tags
+from routes import access
+from services import notify, timer, whatsapp
 
 bp = Blueprint("team", __name__)
 
@@ -51,6 +47,52 @@ def sent_line(count):
 
 def payload():
     return request.get_json(silent=True) or {}
+
+
+def read_pair(given):
+    """(main, backup, problems) from a call's JSON. An empty backup means the approver is both:
+    they get a reminder instead."""
+    problems = {}
+    main = checks.clean_phone(given.get("main"))
+    backup_given = str(given.get("backup") or "").strip()
+    backup = checks.clean_phone(backup_given) if backup_given else main
+    if not main:
+        problems["main"] = PHONE_HINT.format(who="approver")
+    if backup_given and not backup:
+        problems["backup"] = PHONE_HINT.format(who="backup")
+    elif backup_given and main and whatsapp.same_number(main, backup):
+        problems["backup"] = SAME_BACKUP
+    return main, backup, problems
+
+
+# A day at most. A pass ends after PASS_HOURS anyway.
+AUTO_MAX = 1440
+AUTO_HINT = (f"Type the minutes, 0 to {AUTO_MAX}. 0 means never."
+             " Leave it empty for the default.")
+
+
+def read_minutes(given):
+    """(sent, minutes, problem) for auto_minutes in a call's JSON. Empty is None, the default."""
+    if "auto_minutes" not in given:
+        return False, None, None
+    text = str("" if given["auto_minutes"] is None else given["auto_minutes"]).strip()
+    if not text:
+        return True, None, None
+    if not re.fullmatch(r"[0-9]{1,4}", text) or int(text) > AUTO_MAX:
+        return True, None, AUTO_HINT
+    return True, int(text), None
+
+
+def auto_words(minutes):
+    """An automatic approval time in words, for the change log."""
+    if minutes is None:
+        return f"the default ({auto_words(config.AUTO_APPROVE_MINUTES)})"
+    return f"after {minutes} minutes" if minutes else "never"
+
+
+def moved_line(count):
+    """The audit note for open requests whose automatic approval moved. Empty when none."""
+    return f". Open requests with a new time: {count}" if count else ""
 
 
 def clean_name(raw, who):
@@ -217,16 +259,8 @@ def add_office():
     tag, tag_problem = tags.clean("offices", payload().get("tag"))
     if tag_problem:
         problems["tag"] = tag_problem
-    main = checks.clean_phone(payload().get("main"))
-    # An empty backup means the approver is also the backup: they get a reminder instead.
-    backup_given = str(payload().get("backup") or "").strip()
-    backup = checks.clean_phone(backup_given) if backup_given else main
-    if not main:
-        problems["main"] = PHONE_HINT.format(who="approver")
-    if backup_given and not backup:
-        problems["backup"] = PHONE_HINT.format(who="backup")
-    if backup_given and main and backup and whatsapp.same_number(main, backup):
-        problems["backup"] = SAME_BACKUP
+    main, backup, pair_problems = read_pair(payload())
+    problems.update(pair_problems)
     if problems:
         return jsonify(error="Check the office's details.", fields=problems), 400
     before = people.approver_table()
@@ -251,6 +285,24 @@ def remove_office():
         return jsonify(error="No office has that name."), 404
     resent = notify.resend_after_change(before, people.approver_table())
     changed("Deleted an office", name + sent_line(resent))
+    return jsonify(**lists())
+
+
+@bp.post("/api/admin/offices/auto")
+def office_auto():
+    """Set when an office's requests are approved by itself. Open ones move to the new time."""
+    refused = access.admin_refusal()
+    if refused:
+        return refused
+    name = str(payload().get("name") or "")
+    _, minutes, problem = read_minutes({"auto_minutes": payload().get("auto_minutes")})
+    if problem:
+        return jsonify(error=problem), 400
+    if not people.save_office_auto(name, minutes):
+        return jsonify(error="No office has that name."), 404
+    moved = timer.retime_open_requests(people.approver_table())
+    changed("Changed an office's automatic approval",
+            f"{name}: {auto_words(minutes)}" + moved_line(moved))
     return jsonify(**lists())
 
 

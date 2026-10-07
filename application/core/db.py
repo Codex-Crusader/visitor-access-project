@@ -14,8 +14,7 @@ from psycopg import OperationalError
 from psycopg.rows import dict_row
 from psycopg_pool import ConnectionPool, PoolTimeout
 
-import config
-import migrations
+from core import config, migrations
 
 PENDING = "pending"
 ESCALATED = "escalated"

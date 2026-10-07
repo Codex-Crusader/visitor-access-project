@@ -1,8 +1,7 @@
 """Tags: one subdivision for each office and each allow list person, so long lists stay
 easy to read. Each list has its own tags. An empty tag means no tag."""
 
-import checks
-import db
+from core import checks, db
 
 TAG_LENGTH = 40
 # Each list with a tag, and the column that names one row in it. Fixed names, so safe in SQL.

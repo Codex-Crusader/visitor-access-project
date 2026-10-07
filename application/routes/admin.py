@@ -5,19 +5,10 @@ import logging
 
 from flask import Blueprint, Response, jsonify, request, stream_with_context
 
-import access
-import audit
-import checks
-import config
-import db
-import entries
-import export
-import limits
-import notify
-import people
-import visits
-import whatsapp
-from routes import team
+from core import checks, config, db, limits
+from models import audit, entries, people, visits
+from routes import access, team
+from services import export, notify, timer, whatsapp
 
 # The same logger as app.logger, so every message reaches one place.
 log = logging.getLogger("app")
@@ -201,7 +192,9 @@ def approver_gaps():
 
 
 def approver_rows(table):
-    return [{"reason": reason, "main": main, "backup": backup}
+    """Each reason's pair, and its automatic approval time: None for the default."""
+    return [{"reason": reason, "main": main, "backup": backup,
+             "auto_minutes": table["auto"]["reasons"].get(reason)}
             for reason, (main, backup) in table["reasons"].items()]
 
 
@@ -216,27 +209,26 @@ def set_approvers():
     # Each office has its own pair, under the reasons on the Approvers tab.
     if reason not in config.REASONS or reason == config.OFFICE_REASON:
         return jsonify(error="Unknown reason"), 400
-    problems = {}
-    main = checks.clean_phone(payload.get("main"))
-    # An empty backup means the approver is also the backup: they get a reminder instead.
-    backup_given = str(payload.get("backup") or "").strip()
-    backup = checks.clean_phone(backup_given) if backup_given else main
-    if not main:
-        problems["main"] = team.PHONE_HINT.format(who="approver")
-    if backup_given and not backup:
-        problems["backup"] = team.PHONE_HINT.format(who="backup")
-    if backup_given and main and backup and whatsapp.same_number(main, backup):
-        problems["backup"] = team.SAME_BACKUP
+    main, backup, problems = team.read_pair(payload)
+    sent, minutes, minutes_problem = team.read_minutes(payload)
+    if minutes_problem:
+        problems["auto_minutes"] = minutes_problem
     if problems:
         return jsonify(error="Check the numbers.", fields=problems), 400
     before = people.approver_table()
     old_main, old_backup = before["reasons"][reason]
     people.save_approvers(reason, main, backup)
-    resent = notify.resend_after_change(before, people.approver_table())
-    audit.record(access.admin_caller(), "Changed the approvers",
-                 f"{reason}: from {old_main}, backup {old_backup}, to {main}, backup {backup}."
-                 f" Open requests sent to them: {resent}")
-    return jsonify(approvers=approver_rows(people.approver_table()))
+    if sent:
+        people.save_auto_minutes(reason, minutes)
+    after = people.approver_table()
+    resent = notify.resend_after_change(before, after)
+    moved = timer.retime_open_requests(after) if sent else 0
+    detail = (f"{reason}: from {old_main}, backup {old_backup}, to {main}, backup {backup}."
+              f" Open requests sent to them: {resent}")
+    if sent and minutes != before["auto"]["reasons"].get(reason):
+        detail += f". Approves by itself: {team.auto_words(minutes)}" + team.moved_line(moved)
+    audit.record(access.admin_caller(), "Changed the approvers", detail)
+    return jsonify(approvers=approver_rows(after))
 
 
 FORGOT_PER_HOUR = 3

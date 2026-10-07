@@ -3,8 +3,9 @@ const fs = require("fs");
 const path = require("path");
 const {JSDOM} = require("jsdom");
 
-const ROOT = path.join(__dirname, "..", "static");
-const read = name => fs.readFileSync(path.join(ROOT, name), "utf8");
+// The pages are in pages/, their scripts and styles in static/.
+const ROOT = path.join(__dirname, "..");
+const read = name => fs.readFileSync(path.join(ROOT, name.endsWith(".html") ? "pages" : "static", name), "utf8");
 
 let failures = 0;
 function ok(label, condition) {
@@ -33,7 +34,7 @@ function boot(page, script, stubs) {
 
 // ---------------------------------------------------------------- visitor form
 console.log("visitor form: Continue and Review refuse empty fields");
-const w = boot("index.html", "app.js", {
+const w = boot("visitor.html", "visitor.js", {
   fetch: () => Promise.reject(new Error("offline in this test")),
 });
 // The script's const names live in the global scope, not on window. eval reaches them.
@@ -345,13 +346,22 @@ async function boardChecks() {
   const ENTERED = {...TYPED, status: "inside", entered_at: ago(0)};
   const calls = [];
   const posts = [];
+  const tags = [];
   const desk = boot("gate.html", "gate.js", {
     fetch: (url, options = {}) => {
       calls.push(url);
       if (options.method === "POST") posts.push(options);
-      const body = url.includes("/api/gate/board") ? BOARD
+      const board = url.includes("/api/gate/board");
+      if (board) tags.push(options.headers["If-None-Match"] || "");
+      // The board's tag came back, so the board is the same: an empty 304.
+      if (board && options.headers["If-None-Match"] === '"b1"') {
+        return Promise.resolve({status: 304, ok: false, headers: {get: () => '"b1"'},
+                                json: () => Promise.reject(new Error("no body"))});
+      }
+      const body = board ? BOARD
         : url.endsWith("/entry") ? ENTERED : url.includes("KT-4821") ? TYPED : PASS;
-      return Promise.resolve({status: 200, ok: true, json: () => Promise.resolve(body)});
+      return Promise.resolve({status: 200, ok: true, headers: {get: () => board ? '"b1"' : null},
+                              json: () => Promise.resolve(body)});
     },
   });
   const byId = id => desk.document.getElementById(id);
@@ -373,8 +383,13 @@ async function boardChecks() {
   ok("a short stay is not marked", !rows[1].matches("[data-long=true]"));
   ok("names are escaped", html.includes("Kiran &lt;b&gt;") && !html.includes("Kiran <b>"));
   ok("the update time shows", html.includes("Updated"));
+  await desk.eval("loadBoard()");
+  ok("the second refresh sends the board's tag", tags.join() === ',"b1"');
+  ok("an unchanged board (304) keeps the lists",
+     byId("board").querySelectorAll(".row").length === 3 && !byId("board").innerHTML.includes("Could not"));
 
-  rows[2].click();
+  // The refresh drew the rows again, so the row is found again.
+  byId("board").querySelectorAll(".row")[2].click();
   await new Promise(done => setTimeout(done, 0));
   await new Promise(done => setTimeout(done, 0));
   ok("tapping a name opens that pass", calls.some(u => u === "/api/pass/VR-3333"));
@@ -418,7 +433,8 @@ async function boardChecks() {
   ok("and says they are old", byId("board").innerHTML.includes("Could not refresh"));
 
   BOARD.inside = []; BOARD.expected = [];
-  desk.fetch = () => Promise.resolve({status: 200, ok: true, json: () => Promise.resolve(BOARD)});
+  desk.fetch = () => Promise.resolve({status: 200, ok: true, headers: {get: () => '"b2"'},
+                                     json: () => Promise.resolve(BOARD)});
   await desk.eval("loadBoard()");
   ok("an empty list says so", byId("board").innerHTML.includes("Nobody is inside."));
 }
@@ -540,7 +556,7 @@ async function adminChecks() {
   ok("the admin page is light only", !read("admin.html").includes("dark"));
   const logo = page => /<div class="brand"><img src="(data:image\/png;base64,[^"]+)" alt="Vijaybhoomi University"/
     .exec(read(page));
-  const visitorLogo = /<img src="(data:image\/png;base64,[^"]+)" alt="Vijaybhoomi University"/.exec(read("index.html"));
+  const visitorLogo = /<img src="(data:image\/png;base64,[^"]+)" alt="Vijaybhoomi University"/.exec(read("visitor.html"));
   ok("the gate and admin pages show the university logo, as the visitor page does",
      !!logo("gate.html") && !!logo("admin.html") && !!visitorLogo
      && logo("gate.html")[1] === visitorLogo[1] && logo("admin.html")[1] === visitorLogo[1]);
@@ -551,8 +567,8 @@ async function adminChecks() {
      gatePage.querySelector(".app > .brand + .nav h1") !== null);
   const token = (page, name) => (new RegExp(`--${name}:(#[0-9A-F]{6})`).exec(read(page)) || [])[1];
   ok("all three pages use the visitor page's colors", ["brand", "brand2", "go", "stop", "line", "mute"]
-     .every(name => token("gate.html", name) === token("index.html", name)
-                    && token("admin.css", name) === token("index.html", name)));
+     .every(name => token("gate.html", name) === token("visitor.html", name)
+                    && token("admin.css", name) === token("visitor.html", name)));
   // The admin page runs with no 'unsafe-inline': no <style>, no style or on* attribute anywhere.
   const adminCode = read("admin.html") + read("admin.js");
   ok("the admin page has no inline style or handler", !/<style|\sstyle=|\son[a-z]+=/i.test(adminCode));
@@ -643,7 +659,7 @@ async function downloadChecks() {
 // ------------------------------------------- the pass on a weak signal
 async function offlinePassChecks() {
   console.log("visitor app: the pass survives a lost connection");
-  const v = boot("index.html", "app.js", {fetch: () => Promise.reject(new Error("offline"))});
+  const v = boot("visitor.html", "visitor.js", {fetch: () => Promise.reject(new Error("offline"))});
   const pass = {token: "t1", reference: "VR-4022", status: "approved", name: "Asha Rao",
     guests: [], entry_code: "KT-4821", created_at: "2026-10-01T05:00:00+00:00"};
   const store = JSON.stringify(JSON.stringify({seen: "2026-10-01T05:10:00+00:00", visit: pass}));
@@ -712,7 +728,8 @@ async function approverChecks() {
           return answer(400, {error: "Check the numbers.",
                               fields: {backup: "The backup must be a different number from the approver."}});
         }
-        table = [{reason: sent.reason, main: sent.main, backup: sent.backup}];
+        table = [{reason: sent.reason, main: sent.main, backup: sent.backup,
+                  auto_minutes: sent.auto_minutes === "" ? null : Number(sent.auto_minutes)}];
         return answer(200, {approvers: table});
       }
       return answer(200, url.includes("/summary")
@@ -730,7 +747,8 @@ async function approverChecks() {
   admin.eval("render(); refresh()");
   await tick(); await tick();
   ok("the rules name the automatic approval",
-     byId("rules").textContent.includes("approved automatically after 30 minutes"));
+     byId("rules").textContent.includes("approved automatically after the time in its row"));
+  ok("a reason with no time set shows the default", byId("approvers").textContent.includes("After 30 min (default)"));
   ok("an automatic approval says so", byId("list").innerHTML.includes("Approved automatically"));
 
   byId("approvers").querySelector("[data-edit]").click();
@@ -749,10 +767,14 @@ async function approverChecks() {
   ok("the typed numbers stay in the boxes", byId("ap-backup").value === "+911");
   byId("ap-main").value = "+919000000011";
   byId("ap-backup").value = "+919000000012";
+  ok("the time box is empty for the default", byId("ap-auto").value === "");
+  byId("ap-auto").value = "0";
   byId("ap-save").click();
   await tick(); await tick();
   ok("both numbers go to the server", posts.at(-1).main === "+919000000011"
      && posts.at(-1).backup === "+919000000012" && posts.at(-1).reason === "Delivery");
+  ok("the time goes too", posts.at(-1).auto_minutes === "0");
+  ok("0 shows as Never", byId("approvers").textContent.includes("Never"));
   ok("the table shows the new numbers", byId("approvers").textContent.includes("+919000000012")
      && !byId("ap-main"));
   ok("it says the change is saved", byId("approver-note").textContent.includes("Saved"));
@@ -888,15 +910,15 @@ async function sessionChecks() {
 
 async function hardeningChecks() {
   console.log("visitor: Finish later keeps the form on the phone; gate: stale lists, idle lock");
-  const v = boot("index.html", "app.js", {fetch: () => Promise.reject(new Error("offline"))});
+  const v = boot("visitor.html", "visitor.js", {fetch: () => Promise.reject(new Error("offline"))});
   const S1 = v.eval("S");
   Object.assign(S1.f, {name: "Asha Rao", phone: "9876543210", address: "Karjat"});
   S1.g = ["Ravi Rao"];
   v.eval("saveDraft()");
-  const v2 = new JSDOM(read("index.html"), {runScripts: "dangerously", url: "http://localhost/"});
+  const v2 = new JSDOM(read("visitor.html"), {runScripts: "dangerously", url: "http://localhost/"});
   v2.window.fetch = () => Promise.reject(new Error("offline"));
   v2.window.localStorage.setItem("draft", v.localStorage.getItem("draft"));
-  for (const src of ["app.js"]) {
+  for (const src of ["visitor.js"]) {
     const tag = v2.window.document.createElement("script");
     tag.textContent = read(src);
     v2.window.document.body.appendChild(tag);
@@ -911,8 +933,25 @@ async function hardeningChecks() {
   v.eval('S.f.name = ""; restoreDraft()');
   ok("a copy older than 7 days is dropped", S1.f.name === "" && v.localStorage.getItem("draft") === null);
 
+  // The settings from the last answer, so the office list works with no signal.
+  const online = boot("visitor.html", "visitor.js", {fetch: () => Promise.resolve({status: 200, ok: true,
+    json: () => Promise.resolve({gate_desk_phone: "+912200000001", escalate_minutes: 15, retain_days: 90,
+                                 pass_hours: 48, offices: ["Fees"], office_groups: []})})});
+  await tick();
+  const kept = online.localStorage.getItem("cfg");
+  const v3 = new JSDOM(read("visitor.html"), {runScripts: "dangerously", url: "http://localhost/"});
+  v3.window.fetch = () => Promise.reject(new Error("offline"));
+  v3.window.localStorage.setItem("cfg", kept);
+  const tag3 = v3.window.document.createElement("script");
+  tag3.textContent = read("visitor.js");
+  v3.window.document.body.appendChild(tag3);
+  await tick();
+  const S3 = v3.window.eval("S");
+  ok("offline, the page has the last office list and gate desk number",
+     S3.cfg.offices.join() === "Fees" && S3.cfg.gate_desk_phone === "+912200000001");
+
   const desk = boot("gate.html", "gate.js", {fetch: () => Promise.resolve({status: 200, ok: true,
-    json: () => Promise.resolve({inside: [], expected: []})})});
+    headers: {get: () => null}, json: () => Promise.resolve({inside: [], expected: []})})});
   const d = id => desk.document.getElementById(id);
   desk.eval('localStorage.setItem("gatekey","k")');
   await desk.eval("loadBoard()");
@@ -920,7 +959,8 @@ async function hardeningChecks() {
   await desk.eval("loadBoard()");
   ok("offline, the board says the lists may be old and checks need the connection",
      d("board").textContent.includes("may be out of date") && d("board").textContent.includes("paper log"));
-  desk.fetch = () => Promise.resolve({status: 200, ok: true, json: () => Promise.resolve({inside: [], expected: []})});
+  desk.fetch = () => Promise.resolve({status: 200, ok: true, headers: {get: () => null},
+                                     json: () => Promise.resolve({inside: [], expected: []})});
   await desk.eval("loadBoard()");
   ok("back online, it says once that the lists are fresh", d("board").textContent.includes("Connected again"));
   desk.eval('visit = {reference: "VR-1", status: "approved", name: "A", visiting: "y", reason: "Event", guests: [],'
@@ -967,7 +1007,7 @@ async function forgotChecks() {
 
 async function visitorAutoChecks() {
   console.log("visitor app: never says when a request is approved by itself");
-  const v = boot("index.html", "app.js", {fetch: () => Promise.reject(new Error("offline"))});
+  const v = boot("visitor.html", "visitor.js", {fetch: () => Promise.reject(new Error("offline"))});
   v.eval(`S.visit={token:"t",reference:"VR-1",status:"pending",name:"A",guests:[],
     created_at:"2026-10-05T04:30:00+00:00",auto_approve_at:"2026-10-05T05:00:00+00:00"};
     S.s="status";render()`);
@@ -988,7 +1028,8 @@ async function staleGateChecks() {
   const waiting = {};
   const g = boot("gate.html", "gate.js", {
     fetch: url => new Promise(done => {
-      waiting[url] = body => done({status: 200, ok: true, json: () => Promise.resolve(body)});
+      waiting[url] = body => done({status: 200, ok: true, headers: {get: () => null},
+                                   json: () => Promise.resolve(body)});
     }),
   });
   g.localStorage.setItem("gatekey", "k");
@@ -1022,9 +1063,10 @@ async function staleGateChecks() {
 async function stalePollChecks() {
   console.log("visitor page: New request is not undone by a late status answer");
   const waiting = {};
-  const v = boot("index.html", "app.js", {
+  const v = boot("visitor.html", "visitor.js", {
     fetch: url => new Promise(done => {
-      waiting[url] = body => done({status: 200, ok: true, json: () => Promise.resolve(body)});
+      waiting[url] = body => done({status: 200, ok: true, headers: {get: () => null},
+                                   json: () => Promise.resolve(body)});
     }),
   });
   const old = {token: "old", reference: "VR-11111", status: "approved", name: "A", guests: [],
@@ -1080,7 +1122,7 @@ async function staleApproverChecks() {
 // ------------------------------------------------ the office list
 async function officeFormChecks() {
   console.log("visitor form: See an office offers the list of offices");
-  const v = boot("index.html", "app.js", {fetch: () => Promise.reject(new Error("offline"))});
+  const v = boot("visitor.html", "visitor.js", {fetch: () => Promise.reject(new Error("offline"))});
   const S = v.eval("S");
   const byId = id => v.document.getElementById(id);
   const red = id => !!byId(id) && byId(id).classList.contains("bad");
@@ -1125,7 +1167,8 @@ async function staffGateChecks() {
       const body = url.includes("/api/gate/board") ? {inside: [], expected: []}
         : url.endsWith("/entry") ? {code: "1234567", name: "Dr Dev", entered_at: new Date().toISOString()}
         : url.includes("/api/staff/") ? {code: "1234567", name: "Dr Dev"} : {};
-      return Promise.resolve({status: 200, ok: true, json: () => Promise.resolve(body)});
+      return Promise.resolve({status: 200, ok: true, headers: {get: () => null},
+                              json: () => Promise.resolve(body)});
     },
   });
   const byId = id => desk.document.getElementById(id);
@@ -1191,6 +1234,10 @@ async function teamChecks() {
           return answer(200, lists);
         }
         if (url === "/api/admin/offices/remove") { lists = {...lists, offices: []}; return answer(200, lists); }
+        if (url === "/api/admin/offices/auto") {
+          lists = {...lists, offices: lists.offices.map(o => ({...o, auto_minutes: Number(sent.auto_minutes)}))};
+          return answer(200, lists);
+        }
         if (url === "/api/admin/admins/remove") {
           return answer(409, {error: "You cannot delete yourself. Ask another admin."});
         }
@@ -1245,6 +1292,15 @@ async function teamChecks() {
   await tick(); await tick();
   ok("the office is listed with its two numbers", byId("o-table").textContent.includes("Accounts")
      && byId("o-table").textContent.includes("+917000000003"));
+  ok("a new office approves by itself after the default", byId("o-table").textContent.includes("(default)"));
+  byId("o-table").querySelector("[data-auto]").click();
+  ok("Time asks for the minutes", !!byId("auto-new") && byId("auto-new").value === "");
+  byId("auto-new").value = "15";
+  byId("auto-save").click();
+  await tick(); await tick(); await tick();
+  ok("Time sends the office and the minutes", posts.at(-1)[0] === "/api/admin/offices/auto"
+     && posts.at(-1)[1].name === "Accounts" && posts.at(-1)[1].auto_minutes === "15");
+  ok("the table shows the new time", byId("o-table").textContent.includes("After 15 min"));
   byId("o-table").querySelector("[data-delete]").click();
   ok("deleting an office asks first", byId("over").textContent.includes("Are you sure?")
      && byId("over").textContent.includes("Accounts"));
@@ -1360,7 +1416,7 @@ async function blacklistChecks() {
 // ------------------------------------------------------------- worst cases
 async function worstCaseChecks() {
   console.log("visitor form: an office deleted after the page loaded");
-  const v = boot("index.html", "app.js", {fetch: () => Promise.reject(new Error("offline"))});
+  const v = boot("visitor.html", "visitor.js", {fetch: () => Promise.reject(new Error("offline"))});
   const S = v.eval("S");
   const byId = id => v.document.getElementById(id);
   const refusal = {error: "That office is not on the list now. Choose again.", offices: ["Library"]};
@@ -1551,7 +1607,7 @@ async function tagChecks() {
      && !byId("o-chips").textContent.includes("Science"));
 
   console.log("visitor form: offices are grouped by tag");
-  const v = boot("index.html", "app.js", {fetch: () => Promise.reject(new Error("offline"))});
+  const v = boot("visitor.html", "visitor.js", {fetch: () => Promise.reject(new Error("offline"))});
   const S = v.eval("S");
   S.cfg.offices = ["Exams", "Fees", "Library"];
   S.cfg.office_groups = [{tag: "Main <Building>", offices: ["Exams", "Fees"]}, {tag: "", offices: ["Library"]}];

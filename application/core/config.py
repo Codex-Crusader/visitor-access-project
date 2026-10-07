@@ -45,7 +45,7 @@ GUARD = os.getenv("GUARD", "").strip() or MAIN_APPROVER
 ADMIN_PHONE = os.getenv("ADMIN_PHONE", "").strip() or MAIN_APPROVER
 ADMIN_PHONE_SET = bool(os.getenv("ADMIN_PHONE", "").strip())
 
-# Same list as REASONS in static/app.js. "Other" also covers typed-in reasons.
+# Same list as REASONS in static/visitor.js. "Other" also covers typed-in reasons.
 REASONS = ("See a student", "See an office", "Delivery", "Event", "Other")
 # With this reason the visitor picks an office, which has its own approvers.
 OFFICE_REASON = "See an office"

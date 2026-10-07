@@ -50,7 +50,8 @@ number on the blacklist cannot request a visit or enter.
 
 If nobody answers in `ESCALATE_MINUTES`, the server sends the same details to
 the backup approver, or, when there is no backup, a reminder to the approver. In working hours, the server approves a request that
-nobody answers in `AUTO_APPROVE_MINUTES`. A pass works for `PASS_HOURS` after
+nobody answers in time: 30 minutes by default, or the time an admin set for
+that reason or office. A pass works for `PASS_HOURS` after
 the request.
 
 ## The life of a pass
@@ -114,46 +115,52 @@ visitor, `/gate` for the guard and `/admin` for the admin.
 
 ## Files
 
-| File                                   | What it holds                                                          |
-|----------------------------------------|------------------------------------------------------------------------|
-| `docs/`                                | Setup, maintenance, safety, and every WhatsApp message                 |
-| `app.py`                               | Makes the Flask app, adds the security headers, starts the timer       |
-| `routes/visitor.py`                    | The visitor page's calls: a new request and its status                 |
-| `routes/gate.py`                       | The gate page's calls: look up a pass, the board, entry and exit       |
-| `routes/admin.py`                      | The admin page's calls, and the forgotten-key messages                 |
-| `routes/team.py`                       | The admin page's lists: guards, admins, offices, allow list, blacklist |
-| `routes/webhook.py`                    | The WhatsApp webhook: decisions, entry and exit by message             |
-| `pages.py`                             | Serves the three pages, the script versions and the header values      |
-| `checks.py`                            | Checks the form fields, phone numbers and gate photos                  |
-| `access.py`                            | The keys, and who is an approver, a guard or an admin                  |
-| `limits.py`                            | How often one address may call the public addresses                    |
-| `notify.py`                            | Messages the app sends by itself, such as approvals to the guards      |
-| `timer.py`                             | Escalation, automatic approval, expiry and the purge                   |
-| `db.py`                                | The Postgres connections, the read cache, and the stored values        |
-| `migrations.py`                        | The schema changes, in order                                           |
-| `visits.py`                            | The queries for requests, codes, decisions and the page lists          |
-| `entries.py`                           | The queries for entries, exits and gate photos                         |
-| `people.py`                            | The queries for approvers, offices, guards and admins                  |
-| `staff.py`                             | The queries for the allow list and its entries                         |
-| `blacklist.py`                         | The queries for the blacklist and the attempts it stopped              |
-| `export.py`                            | The log as CSV, and the ZIP with the photos                            |
-| `audit.py`                             | The admin change log: who changed what, never a key                    |
-| `tags.py`                              | The tags that group the offices and the allow list                     |
-| `whatsapp.py`                          | Meta API calls, message text, and command reading                      |
-| `config.py`                            | Settings read from the environment                                     |
-| `gunicorn.conf.py`                     | Starts and stops the database and timer in the worker                  |
-| `render.yaml`                          | A record of the Render settings                                        |
-| `static/index.html`, `static/app.js`   | The visitor page                                                       |
-| `static/gate.html`, `static/gate.js`   | The gate desk page                                                     |
-| `static/admin.html`, `static/admin.js` | The admin page                                                         |
-| `static/shared.js`                     | The CSV download for admin, and the forgot-key call for gate and admin |
-| `static/sw.js`                         | Keeps the visitor page on the phone, so it opens offline               |
-| `run_tests.py`                         | Runs every test and both linters with one command                      |
-| `tests/test_*.py`                      | Run the whole flow with WhatsApp stubbed out, one topic a file         |
-| `tests/kit.py`                         | The settings, clean database and helpers that the tests share          |
-| `tests/test_concurrency.py`            | Makes many calls at once to check the races                            |
-| `tests/test_form.js`                   | Checks the three pages in a real DOM with jsdom                        |
-| `tests/testdb.py`                      | Starts a throwaway Postgres for the Python tests                       |
-| `tools/check_setup.py`                 | Checks your settings and sends one test message                        |
-| `ruff.toml`, `eslint.config.mjs`       | Linter settings, and why some rules are off                            |
-| `tools/whatsapp_messages.py`           | Writes docs/whatsapp-messages.md by running the app                    |
+The Python code is in four folders. `core/` holds the settings, the database and the
+checks. `models/` holds the queries, one file for each kind of record. `services/` talks to
+WhatsApp and runs the background work. `routes/` holds the calls each page makes. A file
+imports only from the folders before it in that list, and `routes/` imports from all three.
+
+| File                                      | What it holds                                                          |
+|-------------------------------------------|------------------------------------------------------------------------|
+| `app.py`                                  | Makes the Flask app, adds the security headers, starts the timer       |
+| `gunicorn.conf.py`                        | Starts and stops the database and timer in the worker                  |
+| `render.yaml`                             | A record of the Render settings                                        |
+| `core/config.py`                          | Settings read from the environment                                     |
+| `core/db.py`                              | The Postgres connections, the read cache, and the stored values        |
+| `core/migrations.py`                      | The schema changes, in order                                           |
+| `core/checks.py`                          | Checks the form fields, phone numbers and gate photos                  |
+| `core/limits.py`                          | How often one address may call the public addresses                    |
+| `core/redaction.py`                       | Hides secret codes and links in the log lines                          |
+| `models/visits.py`                        | The queries for requests, codes, decisions and the page lists          |
+| `models/entries.py`                       | The queries for entries, exits and gate photos                         |
+| `models/people.py`                        | The queries for approvers, offices, guards and admins                  |
+| `models/staff.py`                         | The queries for the allow list and its entries                         |
+| `models/blacklist.py`                     | The queries for the blacklist and the attempts it stopped              |
+| `models/tags.py`                          | The tags that group the offices and the allow list                     |
+| `models/audit.py`                         | The admin change log: who changed what, never a key                    |
+| `services/whatsapp.py`                    | Meta API calls, message text, and command reading                      |
+| `services/notify.py`                      | Messages the app sends by itself, such as approvals to the guards      |
+| `services/timer.py`                       | Escalation, automatic approval, expiry and the purge                   |
+| `services/export.py`                      | The log as CSV, and the ZIP with the photos                            |
+| `routes/pages.py`                         | Serves the three pages, the script versions and the header values      |
+| `routes/access.py`                        | The keys, and who is an approver, a guard or an admin                  |
+| `routes/visitor.py`                       | The visitor page's calls: a new request and its status                 |
+| `routes/gate.py`                          | The gate page's calls: look up a pass, the board, entry and exit       |
+| `routes/admin.py`                         | The admin page's calls, and the forgotten-key messages                 |
+| `routes/team.py`                          | The admin page's lists: guards, admins, offices, allow list, blacklist |
+| `routes/webhook.py`                       | The WhatsApp webhook: decisions, entry and exit by message             |
+| `pages/visitor.html`, `static/visitor.js` | The visitor page                                                       |
+| `pages/gate.html`, `static/gate.js`       | The gate desk page                                                     |
+| `pages/admin.html`, `static/admin.js`     | The admin page, with `static/admin.css`                                |
+| `static/shared.js`                        | The CSV download for admin, and the forgot-key call for gate and admin |
+| `static/sw.js`                            | Keeps the visitor page on the phone, so it opens offline               |
+| `docs/`                                   | Setup, maintenance, safety, and every WhatsApp message                 |
+| `run_tests.py`                            | Runs every test and both linters with one command                      |
+| `tests/test_*.py`                         | Run the whole flow with WhatsApp stubbed out, one topic a file         |
+| `tests/kit.py`                            | The settings, clean database and helpers that the tests share          |
+| `tests/test_concurrency.py`               | Makes many calls at once to check the races                            |
+| `tests/test_form.js`                      | Checks the three pages in a real DOM with jsdom                        |
+| `tests/testdb.py`                         | Starts a throwaway Postgres for the Python tests                       |
+| `tools/check_setup.py`                    | Checks your settings and sends one test message                        |
+| `tools/whatsapp_messages.py`              | Writes docs/whatsapp-messages.md by running the app                    |
+| `ruff.toml`, `eslint.config.mjs`          | Linter settings, and why some rules are off                            |

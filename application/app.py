@@ -6,13 +6,9 @@ import time
 
 from flask import Flask, jsonify, request
 
-import config
-import db
-import limits
-import pages
-import timer
-import whatsapp
-from routes import admin, gate, team, visitor, webhook
+from core import config, db, limits
+from routes import admin, gate, pages, team, visitor, webhook
+from services import timer, whatsapp
 
 app = Flask(__name__, static_folder=str(pages.STATIC), static_url_path="")
 # The largest call is an entry with its photo, as base64. Anything bigger gets 413.

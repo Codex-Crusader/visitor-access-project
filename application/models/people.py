@@ -4,26 +4,34 @@ import hashlib
 import secrets
 from types import MappingProxyType
 
-import config
-import db
+from core import config, db
 
 
+@db.cached
 @db.read
 def approver_table():
-    """{"reasons": {reason: (main, backup)}, "offices": {name: (main, backup)}}.
+    """{"reasons": {reason: (main, backup)}, "offices": {name: (main, backup)},
+    "auto": {"reasons": {reason: minutes}, "offices": {name: minutes}}}.
 
     A reason uses the admin page's choice, else the settings. "See an office" has no pair of
-    its own: each office has its own pair, and a visit with no office goes to the "Other" pair."""
+    its own: each office has its own pair, and a visit with no office goes to the "Other" pair.
+    "auto" holds only the times an admin set. The rest use AUTO_APPROVE_MINUTES."""
     with db.connect() as conn:
         rows = conn.execute("SELECT reason, main, backup FROM approvers").fetchall()
         office_rows = conn.execute(
-            "SELECT name, main, backup FROM offices ORDER BY name").fetchall()
+            "SELECT name, main, backup, auto_minutes FROM offices ORDER BY name").fetchall()
+        auto_rows = conn.execute("SELECT reason, minutes FROM reason_auto").fetchall()
     reasons = dict(config.APPROVERS)
     reasons.update({row["reason"]: (row["main"], row["backup"])
                     for row in rows if row["reason"] in reasons})
     reasons.pop(config.OFFICE_REASON, None)
+    auto = {"reasons": {row["reason"]: row["minutes"] for row in auto_rows
+                        if row["reason"] in reasons},
+            "offices": {row["name"]: row["auto_minutes"] for row in office_rows
+                        if row["auto_minutes"] is not None}}
     return {"reasons": reasons,
-            "offices": {row["name"]: (row["main"], row["backup"]) for row in office_rows}}
+            "offices": {row["name"]: (row["main"], row["backup"]) for row in office_rows},
+            "auto": auto}
 
 
 def approvers_for(table, visit):
@@ -36,12 +44,24 @@ def approvers_for(table, visit):
     return table["reasons"].get(visit["reason"], table["reasons"]["Other"])
 
 
+def auto_minutes_for(table, visit):
+    """Minutes before this visit is approved by itself, 0 for never. Found as approvers_for()."""
+    office = visit.get("office") or ""
+    if office in table["offices"]:
+        minutes = table["auto"]["offices"].get(office)
+    else:
+        reason = visit["reason"] if visit["reason"] in table["reasons"] else "Other"
+        minutes = table["auto"]["reasons"].get(reason)
+    return config.AUTO_APPROVE_MINUTES if minutes is None else minutes
+
+
 def every_approver(table):
     """Every approver number, for reasons and offices, with repeats."""
     pairs = [*table["reasons"].values(), *table["offices"].values()]
     return [phone for pair in pairs for phone in pair]
 
 
+@db.writes
 def save_approvers(reason, main, backup):
     """Set a reason's two approvers, in place of the settings."""
     with db.connect() as conn:
@@ -51,6 +71,30 @@ def save_approvers(reason, main, backup):
             " backup = EXCLUDED.backup, changed_at = EXCLUDED.changed_at",
             (reason, main, backup, db.now()),
         )
+
+
+@db.writes
+def save_auto_minutes(reason, minutes):
+    """Set a reason's automatic approval time. None goes back to AUTO_APPROVE_MINUTES."""
+    with db.connect() as conn:
+        if minutes is None:
+            conn.execute("DELETE FROM reason_auto WHERE reason = %s", (reason,))
+            return
+        conn.execute(
+            "INSERT INTO reason_auto (reason, minutes, changed_at) VALUES (%s, %s, %s)"
+            " ON CONFLICT (reason) DO UPDATE SET minutes = EXCLUDED.minutes,"
+            " changed_at = EXCLUDED.changed_at",
+            (reason, minutes, db.now()),
+        )
+
+
+@db.writes
+def save_office_auto(name, minutes):
+    """Set an office's automatic approval time, None for the default. False if no such office."""
+    with db.connect() as conn:
+        return conn.execute(
+            "UPDATE offices SET auto_minutes = %s WHERE name = %s", (minutes, name)
+        ).rowcount == 1
 
 
 @db.cached
@@ -68,7 +112,7 @@ def offices():
     """Every office with its numbers and tag, by tag then name. For the admin page."""
     with db.connect() as conn:
         rows = conn.execute(
-            "SELECT name, main, backup, tag, added_at FROM offices ORDER BY tag, name"
+            "SELECT name, main, backup, tag, added_at, auto_minutes FROM offices ORDER BY tag, name"
         ).fetchall()
     return [dict(row) for row in rows]
 

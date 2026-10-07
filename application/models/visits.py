@@ -8,9 +8,8 @@ from datetime import datetime, timedelta
 
 from psycopg import errors
 
-import blacklist
-import config
-import db
+from core import config, db
+from models import blacklist
 
 
 def pass_cutoff():
@@ -328,6 +327,17 @@ def stop_auto_approval(reference):
     with db.connect() as conn:
         conn.execute("UPDATE visits SET auto_approve_at = NULL WHERE reference = %s",
                      (reference,))
+
+
+@db.writes
+def move_auto_approval(reference, at):
+    """Give an open request that approves by itself a new time. None: it waits for a person."""
+    with db.connect() as conn:
+        conn.execute(
+            "UPDATE visits SET auto_approve_at = %s WHERE reference = %s"
+            " AND status IN (%s, %s) AND auto_approve_at IS NOT NULL",
+            (at, reference, *db.OPEN_STATUSES),
+        )
 
 
 @db.writes

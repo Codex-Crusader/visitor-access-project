@@ -2,7 +2,7 @@
 
 import logging
 
-import db
+from core import db
 
 log = logging.getLogger("app")
 FIELDS = "at, by_whom, action, detail"

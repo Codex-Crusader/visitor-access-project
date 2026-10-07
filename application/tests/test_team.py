@@ -18,20 +18,20 @@ from kit import (
     sent, snap, status_of, templates,
 )
 import app as application
-import access
-import blacklist
-import checks
-import config
-import db
-import entries
-import export
-import limits
-import people
-import staff
-import tags
-import timer
-import visits
-import whatsapp
+from routes import access
+from models import blacklist
+from core import checks
+from core import config
+from core import db
+from models import entries
+from services import export
+from core import limits
+from models import people
+from models import staff
+from models import tags
+from services import timer
+from models import visits
+from services import whatsapp
 
 print("the gate page lets nobody in without a photo")
 limits.forget_hits()

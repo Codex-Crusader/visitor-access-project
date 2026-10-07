@@ -331,9 +331,14 @@ Tell the people who decide about the campus about these limits.
     when `STAFF_ENTRY_TEMPLATE` is set, or when they wrote to the app's
     number in the last 24 hours.
 13. The app records an allow list entry but no exit.
-14. Every admin has the same rights. An added admin can delete another
-    added admin, but not the main admin or themselves.
+14. Every admin can change the approvers, the offices, the guards, the allow
+    list and the blacklist. Only a super admin can add or delete an admin,
+    see the gate photos and download the logs.
 15. The blacklist knows only phone numbers. A banned person can use another
     phone, or come as a guest named on someone else's request.
 16. The log download holds the gate page photos. A downloaded copy stays
     after the app deletes the record at `RETAIN_DAYS`.
+17. The app cannot cancel an approved pass. To stop a pass, put the
+    visitor's number on the blacklist: the gate then refuses the pass. After an outage, a pass used on
+    the paper log stays usable until it expires, see "When the system is
+    down" in [university-deployment.md](university-deployment.md).

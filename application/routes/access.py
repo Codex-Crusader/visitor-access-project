@@ -5,11 +5,9 @@ import hmac
 
 from flask import jsonify, request
 
-import config
-import db
-import people
-import visits
-import whatsapp
+from core import config, db
+from models import people, visits
+from services import whatsapp
 
 
 def same_secret(given, kept):

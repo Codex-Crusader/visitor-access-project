@@ -1,8 +1,7 @@
 """Entries and exits at the gate, and the visitor's photo."""
 
-import blacklist
-import db
-import visits
+from core import db
+from models import blacklist, visits
 
 # Inside the UPDATE, so a number blacklisted a moment ago never gets in.
 NOT_BLACKLISTED = blacklist.not_listed("visits.phone")

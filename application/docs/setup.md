@@ -15,6 +15,11 @@ You need four free accounts: Meta for developers, Neon, Render and GitHub.
 The setup takes about an hour, plus the time that Meta takes to approve the
 message template.
 
+The free plans are for a demonstration and a test only. Real use needs a
+server that is always on and a database with a longer restore history. See
+steps 14 and 15 of "Before real use", and "Hosting" in
+[university-deployment.md](university-deployment.md).
+
 ## Step 1: WhatsApp on Meta
 
 1. On https://developers.facebook.com, create an app and add WhatsApp to it.
@@ -161,12 +166,13 @@ does not have them.
     developer.
 13. When each guard has their own key, change `GATE_KEY` to a new random
     key. Keep the new key in a safe place as a spare.
-14. Plan the backups. The free Neon plan keeps only 6 hours of history. Use
-    Download logs each week, and keep both files on a locked device. A paid
-    Neon plan keeps a longer history.
-15. Decide on the Render plan. The free plan sleeps after 15 minutes with no
-    use. After that, the first WhatsApp reply takes about a minute. A paid
-    plan stays awake.
+14. Move the database to a plan that keeps a restore history of 7 days or
+    more, such as a paid Neon plan. The free plan keeps only 6 hours. Also
+    use Download logs each week, and keep both files on a locked device.
+15. Move the app to a server that is always on: a paid Render plan, or a
+    university server that IT approves. Do not use the free plan for real
+    use. It sleeps after 15 minutes with no use, and the first request or
+    WhatsApp reply after that waits about a minute.
 
 While a server setting still has a demo value, the admin page shows "Before
 real use" at the top, with each setting and what it changes. It names the
@@ -202,7 +208,7 @@ These have a default. Set the ones that apply to you.
 | `ADMIN_KEY`              | The admin page password, 20 characters or more               |
 | `BEHIND_PROXY`           | `true` on Render. Leave it unset on your own machine         |
 | `ESCALATE_MINUTES`       | Minutes before the backup approver is asked. Default 15      |
-| `AUTO_APPROVE_MINUTES`   | Minutes before automatic approval. 0 is off. Default 30      |
+| `AUTO_APPROVE_MINUTES`   | Default minutes before automatic approval. 0 is off. 30      |
 | `WORK_HOURS`             | Working hours, in whole hours. Default `10-17`               |
 | `WORK_DAYS`              | Working days. Default `Mon,Tue,Wed,Thu,Fri,Sat`              |
 | `WORK_TIMEZONE`          | The clock for working hours. Default `Asia/Kolkata`          |
@@ -255,7 +261,7 @@ and pass. The pages read them from the server, so the text always matches.
 
 Each reason on the form has a main approver and a backup approver. The
 reasons are `See a student`, `See an office`, `Delivery`, `Event` and `Other`.
-They are the same list as `REASONS` in `config.py` and `static/app.js`. A
+They are the same list as `REASONS` in `core/config.py` and `static/visitor.js`. A
 reason that the visitor types in counts as `Other`. `See an office` has no
 pair of its own: each office has its own pair in Approvers & offices, and an
 office visit with no office goes to the pair for `Other`. `APPROVERS` may
@@ -276,8 +282,13 @@ new number on the Meta recipient list while the app uses a test number.
 ### Automatic approval in working hours
 
 When no approver answers a request made in working hours, the app approves it
-after `AUTO_APPROVE_MINUTES`. Working hours are 10:00 to 17:00, Monday to
-Saturday, India time. 10:00 counts, and 17:00 does not.
+after a set time. Working hours are 10:00 to 17:00, Monday to Saturday, India
+time. 10:00 counts, and 17:00 does not.
+
+Each reason and each office has its own time, set on the admin page under
+Approvers & offices. A reason or office with no time set uses
+`AUTO_APPROVE_MINUTES`, 30 by default. A time of 0 means that a person must
+always decide.
 
 1. The app stores the approval time when the request is made. A request made
    outside working hours has no approval time. It waits for YES or NO.
@@ -286,8 +297,12 @@ Saturday, India time. 10:00 counts, and 17:00 does not.
    approver who has not written to the number in 24 hours can miss it.
 4. The admin page and the CSV show `auto` as the decider. The visitor never
    sees how the request was approved.
+5. When an admin changes a time, each open request that waits for automatic
+   approval gets the new time at once. A time of 0 stops it. A request that
+   had no approval time keeps none.
 
-Set `AUTO_APPROVE_MINUTES=0` to turn this off.
+To turn this off everywhere, set `AUTO_APPROVE_MINUTES=0`, and set no time on
+the admin page.
 
 ## The approval template
 

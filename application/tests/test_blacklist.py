@@ -11,14 +11,14 @@ from kit import (
     client, csv_rows, entry_of, finish, new_request, older, payload, say,
     snap,
 )
-import access
-import blacklist
-import config
-import db
-import entries
-import limits
-import migrations
-import visits
+from routes import access
+from models import blacklist
+from core import config
+from core import db
+from models import entries
+from core import limits
+from core import migrations
+from models import visits
 
 print("a blacklisted number cannot ask, cannot enter, and the gate is told")
 limits.forget_hits()

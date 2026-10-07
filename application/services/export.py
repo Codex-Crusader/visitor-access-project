@@ -10,12 +10,8 @@ import zipfile
 from datetime import datetime, timezone
 from typing import Any
 
-import audit
-import blacklist
-import config
-import entries
-import staff
-import visits
+from core import config
+from models import audit, blacklist, entries, staff, visits
 
 ZONE = config.WORK_TIMEZONE.key
 

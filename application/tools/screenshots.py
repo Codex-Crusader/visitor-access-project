@@ -41,10 +41,10 @@ from PIL import Image
 from werkzeug.serving import make_server
 
 import app as application
-import db
-import checks
-import visits
-import whatsapp
+from core import db
+from core import checks
+from models import visits
+from services import whatsapp
 
 try:
     # noinspection PyPackageRequirements

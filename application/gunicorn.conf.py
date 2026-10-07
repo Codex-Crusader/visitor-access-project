@@ -10,7 +10,7 @@ class RedactingLogger(Logger):
 
     def atoms(self, resp, req, environ, request_time):
         # Here, not at the top: gunicorn reads this file before the app folder is importable.
-        from redaction import redact
+        from core.redaction import redact
 
         found = super().atoms(resp, req, environ, request_time)
         hidden = {name: redact(value) for name, value in found.items()

@@ -1,7 +1,7 @@
 // Keeps the visitor page and its script on the phone. API calls always go to the network.
 const CACHE = "visitor-page";
 const PAGE = "/";
-const SCRIPT = /src="(app\.js\?v=\w+)"/;
+const SCRIPT = /src="(visitor\.js\?v=\w+)"/;
 
 // Stored at install, so a reload with no signal works on this visit too.
 self.addEventListener("install", event =>
@@ -11,7 +11,7 @@ self.addEventListener("activate", event => event.waitUntil(self.clients.claim())
 self.addEventListener("fetch", event => {
   const url = new URL(event.request.url);
   if (event.request.method !== "GET" || url.origin !== self.location.origin) return;
-  if (url.pathname === "/app.js") event.respondWith(script(event.request));
+  if (url.pathname === "/visitor.js") event.respondWith(script(event.request));
   else if (url.pathname === PAGE) event.respondWith(page(event));
 });
 
@@ -21,12 +21,12 @@ async function script(request) {
   return (await cache.match(request, {ignoreVary: true})) || keepScript(cache, request);
 }
 
-// Keeps only the current, immutable version of the script.
+// Keeps only the current, immutable version of the script, and drops any other script.
 async function keepScript(cache, request) {
   const answer = await fetch(request);
   if (answer.ok && (answer.headers.get("Cache-Control") || "").includes("immutable")) {
     for (const old of await cache.keys()) {
-      if (new URL(old.url).pathname === "/app.js") await cache.delete(old);
+      if (new URL(old.url).pathname !== PAGE) await cache.delete(old);
     }
     await cache.put(request, answer.clone());
   }

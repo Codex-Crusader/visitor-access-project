@@ -3,12 +3,9 @@
 import logging
 from concurrent.futures import ThreadPoolExecutor
 
-import config
-import db
-import people
-import staff
-import visits
-import whatsapp
+from core import config, db
+from models import people, staff, visits
+from services import whatsapp
 
 # The same logger as app.logger, so every message reaches one place.
 log = logging.getLogger("app")

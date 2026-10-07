@@ -3,16 +3,10 @@
 
 from flask import Blueprint, jsonify, request
 
-import access
-import blacklist
-import checks
-import db
-import entries
-import limits
-import notify
-import staff
-import visits
-import whatsapp
+from core import checks, db, limits
+from models import blacklist, entries, staff, visits
+from routes import access, pages
+from services import notify, whatsapp
 
 bp = Blueprint("gate", __name__)
 
@@ -128,8 +122,13 @@ def gate_board():
     if not guard:
         return jsonify(error="Wrong gate key"), 403
     expected, inside = visits.at_gate()
-    return jsonify(expected=[board_row(v) for v in expected],
-                   inside=[board_row(v) for v in inside], you=guard)
+    response = jsonify(expected=[board_row(v) for v in expected],
+                       inside=[board_row(v) for v in inside], you=guard)
+    # The page sends this tag back, and an unchanged board costs an empty 304. no-store: the
+    # page keeps the board in memory, so no copy stays on a shared gate phone after Lock.
+    response.headers["Cache-Control"] = "no-store"
+    response.set_etag(pages.short_hash(response.get_data()))
+    return response.make_conditional(request)
 
 
 def board_row(visit):

@@ -19,15 +19,15 @@ from kit import (
 from routes import admin as admin_routes
 import app as application
 from routes import webhook as webhook_routes
-import config
-import db
-import entries
-import export
-import limits
-import people
-import timer
-import visits
-import whatsapp
+from core import config
+from core import db
+from models import entries
+from services import export
+from core import limits
+from models import people
+from services import timer
+from models import visits
+from services import whatsapp
 
 print("visitor flow")
 visit = new_request()
@@ -609,7 +609,7 @@ os.environ["ADMIN_KEY"] = "test-admin-key-long-enough"
 def starts_with(**settings):
     """(started, error text) with these settings changed, in a new process."""
     env = {**os.environ, **settings}
-    run = subprocess.run([sys.executable, "-c", "import config"], env=env,
+    run = subprocess.run([sys.executable, "-c", "from core import config"], env=env,
                          capture_output=True, text=True, cwd=APP_DIR)
     return run.returncode == 0, run.stderr
 
@@ -784,7 +784,7 @@ limits.forget_hits()
 
 # Creating requests is capped so a stranger cannot spam the approver's phone.
 codes_before = len(visits.all_visits())
-limit = __import__("config").REQUESTS_PER_HOUR
+limit = config.REQUESTS_PER_HOUR
 statuses = [client.post("/api/requests", json=payload).status_code for _ in range(limit + 5)]
 assert statuses.count(201) == limit, statuses
 assert statuses.count(429) == 5, statuses
