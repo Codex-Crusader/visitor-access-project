@@ -1,4 +1,4 @@
-"""Tags: one sub-division for each office and each allow list person, so long lists stay
+"""Tags: one subdivision for each office and each allow list person, so long lists stay
 easy to read. Each list has its own tags. An empty tag means no tag."""
 
 import checks
@@ -23,9 +23,12 @@ def existing(table):
 def clean(table, raw):
     """(tag, problem). A tag that matches one in use, in any case, takes its spelling."""
     raw = str(raw or "")
-    tag = checks.clean_text(raw) if len(raw) <= TAG_LENGTH else None
+    problem = f"Write the tag in one line, {TAG_LENGTH} letters at most."
+    if len(raw) > TAG_LENGTH:
+        return None, problem
+    tag = checks.clean_text(raw)
     if tag is None:
-        return None, f"Write the tag in one line, {TAG_LENGTH} letters at most."
+        return None, problem
     same = [old for old in existing(table) if old.lower() == tag.lower()]
     return (same[0] if same else tag), None
 

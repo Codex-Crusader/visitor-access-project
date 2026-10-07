@@ -27,6 +27,7 @@ import app as application
 import config
 import db
 import limits
+import people
 import timer
 import visits
 import whatsapp
@@ -139,6 +140,13 @@ def main():
     office = request(reason="See an office", visiting="x", office="Accounts")
     older(office, 0.5)
     scenario("An office with no backup: its approver gets a reminder", timer.escalate_due)
+    old_pair = people.approver_table()["reasons"]["Delivery"]
+    request(reason="Delivery", visiting="Front office")
+    scenario("An admin changes the approver: open requests go to the new one",
+             lambda: client.post("/api/admin/approvers", headers=ADMIN, json={
+                 "reason": "Delivery", "main": "+919000000077", "backup": ""}))
+    client.post("/api/admin/approvers", headers=ADMIN,
+                json={"reason": "Delivery", "main": old_pair[0], "backup": old_pair[1]})
     auto = request()
     with db.connect() as conn:
         conn.execute("UPDATE visits SET auto_approve_at = %s WHERE reference = %s",

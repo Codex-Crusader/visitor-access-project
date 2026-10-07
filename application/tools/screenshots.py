@@ -37,6 +37,7 @@ os.environ.update(
 )
 
 from PIL import Image
+# noinspection PyPackageRequirements
 from werkzeug.serving import make_server
 
 import app as application
@@ -46,10 +47,10 @@ import visits
 import whatsapp
 
 try:
+    # noinspection PyPackageRequirements
     from playwright.sync_api import sync_playwright
 except ImportError:
-    sys.exit("playwright is not installed. Run:"
-             " .venv\\Scripts\\python.exe -m pip install playwright==1.63.0")
+    sync_playwright = None
 
 PORT = 5055
 BASE = f"http://127.0.0.1:{PORT}"
@@ -58,7 +59,7 @@ APPROVER = "919000000001"
 PHONE = {"viewport": {"width": 428, "height": 1000}, "device_scale_factor": 2,
          "is_mobile": True, "has_touch": True, "locale": "en-IN", "timezone_id": "Asia/Kolkata",
          "reduced_motion": "reduce"}
-# Reduced motion: no picture catches a colour change halfway.
+# Reduced motion: no picture catches a color change halfway.
 DESKTOP = {"viewport": {"width": 1100, "height": 900}, "device_scale_factor": 2,
            "locale": "en-IN", "timezone_id": "Asia/Kolkata", "reduced_motion": "reduce"}
 
@@ -235,16 +236,19 @@ def take_pictures(browser, folder, codes):
     admin.add_init_script(f"localStorage.setItem('adminkey','{ADMIN_KEY}')")
     board = admin.new_page()
     board.goto(BASE + "/admin")
-    board.wait_for_selector("text=Meera Nair")
+    board.wait_for_selector("#t-list details")
     board.screenshot(path=os.path.join(folder, "app-06-admin.png"), full_page=True)
     print("saved app-06-admin.png")
-    board.click("[role=tab] >> text=Allow list")
+    board.click("#tabs >> text=Allow list")
     board.wait_for_selector("text=Dr Anita Rao")
     board.screenshot(path=os.path.join(folder, "app-08-admin-allow.png"), full_page=True)
     print("saved app-08-admin-allow.png")
 
 
 def main():
+    if sync_playwright is None:
+        sys.exit("playwright is not installed. Run:"
+                 " .venv\\Scripts\\python.exe -m pip install playwright==1.63.0")
     folder = sys.argv[1] if len(sys.argv) > 1 else "pictures"
     os.makedirs(folder, exist_ok=True)
     db.init()

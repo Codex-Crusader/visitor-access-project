@@ -64,7 +64,8 @@ def by_request_key(key):
 def create(fields, guests, auto_approve_at=None, office=None, request_key=None):
     """Insert a visit and its two codes. Retries when a code is already taken.
 
-    Raises SameRequest when request_key made a visit before, also from a send at the same time."""
+    Raises SameRequest when request_key made a visit before, also from a request sent at the
+    same time."""
     for _ in range(CODE_ATTEMPTS):
         # Five digits: 90,000 references. Older visits keep their four-digit one.
         reference = f"VR-{random.randint(10000, 99999)}"
@@ -99,7 +100,7 @@ def create(fields, guests, auto_approve_at=None, office=None, request_key=None):
         except errors.UniqueViolation as clash:
             if clash.diag.constraint_name == "visits_request_key":
                 earlier = by_request_key(request_key)
-                # Gone already: the first send failed and was deleted. This send goes on.
+                # Gone already: the first request failed to send and was deleted. This one goes on.
                 if earlier is not None:
                     raise SameRequest(earlier) from None
             continue
@@ -314,6 +315,14 @@ def due_for_escalation():
             (db.PENDING, db.ago(config.ESCALATE_MINUTES / 1440)),
         ).fetchall()
     return [to_dict(row) for row in rows]
+
+
+@db.writes
+def stop_auto_approval(reference):
+    """A request no approver may have seen is never approved by itself."""
+    with db.connect() as conn:
+        conn.execute("UPDATE visits SET auto_approve_at = NULL WHERE reference = %s",
+                     (reference,))
 
 
 @db.writes

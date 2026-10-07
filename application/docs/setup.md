@@ -146,11 +146,11 @@ does not have them.
    `APPROVERS`.
 7. Turn on the uptime check. See "The uptime check" in
    [maintenance.md](maintenance.md).
-8. Add the guards on the admin page's Guards tab, and give each guard the
+8. Add the guards in the admin page's Guards part, and give each guard the
    key that shows. Give `<address>` to visitors, the gate key to the gate
    desk, and the admin key to the admin.
-9. Add the offices on the Approvers tab, the staff on the Allow list tab, and
-   any other admins on the Admins tab.
+9. Add the offices in Approvers & offices, the staff in Allow list, and any
+   other admins in Admins.
 10. Create the `staff_entry` template, and set `STAFF_ENTRY_TEMPLATE`. See
     "The allow list entry template".
 11. Set `GATE_DESK_PHONE` to the gate desk's real phone number. The example
@@ -162,7 +162,7 @@ does not have them.
 13. When each guard has their own key, change `GATE_KEY` to a new random
     key. Keep the new key in a safe place as a spare.
 14. Plan the backups. The free Neon plan keeps only 6 hours of history. Use
-    Download log each week, and keep both files on a locked device. A paid
+    Download logs each week, and keep both files on a locked device. A paid
     Neon plan keeps a longer history.
 15. Decide on the Render plan. The free plan sleeps after 15 minutes with no
     use. After that, the first WhatsApp reply takes about a minute. A paid
@@ -250,7 +250,7 @@ Each reason on the form has a main approver and a backup approver. The
 reasons are `See a student`, `See an office`, `Delivery`, `Event` and `Other`.
 They are the same list as `REASONS` in `config.py` and `static/app.js`. A
 reason that the visitor types in counts as `Other`. `See an office` has no
-pair of its own: each office has its own pair on the Approvers tab, and an
+pair of its own: each office has its own pair in Approvers & offices, and an
 office visit with no office goes to the pair for `Other`. `APPROVERS` may
 name `See an office`, but the app does not use it.
 
@@ -319,6 +319,13 @@ plain text too, so it reaches only a guard who wrote in the last 24 hours.
 2. `true`: the app sends plain text and writes `Approval template refused` to
    the log. Use this only while Meta reviews a new template. Delete the
    setting when the template shows Approved in WhatsApp Manager.
+
+A refusal is different from no clear answer. If Meta does not answer in 15
+seconds, or answers with a fault on its own side, the message can still
+arrive. The app then keeps the request, and the visitor sees it as waiting.
+The reminder after `ESCALATE_MINUTES` asks again, and the request is never
+approved by itself, so a person always sees it. The log says
+`WhatsApp send uncertain`.
 
 Leave the fallback off in production. Meta can pause a template, for example
 after low quality ratings. With the fallback on, every request then goes out

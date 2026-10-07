@@ -41,7 +41,8 @@ def everyone():
 def _by_code():
     """Every person on the allow list, by code. Read-only, so it is shared, not copied."""
     with db.connect() as conn:
-        rows = conn.execute("SELECT code, name, phone, added_at, tag FROM staff").fetchall()
+        rows: list[dict] = conn.execute(
+            "SELECT code, name, phone, added_at, tag FROM staff").fetchall()
     return MappingProxyType({row["code"]: MappingProxyType(dict(row)) for row in rows})
 
 

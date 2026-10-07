@@ -158,9 +158,12 @@ def handle_lookup(guard, sender, key, table):
     code = key if visit is not None else None
     if visit is None:
         visit = visits.get(key)
-    if visit is None:
+    # An approver sees only the requests they approve, and gets the same answer as for no pass.
+    if visit is None or (not guard and not any(
+            whatsapp.same_number(sender, phone)
+            for phone in people.approvers_for(table, visit))):
         return f"No pass has code {key}."
-    body = whatsapp.pass_body(visit, code, kind)
+    body = whatsapp.pass_body(visit, code, kind, phone=not guard)
     if visit["status"] in db.EXPIRING and blacklist.has(visit["phone"]):
         # A guard with the entry code has the person at the gate.
         if guard and kind == db.ENTRY:

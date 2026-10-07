@@ -16,15 +16,14 @@ def short_hash(data: bytes):
     return hashlib.sha256(data).hexdigest()[:10]
 
 
-# Scripts load as app.js?v=<hash>, kept for a year. The pages are checked on every load.
-SCRIPT_VERSIONS = {path.name: short_hash(path.read_bytes()) for path in STATIC.glob("*.js")}
-SCRIPT_TAG = re.compile(r'<script src="([\w.-]+\.js)"></script>')
+# Scripts and styles load as app.js?v=<hash>, kept for a year. Pages are checked on every load.
+SCRIPT_VERSIONS = {path.name: short_hash(path.read_bytes())
+                   for pattern in ("*.js", "*.css") for path in STATIC.glob(pattern)}
+FILE_TAG = re.compile(r'(<script src="|<link rel="stylesheet" href=")([\w.-]+\.(?:js|css))"')
 
 
 def with_versions(html):
-    return SCRIPT_TAG.sub(
-        lambda tag: f'<script src="{tag[1]}?v={SCRIPT_VERSIONS[tag[1]]}"></script>', html
-    )
+    return FILE_TAG.sub(lambda tag: f'{tag[1]}{tag[2]}?v={SCRIPT_VERSIONS[tag[2]]}"', html)
 
 
 PAGES = {
@@ -37,6 +36,8 @@ PAGE_TAGS = {name: short_hash(html.encode()) for name, html in PAGES.items()}
 def page(name):
     response = Response(PAGES[name], mimetype="text/html")
     response.headers["Cache-Control"] = "no-cache"
+    if name in STRICT_PAGES:
+        response.headers["Content-Security-Policy"] = STRICT_POLICY
     response.set_etag(PAGE_TAGS[name])
     return response.make_conditional(request)
 
@@ -47,6 +48,9 @@ CONTENT_POLICY = (
     " img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none';"
     " form-action 'self'; frame-ancestors 'self'"
 )
+# The admin page has no inline script, style or handler, so it runs without 'unsafe-inline'.
+STRICT_POLICY = CONTENT_POLICY.replace(" 'unsafe-inline'", "")
+STRICT_PAGES = {"admin.html"}
 SECURITY_HEADERS = {
     "Content-Security-Policy": CONTENT_POLICY,
     "X-Frame-Options": "SAMEORIGIN",

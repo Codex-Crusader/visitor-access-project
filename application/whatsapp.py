@@ -70,13 +70,22 @@ def same_number(a, b):
     return digits(a) == digits(b)
 
 
+class Uncertain(RuntimeError):
+    """Meta may have the message: no answer in time, or a fault on Meta's side."""
+
+
 def _post(to_phone, message):
-    response = requests.post(
-        API_URL,
-        headers={"Authorization": f"Bearer {config.META_TOKEN}"},
-        json={"messaging_product": "whatsapp", "to": digits(to_phone), **message},
-        timeout=TIMEOUT_SECONDS,
-    )
+    try:
+        response = requests.post(
+            API_URL,
+            headers={"Authorization": f"Bearer {config.META_TOKEN}"},
+            json={"messaging_product": "whatsapp", "to": digits(to_phone), **message},
+            timeout=TIMEOUT_SECONDS,
+        )
+    except requests.ReadTimeout as lost:
+        raise Uncertain(f"No answer from WhatsApp in {TIMEOUT_SECONDS} s") from lost
+    if response.status_code >= 500:
+        raise Uncertain(f"WhatsApp fault ({response.status_code}): {response.text}")
     if not response.ok:
         raise RuntimeError(
             f"WhatsApp send failed ({response.status_code}): {response.text}"
@@ -212,8 +221,10 @@ def gate_line(visit, code=None, kind=None):
     return line.format(code=code) if line else GATE_LINES[visit["status"]]
 
 
-def pass_body(visit, code=None, kind=None):
-    """The reply to a reference or pass code. A closed visit shows only its times."""
+def pass_body(visit, code=None, kind=None, phone=False):
+    """The reply to a reference or pass code. A closed visit shows only its times.
+
+    phone: for an approver, who has the number already. A guard decides without it."""
     if visit["status"] == db.CLOSED:
         lines = [
             gate_line(visit),
@@ -229,7 +240,7 @@ def pass_body(visit, code=None, kind=None):
         "",
         f"Reference: {visit['reference']}",
         f"Name: {visit['name']}",
-        f"Phone: {visit['phone']}",
+        *([f"Phone: {visit['phone']}"] if phone else []),
         f"Visiting: {visit['visiting']}",
         f"Reason: {visit['reason']}",
     ]
@@ -277,7 +288,7 @@ PUNCTUATION = str.maketrans(dict.fromkeys(",.!?;:'\"()", " "))
 
 
 def read_reply(body):
-    """(kind, value, key), kind being decide, gate, staff, lookup, key or help.
+    """(kind, value, key). The kind is one of "decide", "gate", "staff", "lookup", "key", "help".
 
     Any case works: yes vr-40221 is YES VR-40221. Marks a phone adds, as in "No, VR-40221."
     or "Yes!", are dropped. The dash stays: it is part of a code."""
@@ -356,6 +367,8 @@ def notify(phone, visit, stage="new"):
     try:
         send_template(phone, template_values(visit, stage))
         return None
+    except Uncertain:
+        raise  # the template may have arrived: plain text too would ask twice
     except RuntimeError as failure:
         if not config.TEMPLATE_FALLBACK:
             raise

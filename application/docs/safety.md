@@ -7,13 +7,13 @@ the people who decide about the campus. To set up the app, read
 
 ## Who can see what
 
-| Who                     | How                                   | Sees                                                                                                                             |
-|-------------------------|---------------------------------------|----------------------------------------------------------------------------------------------------------------------------------|
-| A visitor               | Their own private link                | Their own request, its status and its current code                                                                               |
-| An approver             | WhatsApp, from their number           | The requests of their own reasons, and any pass they look up                                                                     |
-| A guard                 | Their own key, or the shared gate key | Open passes without the address, the gate lists, and a WhatsApp message for each approval                                        |
+| Who                     | How                                   | Sees                                                                                                                                                          |
+|-------------------------|---------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| A visitor               | Their own private link                | Their own request, its status and its current code                                                                                                            |
+| An approver             | WhatsApp, from their number           | The requests of their own reasons, and any pass they look up                                                                                                  |
+| A guard                 | Their own key, or the shared gate key | Open passes without the address, the gate lists, and a WhatsApp message for each approval                                                                     |
 | An admin                | The admin key, or their own key       | Every request, who decided it, which guard let the visitor in and out, the gate page photos, the approvers, offices, allow list, guards, admins and blacklist |
-| Anybody on the internet | The public pages                      | The forms, the gate desk number, and the health result                                                                           |
+| Anybody on the internet | The public pages                      | The forms, the gate desk number, and the health result                                                                                                        |
 
 Only an admin key opens the log with every visitor's name, phone
 number and address. A guard sees an open visit only, and never its address.
@@ -29,10 +29,11 @@ number and address. A guard sees an open visit only, and never its address.
 2. The admin key opens the admin page. It must be different from the gate
    key. If it is not set, is shorter than 20 characters, or is the same, the
    admin page stays locked, because every guard has the gate key. Each admin
-   added on the Admins tab has a key of their own, kept only as a hash, as a
+   added in Admins has a key of their own, kept only as a hash, as a
    guard's key is. A guard's number cannot be an admin's number.
 3. Each page keeps its key in the browser's storage on that device. On a
-   shared device, tap Change key when you finish. That removes the key.
+   shared device, tap Sign out when you finish. That removes the key. The
+   admin page also signs out by itself after 30 minutes with no use.
 4. "Forgot key?" sends the key only to its fixed number: the gate key to
    `GUARD`, and the admin key to `ADMIN_PHONE`. The page never shows the key.
    If `ADMIN_PHONE` is the gate desk number, the admin key is not sent.
@@ -117,10 +118,17 @@ Every answer from the server has these headers:
 | `Strict-Transport-Security` | Makes the browser use HTTPS for one year                                                                                          |
 | `Permissions-Policy`        | Turns off the camera, microphone, location and payment. The gate photo uses the phone's own camera app, which this does not block |
 
-The content policy allows inline scripts (`'unsafe-inline'`). The buttons on
-the pages call their code from inline `onclick` attributes, and a stricter
-policy stops every button. The pages put every visitor-typed text through an
-escape function before they show it, so typed text cannot become a script.
+The admin page has a stricter policy: `script-src 'self'` and
+`style-src 'self'`, with no `'unsafe-inline'`. Its styles are in
+`admin.css`, and it has no inline script, style or handler, so an injected
+script cannot run there. The admin page shows every visitor's details, so it
+gets the strict policy first.
+
+The visitor page and the gate page still allow inline scripts
+(`'unsafe-inline'`). Their buttons call their code from inline `onclick`
+attributes, and a stricter policy stops every button. All three pages put
+every visitor-typed text through an escape function before they show it, so
+typed text cannot become a script.
 
 A CSV cell that starts with `=`, `+`, `-` or `@` gets a quote in front.
 Excel and Sheets run such a cell as a formula, so a name such as
@@ -199,32 +207,35 @@ Never put a secret in git, in a chat or in a screenshot. `.gitignore` keeps
 
 ## Threats and what stops them
 
-| Threat                               | What stops it                                                              |
-|--------------------------------------|----------------------------------------------------------------------------|
-| A false WhatsApp message to the app  | Meta's signature, checked with `META_APP_SECRET`. The app needs the secret |
-| The same WhatsApp message sent again | The app records each message id and acts on it once                        |
-| Two decisions on one request         | The decision is one database statement that changes an open request only   |
-| Two guards on one entry              | The entry is one database statement that changes an approved pass only     |
-| A guessed reference                  | A reference names a request and opens nothing                              |
-| A guessed entry or exit code         | About 5.7 million random codes, and each one needs a gate key too          |
-| A guessed visitor link               | 22 random characters                                                       |
-| A guessed gate or admin key          | 20 characters or more, required at start                                   |
-| A stolen gate key                    | Remove the guard, or change `GATE_KEY`. A gate key opens no history        |
-| A stolen admin key                   | Change `ADMIN_KEY` on Render, or tap New key or Delete for an added admin  |
-| An allow list code used by another   | The guard reads the name. The person gets a message about the entry        |
-| A person the campus has banned       | The blacklist refuses their number, and the admin page lists each attempt  |
-| A ban while a request waits          | The ban declines it. An approval checks the blacklist in the same statement |
-| An admin change nobody expected      | The admin change log names who made it, also by `KEY` on WhatsApp          |
-| A stolen gate key lists the staff    | 60 allow list calls a minute for each key                                  |
-| A regular admin acts as a super one  | Only a super admin may renew the key of, delete or change a super admin    |
-| A bulk approval of the wrong rows    | An "Are you sure?" box with the count, and every reference in the log      |
-| Two guards record one staff entry    | One entry for each code in 2 minutes, with a database lock                 |
-| A visitor sends one form twice       | A random key from their browser: the second send gets the first request    |
-| False lines in the approver message  | The form refuses line breaks, control codes and invisible marks            |
-| A formula in the CSV log             | Cells that start with `=`, `+`, `-` or `@` get a quote in front            |
-| A harmful photo file                 | Size and pixel limits, then the server decodes it and stores a new copy    |
-| Many requests from one place         | `REQUESTS_PER_HOUR` for each address, and limits on "Forgot key?"          |
-| A guard who reads the whole history  | Only an admin key opens the log. The gate never receives an address        |
+| Threat                                 | What stops it                                                               |
+|----------------------------------------|-----------------------------------------------------------------------------|
+| A false WhatsApp message to the app    | Meta's signature, checked with `META_APP_SECRET`. The app needs the secret  |
+| The same WhatsApp message sent again   | The app records each message id and acts on it once                         |
+| Two decisions on one request           | The decision is one database statement that changes an open request only    |
+| Two guards on one entry                | The entry is one database statement that changes an approved pass only      |
+| A guessed reference                    | A reference names a request and opens nothing                               |
+| A guessed entry or exit code           | About 5.7 million random codes, and each one needs a gate key too           |
+| A guessed visitor link                 | 22 random characters                                                        |
+| A guessed gate or admin key            | 20 characters or more, required at start                                    |
+| A stolen gate key                      | Remove the guard, or change `GATE_KEY`. A gate key opens no history         |
+| A stolen admin key                     | Change `ADMIN_KEY` on Render, or tap New key or Delete for an added admin   |
+| An allow list code used by another     | The guard reads the name. The person gets a message about the entry         |
+| A person the campus has banned         | The blacklist refuses their number, and the admin page lists each attempt   |
+| A ban while a request waits            | The ban declines it. An approval checks the blacklist in the same statement |
+| An admin change nobody expected        | The admin change log names who made it, also by `KEY` on WhatsApp           |
+| A stolen gate key lists the staff      | 60 allow list calls a minute for each key                                   |
+| A regular admin acts as a super one    | Only a super admin may renew the key of, delete or change a super admin     |
+| A bulk approval of the wrong rows      | An "Are you sure?" box with the count, and every reference in the log       |
+| Two guards record one staff entry      | One entry for each code in 2 minutes, with a database lock                  |
+| A visitor sends one form twice         | A random key from their browser: the second send gets the first request     |
+| False lines in the approver message    | The form refuses line breaks, control codes and invisible marks             |
+| A formula in the CSV log               | Cells that start with `=`, `+`, `-` or `@` get a quote in front             |
+| A harmful photo file                   | Size and pixel limits, then the server decodes it and stores a new copy     |
+| Many requests from one place           | `REQUESTS_PER_HOUR` for each address, and limits on "Forgot key?"           |
+| A guard who reads the whole history    | Only an admin key opens the log. The gate never gets an address or phone    |
+| Any admin copies every face            | Only a super admin can download the logs and the photos                     |
+| A send that may have reached Meta      | The request stays, is never approved by itself, and the reminder asks again |
+| Open requests after an approver change | They go to the new approver at once, and the change log counts them         |
 
 ## Known limits
 
@@ -251,9 +262,10 @@ Tell the people who decide about the campus about these limits.
    request after that waits up to about a minute, and reminders and automatic
    approvals wait until the app wakes.
 8. With no signal at the gate, the guard cannot check any pass.
-9. The content policy allows inline scripts, see "The web pages".
+9. The visitor page and the gate page allow inline scripts, see "The web
+   pages". The admin page does not.
 10. On the free Neon plan, the database can be restored only to a time in the
-    last 6 hours. The weekly CSV is the longer backup, see
+    last 6 hours. The weekly Download logs is the longer backup, see
     [maintenance.md](maintenance.md).
 11. The approval message to the guards is plain text. WhatsApp delivers it
     only to a guard who wrote to the app's number in the last 24 hours.

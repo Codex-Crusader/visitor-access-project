@@ -43,6 +43,7 @@ import app as application
 import config
 import db
 import access
+import audit
 import blacklist
 from routes import admin as admin_routes
 import checks
@@ -65,6 +66,7 @@ whatsapp.send = lambda to, body: sent.append((to, body))
 templates = []
 
 
+# noinspection PyShadowingNames,PyUnusedLocal
 def fake_template(to, values, name=None):
     templates.append((to, values))
     sent.append((to, "\n".join(values)))
@@ -146,9 +148,9 @@ def picture(sender, caption=None):
 
 def snap(sender):
     """The guard sends a photo. Returns the reply, or "" when there was none."""
-    replies = len(sent)
+    count_at_start = len(sent)
     client.post("/webhook/whatsapp", json=picture(sender))
-    return sent[-1][1] if len(sent) > replies else ""
+    return sent[-1][1] if len(sent) > count_at_start else ""
 
 
 payload = {
@@ -209,7 +211,7 @@ def refused(*_args):
 
 whatsapp.send_template = refused
 try:
-    # By default a refused template fails the request, so the visitor is not misled.
+    # By default, a refused template fails the request, so the visitor is not misled.
     assert application.config.TEMPLATE_FALLBACK is False
     sent_before = len(sent)
     timer.wake.clear()
@@ -589,10 +591,10 @@ live = new_request()
 say(APPROVER, f"YES {live['reference']}")
 open_pass = client.get(f"/api/pass/{live['reference']}", headers=KEY).get_json()
 for field in PERSONAL:
-    if field != "address":
+    if field not in ("address", "phone"):
         assert open_pass[field], field
-# The gate needs no address, so no gate answer holds it, not even a refusal.
-assert "address" not in open_pass
+# The gate needs no address or phone, so no gate answer holds them, not even a refusal.
+assert "address" not in open_pass and "phone" not in open_pass
 assert "address" not in client.get(f"/api/pass/{entry_of(live)}", headers=KEY).get_json()
 refused_entry = client.post(f"/api/pass/{exit_of(live)}/entry", headers=KEY).get_json()
 assert "visit" in refused_entry and "address" not in refused_entry["visit"]
@@ -919,7 +921,15 @@ for answer in (page_answer, not_changed, client.get("/" + script_path),
                client.get("/api/config"), client.get("/api/visit/nope"),
                client.get("/api/admin/visits")):
     for name, value in pages.SECURITY_HEADERS.items():
-        assert answer.headers.get(name) == value, (answer.status_code, name)
+        strict = name == "Content-Security-Policy" and answer in (page_answer, not_changed)
+        expected = pages.STRICT_POLICY if strict else value
+        assert answer.headers.get(name) == expected, (answer.status_code, name)
+assert "unsafe-inline" not in pages.STRICT_POLICY and "script-src 'self';" in pages.STRICT_POLICY
+assert client.get("/").headers["Content-Security-Policy"] == pages.CONTENT_POLICY
+style_tag = re.search(r'href="(admin\.css\?v=\w+)"', page_answer.get_data(as_text=True))
+assert style_tag, "the admin page loads its styles by version"
+styles = client.get("/" + style_tag[1])
+assert styles.status_code == 200 and "immutable" in styles.headers["Cache-Control"]
 policy = pages.CONTENT_POLICY
 assert "frame-ancestors 'self'" in policy and "object-src 'none'" in policy
 assert "img-src 'self' data:" in policy, "the logo is a data: image"
@@ -1037,7 +1047,7 @@ assert never[f"Entered ({ZONE})"] == "" and never[f"Exited ({ZONE})"] == ""
 assert "None" not in dump.get_data(as_text=True)
 
 # The export quotes cells that spreadsheets would run as formulas.
-attack = dict(payload, name="=HYPERLINK(\"http://evil.test\",\"click\")",
+attack = dict(payload, name="=HYPERLINK(\"https://evil.test\",\"click\")",
               address="+1+1", reason="@SUM(1:9)", visiting="-2+3")
 assert client.post("/api/requests", json=attack).status_code == 201
 armed = client.get("/api/admin/export.csv", headers=ADMIN).get_data(as_text=True)
@@ -1045,7 +1055,7 @@ row = next(r for r in csv_rows(armed) if r["Name"].endswith('click")'))
 for column in ("Name", "Address", "Reason", "Visiting"):
     assert row[column].startswith("'"), (column, row[column])
 # The text itself is kept, only disarmed.
-assert row["Name"] == "'=HYPERLINK(\"http://evil.test\",\"click\")"
+assert row["Name"] == "'=HYPERLINK(\"https://evil.test\",\"click\")"
 # Ordinary values are left exactly as they were.
 assert not row["Reference"].startswith("'")
 # A checked +number shows as text, never as 9.19E+11 or with a quote. Anything else is disarmed.
@@ -1166,7 +1176,7 @@ try:
         assert call().status_code == 200, label
         assert len(trips) <= most, (label, len(trips))
 
-    # Repeated page reads cost no database trip until a write.
+    # Repeated page reads cost no database trip until the data changes.
     ravi_key = people.add_holder(people.GUARDS, "Cache Guard", "+919800000777")
     status = lambda: client.get(f"/api/visit/{counted['token']}")  # noqa: E731
     gate_board = lambda: client.get("/api/gate/board", headers={"X-Gate-Key": ravi_key})  # noqa: E731
@@ -1207,7 +1217,7 @@ print("every write to a cached table clears the cache")
 # {table} is the guards or admins table in people.py.
 CACHED_TABLES = re.compile(
     r"\b(INSERT INTO|UPDATE|DELETE FROM)\s+"
-    r"((visits|guards|admins|offices|staff|blacklist|photos|gate_codes)\b|\{table\})")
+    r"((visits|guards|admins|offices|staff|blacklist|photos|gate_codes)\b|\{table})")
 forgot = []
 for module in ("db.py", "visits.py", "entries.py", "people.py", "staff.py", "blacklist.py",
                "tags.py"):
@@ -1845,8 +1855,8 @@ assert len([to for to, _ in sent if to == DEV_PHONE]) == 1 and len(staff.recent_
 
 def later():
     """Moves every allow list entry 3 minutes back, past the repeat window."""
-    with db.connect() as conn:
-        conn.execute("UPDATE staff_entries SET entered_at = %s", (db.ago(3 / 1440),))
+    with db.connect() as writer:
+        writer.execute("UPDATE staff_entries SET entered_at = %s", (db.ago(3 / 1440),))
 
 
 later()
@@ -1966,7 +1976,7 @@ assert log_rows[by_phone_photo["reference"]]["Photo file"] == "", "a WhatsApp ph
 page = archive.read("visits.html").decode()
 assert f'src="{photo_name}"' in page and shot["reference"] in page
 assert "Photo in the guard's WhatsApp chat" in page
-assert "=HYPERLINK(&quot;http://evil.test&quot;" in page and "<script" not in page
+assert "=HYPERLINK(&quot;https://evil.test&quot;" in page and "<script" not in page
 assert "visits.html" in archive.read("README.txt").decode()
 stored = [n for n in archive.namelist() if n.startswith("photos/")]
 with db.connect() as conn:
@@ -2068,8 +2078,8 @@ assert len(attempts()) == 1, "a board tap records nothing"
 
 def older():
     """Moves every blocked attempt 11 minutes back, past the repeat window."""
-    with db.connect() as conn:
-        conn.execute("UPDATE blocked_attempts SET at = %s", (db.ago(11 / 1440),))
+    with db.connect() as writer:
+        writer.execute("UPDATE blocked_attempts SET at = %s", (db.ago(11 / 1440),))
 
 
 client.get(f"/api/pass/{entry_of(stopped_visit)}", headers=KEY)
@@ -2188,9 +2198,9 @@ print("tags divide the offices and the allow list, and change without losing a c
 limits.forget_hits()
 
 
-def tag_office(office_name, office_tag, n):
-    return add_office({"name": office_name, "main": f"+91970000{n:04d}",
-                       "backup": f"+91971000{n:04d}", "tag": office_tag})
+def tag_office(new_office, new_tag, n):
+    return add_office({"name": new_office, "main": f"+91970000{n:04d}",
+                       "backup": f"+91971000{n:04d}", "tag": new_tag})
 
 
 assert tag_office("Fees", "Admin Block", 1).status_code == 200
@@ -2464,9 +2474,12 @@ shared_code = add_staff("Shared Sam", "+919400000099").get_json()["code"]
 first_look = staff.by_code(shared_code)
 first_look["name"] = "Changed by a caller"
 assert staff.by_code(shared_code)["name"] == "Shared Sam", "a copy, so the index stays right"
+# noinspection PyProtectedMember
 assert staff._by_code() is staff._by_code(), "one shared index, not a copy for each call"
+# noinspection PyProtectedMember
 assert isinstance(blacklist._keys(), frozenset)
 try:
+    # noinspection PyProtectedMember
     staff._by_code()[shared_code]["name"] = "x"
     raise AssertionError("the shared index must be read-only")
 except TypeError:
@@ -2483,10 +2496,9 @@ first_try = client.post("/api/requests", json={**payload, "request_key": "e" * 3
 real_lookup = visits.by_request_key
 
 
-def vanished(key):
-    """The first request is deleted just as the resend finds the key taken."""
+def vanished(_key):
+    """The first request is deleted just as the resend finds the key taken. Finds nothing."""
     visits.delete(first_try["reference"])
-    return None
 
 
 visits.by_request_key = vanished
@@ -2508,6 +2520,149 @@ with db.connect() as conn:
 # A request asked again reads "Asked again" in the log, right for a backup or a reminder.
 assert export.STATUS_WORDS["escalated"] == "Asked again"
 print("  a raced resend, one attempt typed two ways, neutral words for asking again")
+
+print("an uncertain WhatsApp send keeps the request, and a person must still decide")
+limits.forget_hits()
+
+
+def unsure(*_args, **_kwargs):
+    raise whatsapp.Uncertain("No answer from WhatsApp in 15 s")
+
+
+real_template, real_auto_time = whatsapp.send_template, timer.auto_approve_time
+whatsapp.send_template = unsure
+timer.auto_approve_time = lambda _moment: db.now()  # as if made in working hours
+try:
+    kept = client.post("/api/requests", json={**payload, "request_key": "u" * 32})
+finally:
+    whatsapp.send_template, timer.auto_approve_time = real_template, real_auto_time
+assert kept.status_code == 201, kept.get_data(as_text=True)
+with db.connect() as conn:
+    kept_row = conn.execute("SELECT status, auto_approve_at FROM visits WHERE reference = %s",
+                            (kept.get_json()["reference"],)).fetchone()
+assert kept_row["status"] == "pending" and kept_row["auto_approve_at"] is None, kept_row
+# With TEMPLATE_FALLBACK on, an uncertain template is not followed by plain text: one ask only.
+application.config.TEMPLATE_FALLBACK = True
+whatsapp.send_template = unsure
+before_count = len(sent)
+try:
+    whatsapp.notify(APPROVER, visits.get(kept.get_json()["reference"]))
+    raise AssertionError("an uncertain send must not count as sent")
+except whatsapp.Uncertain:
+    pass
+finally:
+    whatsapp.send_template = real_template
+    application.config.TEMPLATE_FALLBACK = False
+assert len(sent) == before_count, sent[before_count:]
+
+
+# Which answers from Meta are uncertain: no answer in time, or a fault on Meta's side.
+class MetaAnswer:
+    def __init__(self, http_status):
+        self.status_code, self.ok, self.text = http_status, http_status < 400, "x"
+
+    @staticmethod
+    def json():
+        return {}
+
+
+def timed_out(*_args, **_kwargs):
+    raise whatsapp.requests.ReadTimeout()
+
+
+real_post = whatsapp.requests.post
+try:
+    for answer, expected in ((timed_out, whatsapp.Uncertain),
+                             (lambda *_a, **_k: MetaAnswer(503), whatsapp.Uncertain),
+                             (lambda *_a, **_k: MetaAnswer(400), RuntimeError)):
+        whatsapp.requests.post = answer
+        try:
+            # noinspection PyProtectedMember
+            whatsapp._post(APPROVER, {})
+            raise AssertionError("a failed send must raise")
+        except RuntimeError as failure:
+            assert isinstance(failure, whatsapp.Uncertain) == (expected is whatsapp.Uncertain)
+finally:
+    whatsapp.requests.post = real_post
+# The reminder too: an uncertain send counts as asked, so the next round does not ask again.
+with db.connect() as conn:
+    conn.execute("UPDATE visits SET created_at = %s WHERE reference = %s",
+                 (db.ago(1), kept.get_json()["reference"]))
+db.forget_cache()
+reminders = []
+whatsapp.send_template = lambda *args, **kwargs: reminders.append(1) or unsure()
+try:
+    timer.escalate_due()
+    timer.escalate_due()
+finally:
+    whatsapp.send_template = real_template
+assert visits.get(kept.get_json()["reference"])["status"] == "escalated"
+assert len(reminders) == 1, "asked once, not once each round"
+print("  kept, never approved by itself, asked once; a refusal from Meta is still a failure")
+
+print("open requests go to a new approver at once")
+limits.forget_hits()
+first, second, third = "+919300000001", "+919300000002", "+919300000003"
+
+
+def set_delivery(main, backup):
+    set_answer = client.post("/api/admin/approvers", headers=ADMIN,
+                             json={"reason": "Delivery", "main": main, "backup": backup})
+    assert set_answer.status_code == 200, set_answer.get_data(as_text=True)
+
+
+def went_to(phone, reference):
+    return any(whatsapp.same_number(to, phone) and reference in body for to, body in sent)
+
+
+set_delivery(first, second)
+delivery = {**payload, "reason": "Delivery", "visiting": "Front office"}
+waiting = client.post("/api/requests", json=delivery).get_json()["reference"]
+asked_again = client.post("/api/requests", json=delivery).get_json()["reference"]
+visits.mark_escalated(asked_again)
+sent.clear()
+set_delivery(third, second)
+assert went_to(third, waiting), "a waiting request goes to the new approver"
+assert not any(asked_again in body for _, body in sent), "its backup did not change"
+sent.clear()
+set_delivery(third, first)
+assert went_to(first, asked_again), "an asked-again request goes to the new backup"
+assert not any(waiting in body for _, body in sent), "the approver did not change"
+sent.clear()
+set_delivery(third, first)
+assert not sent, "no change, nothing sent"
+assert any("Open requests sent to them: 1" in change["detail"] for change in audit.everything())
+# A deleted office's open requests go to the approvers for Other, and are sent to them.
+client.post("/api/admin/offices", headers=ADMIN,
+            json={"name": "Hostel Office", "main": "+919300000004", "backup": ""})
+hostel = client.post("/api/requests", json={
+    **payload, "reason": "See an office", "office": "Hostel Office"}).get_json()["reference"]
+sent.clear()
+client.post("/api/admin/offices/remove", headers=ADMIN, json={"name": "Hostel Office"})
+assert went_to(people.approver_table()["reasons"]["Other"][0], hostel), sent
+print("  waiting to the new approver, asked again to the new backup, a deleted office to Other")
+
+print("only super admins download the logs, and the gate never sees a visitor's phone")
+limits.forget_hits()
+plain_admin = client.post("/api/admin/admins", headers=ADMIN,
+                          json={"name": "Plain Admin", "phone": "+919300000009"}).get_json()
+plain_key = {"X-Admin-Key": plain_admin["key"]}
+for log_path in ("/api/admin/export.zip", "/api/admin/export.csv", "/api/admin/staff-entries.csv"):
+    assert client.get(log_path, headers=plain_key).status_code == 409, log_path
+    assert client.get(log_path, headers=ADMIN).status_code == 200, log_path
+gate_pass = client.get(f"/api/pass/{entry_of(approved())}", headers=KEY).get_json()
+assert "phone" not in gate_pass and gate_pass["name"], gate_pass
+# On WhatsApp too: a guard's lookup has no phone. An approver, who has it already, keeps it.
+looked_up = approved()
+guard_reply = say(APPROVER, entry_of(looked_up))
+assert looked_up["name"] in guard_reply and "Phone:" not in guard_reply, guard_reply
+theirs = client.post("/api/requests", json={**payload, "reason": "Delivery",
+                                             "visiting": "Front office"}).get_json()["reference"]
+approver_reply = say("919300000003", theirs)
+assert "Phone: 9876543210" in approver_reply, approver_reply
+# Another reason's request reads as no pass at all, so references cannot be tried one by one.
+assert say("919300000003", looked_up["reference"]) == f"No pass has code {looked_up['reference']}."
+print("  409 for a plain admin, 200 for a super, no phone for a guard on the page or WhatsApp")
 
 # Last, because it closes the database for the rest of this process.
 print("on exit, the timer stops and the database closes before Python shuts down")

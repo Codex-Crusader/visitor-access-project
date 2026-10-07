@@ -1,6 +1,7 @@
 /* global saveFile, askForKey */  // from shared.js, which admin.html loads first
 const CALL_TIMEOUT = 75000;  // a sleeping free server can take ~50s to wake
 const SEARCH_WAIT = 300;     // ms after the last key press before a search runs
+const IDLE_MINUTES = 30;     // no click or key press for this long signs the page out
 
 const el = i => document.getElementById(i);
 const main = el("main");
@@ -9,8 +10,11 @@ const x = s => String(s ?? "").replace(/[&<>"']/g, c => ESC[c]);
 // One formatter each, made once: making one for every row is the slow part of a long list.
 const WHEN_FORMAT = new Intl.DateTimeFormat([], {day: "numeric", month: "short", hour: "2-digit", minute: "2-digit"});
 const DAY_FORMAT = new Intl.DateTimeFormat([], {day: "numeric", month: "short", year: "numeric"});
+const TIME_FORMAT = new Intl.DateTimeFormat([], {hour: "2-digit", minute: "2-digit"});
+const LONG_DAY = new Intl.DateTimeFormat([], {weekday: "long", day: "numeric", month: "long"});
 const when = t => t ? WHEN_FORMAT.format(new Date(t)) : "—";
 const day = t => DAY_FORMAT.format(new Date(t));
+const clock = t => TIME_FORMAT.format(new Date(t));
 
 // The filters, in the order of the tiles. "waiting" is pending and escalated.
 const FILTERS = [
@@ -25,26 +29,41 @@ const STATUS = {
   declined: ["stop", "Declined"], closed: ["done", "Closed"],
   expired: ["done", "Expired"],
 };
-// The approvers and the offices share a tab. The allow list and the blacklist sit together.
-const TABS = [
-  ["visits", "Visits"], ["numbers", "Approvers"], ["staff", "Allow list"],
-  ["blacklist", "Blacklist"], ["guards", "Guards"], ["admins", "Admins"],
+
+// The side menu, grouped by how often each part is used. A one-item row is a group heading.
+const ICONS = {
+  today: '<path d="M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/>',
+  visits: '<path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/>',
+  staff: '<circle cx="9" cy="8" r="4"/><path d="M2 21c0-4 3-6 7-6s7 2 7 6M16 11l2 2 4-4"/>',
+  blacklist: '<circle cx="12" cy="12" r="9"/><path d="M5.6 5.6l12.8 12.8"/>',
+  numbers: '<path d="M4 21V5a1 1 0 0 1 1-1h9a1 1 0 0 1 1 1v16M15 9h4a1 1 0 0 1 1 1v11M8 8h3M8 12h3M8 16h3M2 21h20"/>',
+  guards: '<path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/>',
+  admins: '<circle cx="8" cy="15" r="4"/><path d="M11 12l9-9M17 6l3 3"/>',
+  log: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+};
+const MENU = [
+  ["Daily"], ["today", "Today"], ["visits", "Visits"],
+  ["People"], ["staff", "Allow list"], ["blacklist", "Blacklist"],
+  ["Setup"], ["numbers", "Approvers & offices"], ["guards", "Guards"], ["admins", "Admins"],
+  ["log", "Change log"],
 ];
+const SECTIONS = Object.fromEntries(MENU.filter(m => m.length === 2));
 
 // The lists with an add form and a Delete button. Each form field is [name, label, type].
 const PHONE = ["phone", "WhatsApp number", "tel"];
 const TAG = ["tag", "Tag (you may leave it empty)", "text"];
 const FORMS = {
-  staff: {prefix: "s", url: "/api/admin/staff", button: "Add to the allow list and make a code",
-          fields: [["name", "Name", "text"], PHONE, TAG]},
-  offices: {prefix: "o", url: "/api/admin/offices", button: "Add office",
-            fields: [["name", "Office name", "text"], ["main", "Approver", "tel"],
-                     ["backup", "Backup approver (you may leave it empty)", "tel"], TAG]},
-  guards: {prefix: "g", url: "/api/admin/guards", button: "Add guard and make a key",
-           fields: [["name", "Name", "text"], PHONE]},
-  admins: {prefix: "a", url: "/api/admin/admins", button: "Add admin and make a key",
-           fields: [["name", "Name", "text"], PHONE]},
-  blacklist: {prefix: "b", url: "/api/admin/blacklist", button: "Add to the blacklist", tone: "stop",
+  staff: {prefix: "s", url: "/api/admin/staff", title: "Add to the allow list", open: "Add person",
+          button: "Add and make a code", fields: [["name", "Name", "text"], PHONE, TAG]},
+  offices: {prefix: "o", url: "/api/admin/offices", title: "Add an office", open: "Add office",
+            button: "Add office", fields: [["name", "Office name", "text"], ["main", "Approver", "tel"],
+                                          ["backup", "Backup approver (you may leave it empty)", "tel"], TAG]},
+  guards: {prefix: "g", url: "/api/admin/guards", title: "Add a guard", open: "Add guard",
+           button: "Add guard and make a key", fields: [["name", "Name", "text"], PHONE]},
+  admins: {prefix: "a", url: "/api/admin/admins", title: "Add an admin", open: "Add admin",
+           button: "Add admin and make a key", fields: [["name", "Name", "text"], PHONE]},
+  blacklist: {prefix: "b", url: "/api/admin/blacklist", title: "Add to the blacklist", open: "Add number",
+              button: "Add to the blacklist", tone: "stop",
               fields: [["name", "Name", "text"], ["phone", "Phone number", "tel"],
                        ["reason", "Reason (you may leave it empty)", "text"]]},
 };
@@ -54,7 +73,9 @@ const MISSING = {name: "Type the name.", phone: "Type the phone number.",
 // One person as approver and backup: the table says so, rather than the number twice.
 const backupCell = row => row.backup === row.main ? `<span class="fixed">Same as approver</span>` : x(row.backup);
 
-let section = "visits"; // the open tab
+// The open part, from the address, so Refresh and Back keep the place.
+const fromHash = () => SECTIONS[window.location.hash.slice(1)] ? window.location.hash.slice(1) : "";
+let section = fromHash() || "today";
 let rows = [];
 let next = null;
 let filter = "all";
@@ -67,6 +88,9 @@ let editing = null;     // the reason whose approvers are being changed
 let fieldErrors = {};
 let draft = null;       // the numbers typed in the open editor
 let approverNote = "";
+// The waiting requests for the Today page: the first page of them.
+let waiting = [];
+let waitingMore = false;
 // What the server's lists hold. Every change answers with all of them.
 const EMPTY_TEAM = {gate_desk: "", guards: [], main_admin: "", admins: [], you: "",
                     offices: [], staff: [], staff_entries: [], blacklist: [], blocked: [],
@@ -94,9 +118,31 @@ function setKey(value) {
   try { localStorage.setItem("adminkey", value); } catch { /* this page view only */ }
 }
 
-function forgetKey(why = "") {
-  try { localStorage.removeItem("adminkey"); } catch { /* it was never stored */ }
-  rows = []; next = null; counts = {}; approvers = []; notes = {}; notice = why; info = "";
+// The page signs out by itself after IDLE_MINUTES with no click or key press, also in a
+// hidden tab: the last use is stored, so it is checked when the tab is seen again.
+const SEEN = "adminseen";
+let seenWritten = 0;
+
+function touch(now = Date.now()) {
+  if (now - seenWritten < 30000) return;
+  seenWritten = now;
+  try { localStorage.setItem(SEEN, String(now)); } catch { /* this page view only */ }
+}
+
+function idle() {
+  if (!key()) return false;
+  let seen = 0;
+  try { seen = Number(localStorage.getItem(SEEN)) || 0; } catch { /* nothing stored */ }
+  if (!seen || Date.now() - seen < IDLE_MINUTES * 60000) return false;
+  forgetKey("", `Signed out after ${IDLE_MINUTES} minutes with no use. Type your key to open the page again.`);
+  return true;
+}
+
+function forgetKey(why = "", note = "") {
+  try { localStorage.removeItem("adminkey"); localStorage.removeItem(SEEN); } catch { /* never stored */ }
+  seenWritten = 0;
+  rows = []; next = null; counts = {}; approvers = []; notes = {}; notice = why; info = note;
+  waiting = []; waitingMore = false;
   team = {...EMPTY_TEAM};
   for (const reference in photos) delete photos[reference];
   el("over").innerHTML = "";
@@ -129,7 +175,7 @@ async function call(url, body = null) {
   return data;
 }
 
-// Asks before a delete, a ban or a bulk decision. Resolves true only for the first button.
+// Asks before a deletion, a ban or a bulk decision. Resolves true only for the first button.
 function confirmDelete(line, yes = "Delete", tone = "stop") {
   return new Promise(done => {
     el("over").innerHTML = `<div class="sheet" role="dialog" aria-modal="true" aria-labelledby="sure">
@@ -179,11 +225,11 @@ function item(v) {
   const [main1, backup] = v.approvers || [];
   const [tone, word] = STATUS[v.status] || ["", v.status];
   const [byTone, byLine] = decision(v);
-  const body = `<details><summary>
+  const body = `<details class="visit"><summary>
       <span><b>${x(v.name)}${plus(v)}</b><small>${x(v.phone)}</small>
         ${byLine ? `<small class="by" data-tone="${byTone}">${x(byLine)}</small>` : ""}</span>
       <span class="mid"><b>${x(v.reason)}</b><small>Visiting ${x(v.visiting)}</small></span>
-      <span class="side"><code>${x(v.reference)}</code><br>
+      <span class="side-col"><code>${x(v.reference)}</code><br>
         <span class="pill" data-tone="${tone}">${x(word)}</span></span>
     </summary>
     <div class="more"><dl>
@@ -194,7 +240,7 @@ function item(v) {
       <dt>Approvers now</dt><dd>${x(main1)}${backup && backup !== main1 ? `, backup ${x(backup)}` : " (also the backup)"}</dd>
       <dt>Requested</dt><dd>${when(v.created_at)}</dd>
       <dt>Pass valid until</dt><dd>${when(v.expires_at)}</dd>
-      <dt>Sent to backup</dt><dd>${when(v.escalated_at)}</dd>
+      <dt>Asked again</dt><dd>${when(v.escalated_at)}</dd>
       <dt>Decided</dt><dd>${when(v.decided_at)}</dd>
       <dt>Decision</dt><dd>${x(byLine || "Not decided yet")}</dd>
       <dt>Entered</dt><dd>${when(v.entered_at)}${v.entered_by ? ` by ${x(v.entered_by)}` : ""}</dd>
@@ -205,7 +251,7 @@ function item(v) {
     </div></details>`;
   if (!pickable(v)) return body;
   return `<div class="pickrow"><label class="tick"><input type="checkbox" data-pick-ref="${x(v.reference)}"
-      ${picked.has(v.reference) ? "checked" : ""} aria-label="Select ${x(v.name)} ${x(v.reference)}"></label>${body}</div>`;
+      aria-label="Select ${x(v.name)} ${x(v.reference)}"></label>${body}</div>`;
 }
 
 // The gate page's photo loads only when the admin asks, then stays for this page view.
@@ -236,49 +282,63 @@ async function showPhoto(button) {
 }
 
 // ------------------------------------------------- bulk decisions, super admins only
-// The waiting requests chosen on screen, by reference. The list pages 50 at a time.
+// The waiting requests chosen on screen, by reference. Today and Visits share the choice.
 const picked = new Set();
 let bulkNote = null;
 const pickable = v => team.super && (v.status === "pending" || v.status === "escalated");
+// Ticks the boxes of the chosen requests in a list just drawn.
+function tickPicked(box) {
+  for (const tick of box.querySelectorAll("[data-pick-ref]")) tick.checked = picked.has(tick.dataset.pickRef);
+}
+
+const BULKS = {
+  visits: {box: "bulk", all: "pick-all", count: "picked-count", yes: "bulk-yes", no: "bulk-no",
+           note: "bulk-note", rows: () => rows},
+  today: {box: "t-bulk", all: "t-pick-all", count: "t-picked", yes: "t-yes", no: "t-no",
+          note: "t-note", rows: () => waiting},
+};
 
 function renderBulk() {
-  const open = rows.filter(pickable);
+  if (!el("bulk")) return;
   // A row that left the screen, or stopped waiting, leaves the selection too.
-  for (const reference of [...picked]) {
-    if (!open.some(v => v.reference === reference)) picked.delete(reference);
+  const open = new Set([...rows, ...waiting].filter(pickable).map(v => v.reference));
+  for (const reference of [...picked]) if (!open.has(reference)) picked.delete(reference);
+  for (const b of Object.values(BULKS)) {
+    const mine = b.rows().filter(pickable);
+    el(b.box).hidden = !mine.length;
+    const all = mine.length && mine.every(v => picked.has(v.reference));
+    el(b.all).textContent = all ? "Clear the selection" : `Select all ${mine.length} waiting on screen`;
+    el(b.count).textContent = `${picked.size} selected`;
+    el(b.yes).textContent = picked.size ? `Approve ${picked.size}` : "Approve";
+    el(b.no).textContent = picked.size ? `Decline ${picked.size}` : "Decline";
+    el(b.yes).disabled = el(b.no).disabled = !picked.size;
+    el(b.note).innerHTML = bulkNote ? `<div class="note ${bulkNote.tone}">${bulkNote.html}</div>` : "";
   }
-  el("bulk").hidden = !open.length;
-  const all = open.length && picked.size === open.length;
-  el("pick-all").textContent = all ? "Clear the selection" : `Select all ${open.length} waiting on screen`;
-  el("picked-count").textContent = `${picked.size} selected`;
-  el("bulk-yes").textContent = picked.size ? `Approve ${picked.size}` : "Approve";
-  el("bulk-no").textContent = picked.size ? `Decline ${picked.size}` : "Decline";
-  el("bulk-yes").disabled = el("bulk-no").disabled = !picked.size;
-  el("bulk-note").innerHTML = bulkNote ? `<div class="note ${bulkNote.tone}">${bulkNote.html}</div>` : "";
 }
 
-function pickAll() {
-  const open = rows.filter(pickable);
-  if (picked.size === open.length) picked.clear();
-  else for (const v of open) picked.add(v.reference);
+function pickAll(which = "visits") {
+  const mine = BULKS[which].rows().filter(pickable);
+  if (mine.every(v => picked.has(v.reference))) for (const v of mine) picked.delete(v.reference);
+  else for (const v of mine) picked.add(v.reference);
   renderList();
+  renderToday();
 }
 
-async function bulkDecide(decision) {
+async function bulkDecide(choice) {
   const references = [...picked];
   const n = references.length;
   const what = `${n} ${n === 1 ? "request" : "requests"}`;
-  const line = decision === "approve"
+  const line = choice === "approve"
     ? `Approve ${what}? Each guard gets one WhatsApp message with the list.`
     : `Decline ${what}? The visitors see Declined.`;
-  const verb = decision === "approve" ? "Approve" : "Decline";
-  if (!(await confirmDelete(line, `${verb} ${n}`, decision === "approve" ? "go" : "stop"))) return;
+  const verb = choice === "approve" ? "Approve" : "Decline";
+  if (!(await confirmDelete(line, `${verb} ${n}`, choice === "approve" ? "go" : "stop"))) return;
   try {
-    const answer = await call("/api/admin/decide", {references, decision});
+    const answer = await call("/api/admin/decide", {references, decision: choice});
     picked.clear();
     const skipped = answer.skipped.map(s => `${x(s.reference)}: ${x(s.why)}`).join("<br>");
     bulkNote = {tone: answer.skipped.length ? "bad" : "good",
-      html: `${decision === "approve" ? "Approved" : "Declined"} ${answer.decided.length}.`
+      html: `${choice === "approve" ? "Approved" : "Declined"} ${answer.decided.length}.`
         + (skipped ? ` Not changed:<br>${skipped}` : "")};
     refresh();
   } catch (err) {
@@ -289,9 +349,11 @@ async function bulkDecide(decision) {
 }
 
 function renderList() {
+  if (!el("list")) return;
   el("list").innerHTML = rows.length
     ? rows.map(item).join("")
     : `<div class="empty">${loading ? "Loading…" : query ? "No request matches that search." : "No requests here."}</div>`;
+  tickPicked(el("list"));
   el("found").textContent = rows.length
     ? `Showing ${rows.length} ${rows.length === 1 ? "request" : "requests"}${next ? ". Show more loads the next ones." : "."}`
     : "";
@@ -302,6 +364,54 @@ function renderList() {
   renderBulk();
 }
 
+// ------------------------------------------------------------------- Today
+// The entries made today, by this device's date. The campus and its admins share a time zone.
+const isToday = t => new Date(t).toDateString() === new Date().toDateString();
+const DAY_MS = 86400000;
+const recentBlocks = () => team.blocked.filter(a => Date.now() - Date.parse(a.at) < DAY_MS);
+
+function stat(go, n, label, tone) {
+  return `<button class="stat" data-go="${go}" data-tone="${n ? tone : ""}"><b>${n}</b> <span>${label}</span></button>`;
+}
+
+function renderToday() {
+  if (!el("t-list")) return;
+  const staffToday = team.staff_entries.filter(e => isToday(e.entered_at));
+  const blocks = recentBlocks();
+  el("today-date").textContent = LONG_DAY.format(new Date());
+  el("stats").innerHTML = stat("visits:waiting", count("waiting"), "Waiting for a decision", "wait")
+    + stat("visits:inside", count("inside"), "Visitors inside now", "go")
+    + stat("staff", staffToday.length, "Staff entries today", "go")
+    + stat("blacklist", blocks.length, "Blocked in 24 hours", "stop");
+  el("t-count").textContent = waiting.length ? `${waiting.length}${waitingMore ? "+" : ""}` : "";
+  el("t-count").hidden = !waiting.length;
+  el("t-list").innerHTML = waiting.length ? waiting.map(item).join("")
+    : `<div class="empty">Nothing is waiting. New requests show here.</div>`;
+  tickPicked(el("t-list"));
+  el("t-staff").innerHTML = staffToday.length
+    ? `<ul class="mini">${staffToday.slice(0, 8).map(e => `<li><span><b>${x(e.name)}</b>
+        <small>Recorded by ${x(e.entered_by)}</small></span><time>${clock(e.entered_at)}</time></li>`).join("")}</ul>`
+    : `<p class="fixed">No staff entries yet today.</p>`;
+  el("t-blocked").innerHTML = blocks.length
+    ? `<ul class="mini">${blocks.slice(0, 5).map(a => `<li><span><b>${x(a.name)}</b>
+        <small>${x(a.what)}</small></span><time>${clock(a.at)}</time></li>`).join("")}</ul>`
+    : `<p class="fixed">The blacklist stopped no one in the last 24 hours.</p>`;
+  renderBulk();
+}
+
+async function loadWaiting() {
+  try {
+    const page = await call("/api/admin/visits?status=waiting");
+    waiting = page.visits || [];
+    waitingMore = !!page.next;
+  } catch (err) {
+    if (err instanceof WrongKey) return forgetKey(err.message);
+    // The Visits list shows the same failure, so Today stays quiet.
+  }
+  if (key()) renderToday();
+}
+
+// ------------------------------------------------------------------- approvers
 function approverRow(a) {
   if (a.reason !== editing) {
     return `<tr><td>${x(a.reason)}</td><td>${x(a.main)}</td><td>${backupCell(a)}</td>
@@ -316,12 +426,13 @@ function approverRow(a) {
   const typed = draft || {...a, backup: a.backup === a.main ? "" : a.backup};
   return `<tr><td colspan="4"><b>${x(a.reason)}</b>
       <div class="pair">${field("main", "Approver", typed.main)}${field("backup", "Backup approver (you may leave it empty)", typed.backup)}</div>
-      <div class="pair" style="margin-top:12px">
+      <div class="pair gap-top">
         <button class="btn" id="ap-save">Save</button>
         <button class="btn plain" id="ap-cancel">Cancel</button></div></td></tr>`;
 }
 
 function renderApprovers() {
+  if (!el("approvers")) return;
   el("approvers").innerHTML = `<table><thead><tr><th>Reason</th><th>Approver</th><th>Backup</th><th></th></tr></thead>
     <tbody>${approvers.map(approverRow).join("")}</tbody></table>`;
   el("approver-note").innerHTML = approverNote ? `<div class="note good">${x(approverNote)}</div>` : "";
@@ -344,7 +455,7 @@ async function saveApprovers() {
   try {
     const saved = await call("/api/admin/approvers", {reason, main: main1, backup});
     approvers = saved.approvers;
-    approverNote = `Saved. New requests for ${reason} now go to these two numbers.`;
+    approverNote = `Saved. New and open requests for ${reason} now go to these numbers.`;
     if (editing === reason) { editing = null; draft = null; }
   } catch (err) {
     if (err instanceof WrongKey) return forgetKey(err.message);
@@ -356,7 +467,8 @@ async function saveApprovers() {
 }
 
 // ------------------------------------------- staff, offices, guards and admins
-const del = (data, label) => `<button class="small del" ${data} data-label="${x(label)}">Delete</button>`;
+const del = (kind, id, label) =>
+  `<button class="small del" data-delete="${kind}" data-id="${x(id)}" data-label="${x(label)}">Delete</button>`;
 const newKey = (kind, phone) => `<button class="small warn" data-newkey="${kind}" data-id="${x(phone)}">New key</button>`;
 const you = label => label === team.you ? `<span class="you">You</span>` : "";
 const table = (heads, body) => `<table><thead><tr>${heads.map(h => `<th>${h}</th>`).join("")}</tr></thead>
@@ -388,32 +500,32 @@ function shows(kind, row) {
 
 // The rows that pass the filter. Under All, each tag gets a heading, the untagged last.
 function tagged(kind, empty, columns, line) {
-  const rows = team[kind].filter(row => shows(kind, row))
+  const matches = team[kind].filter(row => shows(kind, row))
     .sort((a, b) => (a.tag === "") - (b.tag === "") || byText(a.tag, b.tag) || byText(a.name, b.name));
   if (!team[kind].length) return `<tr><td colspan="${columns}" class="fixed">${empty}</td></tr>`;
-  if (!rows.length) return `<tr><td colspan="${columns}" class="fixed">Nothing matches the tag or the search.</td></tr>`;
-  const shown = rows.slice(0, views[kind].limit);
-  const rest = rows.length - shown.length;
+  if (!matches.length) return `<tr><td colspan="${columns}" class="fixed">Nothing matches the tag or the search.</td></tr>`;
+  const shown = matches.slice(0, views[kind].limit);
+  const rest = matches.length - shown.length;
   const more = rest ? `<tr class="more-row"><td colspan="${columns}"><button class="small edit" data-more="${kind}">
       Show ${Math.min(PAGE, rest)} more, of ${rest} not shown</button></td></tr>` : "";
   if (views[kind].tag !== null) return shown.map(line).join("") + more;
   // One pass for every tag's count: O(n), not O(n) again for each tag. The count is of every
   // matching row, also the rows not shown yet.
-  const counts = countTags(rows);
+  const perTag = countTags(matches);
   let out = "";
   shown.forEach((row, i) => {
     if (i === 0 || row.tag !== shown[i - 1].tag) {
-      out += `<tr class="group"><td colspan="${columns}">${x(row.tag || "No tag")} <span>${counts.get(row.tag)}</span></td></tr>`;
+      out += `<tr data-group="${x(row.tag)}"><td colspan="${columns}">${x(row.tag || "No tag")} <span>${perTag.get(row.tag)}</span></td></tr>`;
     }
     out += line(row);
   });
   return out + more;
 }
 
-function countTags(rows) {
-  const counts = new Map();
-  for (const row of rows) counts.set(row.tag, (counts.get(row.tag) || 0) + 1);
-  return counts;
+function countTags(list) {
+  const perTag = new Map();
+  for (const row of list) perTag.set(row.tag, (perTag.get(row.tag) || 0) + 1);
+  return perTag;
 }
 
 const tagButton = (kind, row, label) =>
@@ -425,14 +537,18 @@ const tagCell = row => row.tag ? x(row.tag) : `<span class="fixed">No tag</span>
 function renderTagBar(kind) {
   const {prefix} = FORMS[kind];
   const chosen = views[kind].tag;
-  const counts = countTags(team[kind]);
-  const count = tag => counts.get(tag) || 0;
-  const chip = (tag, label, n) => `<button ${tag === null ? "data-all" : `data-filter-tag="${x(tag)}"`}
-    aria-pressed="${chosen === tag}">${x(label)} <span>${n}</span></button>`;
+  const perTag = countTags(team[kind]);
+  const countOf = tag => perTag.get(tag) || 0;
+  const chip = (tag, label, n) => `<button data-all="${tag === null ? "yes" : "no"}" data-filter-tag="${x(tag ?? "")}">
+    ${x(label)} <span>${n}</span></button>`;
   el(`${prefix}-chips`).innerHTML = (team[kind].length ? chip(null, "All", team[kind].length)
-    + tagsOf(kind).map(tag => chip(tag, tag, count(tag))).join("")
-    + (count("") ? chip("", "No tag", count("")) : "") : "")
+    + tagsOf(kind).map(tag => chip(tag, tag, countOf(tag))).join("")
+    + (countOf("") ? chip("", "No tag", countOf("")) : "") : "")
     + (chosen ? `<button class="small edit" data-rename>Rename this tag</button>` : "");
+  for (const chip of el(`${prefix}-chips`).querySelectorAll("[data-filter-tag]")) {
+    const tag = chip.dataset.all === "yes" ? null : chip.dataset.filterTag;
+    chip.setAttribute("aria-pressed", tag === chosen ? "true" : "false");
+  }
   el(`${prefix}-tagpick`).innerHTML = pickChips(kind);
 }
 
@@ -493,7 +609,7 @@ function onTagBar(kind, e) {
   const hit = e.target.closest("button");
   if (!hit) return;
   if (hit.hasAttribute("data-rename")) return void renameTag(kind);
-  views[kind].tag = hit.hasAttribute("data-all") ? null : hit.dataset.filterTag;
+  views[kind].tag = hit.dataset.all === "yes" ? null : hit.dataset.filterTag;
   views[kind].limit = PAGE;
   renderTagged(kind);
 }
@@ -508,26 +624,26 @@ function renderTagged(kind) {
 
 const TABLES = {
   staff: () => table(["Name", "WhatsApp number", "Code", "Tag", "Added", ""],
-    tagged("staff", "No one is on the allow list yet.", 6, p => `<tr><td>${x(p.name)}</td><td>${x(p.phone)}</td>
+    tagged("staff", "No one is on the allow list yet. Tap Add person.", 6, p => `<tr><td>${x(p.name)}</td><td>${x(p.phone)}</td>
         <td><code>${x(p.code)}</code></td><td>${tagCell(p)}</td><td>${day(p.added_at)}</td>
         <td class="acts">${tagButton("staff", p, p.name)}
-          ${del(`data-delete="staff" data-id="${x(p.code)}"`, `${p.name} ${p.code}`)}</td></tr>`)),
+          ${del("staff", p.code, `${p.name} ${p.code}`)}</td></tr>`)),
   offices: () => table(["Office", "Approver", "Backup", "Tag", ""],
     tagged("offices", "No offices yet. Visitors type the office's name.", 5, o => `<tr><td>${x(o.name)}</td>
         <td>${x(o.main)}</td><td>${backupCell(o)}</td><td>${tagCell(o)}</td>
         <td class="acts">${tagButton("offices", o, o.name)}
-          ${del(`data-delete="offices" data-id="${x(o.name)}"`, o.name)}</td></tr>`)),
+          ${del("offices", o.name, o.name)}</td></tr>`)),
   blacklist: () => table(["Name", "Phone number", "Reason", "Added", ""], team.blacklist.length
     ? team.blacklist.map(b => `<tr><td>${x(b.name)}</td><td>${x(b.phone)}</td><td>${x(b.reason || "—")}</td>
         <td>${day(b.added_at)}</td>
-        <td class="acts">${del(`data-delete="blacklist" data-id="${x(b.phone)}"`, `${b.name} ${b.phone}`)}</td></tr>`).join("")
+        <td class="acts">${del("blacklist", b.phone, `${b.name} ${b.phone}`)}</td></tr>`).join("")
     : `<tr><td colspan="5" class="fixed">No number is on the blacklist.</td></tr>`),
   guards: () => table(["Name", "WhatsApp number", "Added", ""],
     `<tr><td>Gate desk</td><td>${x(team.gate_desk)}</td>
        <td colspan="2" class="fixed">Set as GUARD on the server. Uses the shared gate key.</td></tr>`
     + team.guards.map(g => `<tr><td>${x(g.name)}</td><td>${x(g.phone)}</td><td>${day(g.added_at)}</td>
         <td class="acts">${newKey("guards", g.phone)}
-          ${del(`data-delete="guards" data-id="${x(g.phone)}"`, `${g.name} ${g.phone}`)}</td></tr>`).join("")),
+          ${del("guards", g.phone, `${g.name} ${g.phone}`)}</td></tr>`).join("")),
   admins: () => table(["Name", "WhatsApp number", "Added", ""],
     `<tr><td>Main admin${you("Main admin (ADMIN_KEY)")}${SUPER}</td><td>${x(team.main_admin)}</td>
        <td colspan="2" class="fixed">Set as ADMIN_PHONE on the server. Uses ADMIN_KEY.</td></tr>`
@@ -544,12 +660,12 @@ function adminActions(a) {
   const role = team.super && label !== team.you
     ? `<button class="small ${a.super ? "del" : "go"}" data-super="${x(a.phone)}" data-on="${!a.super}" data-label="${x(label)}">
         ${a.super ? "Remove super admin" : "Make super admin"}</button>` : "";
-  return `${role} ${newKey("admins", a.phone)} ${del(`data-delete="admins" data-id="${x(a.phone)}"`, label)}`;
+  return `${role} ${newKey("admins", a.phone)} ${del("admins", a.phone, label)}`;
 }
 
 async function setSuper(phone, on, label) {
   const line = on
-    ? `Make ${label} a super admin? A super admin can approve and decline many requests at once, and change other super admins.`
+    ? `Make ${label} a super admin? A super admin can approve and decline many requests at once, download the logs, and change other super admins.`
     : `Take away super admin from ${label}? They stay an admin.`;
   if (!(await confirmDelete(line, on ? "Make super admin" : "Take it away", on ? "go" : "stop"))) return;
   if (await teamCall("admins", "/api/admin/admins/super", {phone, super: on})) {
@@ -575,10 +691,7 @@ function renderEntries() {
   labelCells(el("s-entries"));
 }
 
-const DAY = 86400000;
-const recent = () => team.blocked.filter(a => Date.now() - Date.parse(a.at) < DAY).length;
-
-// Each time the blacklist stopped someone. The alert shows on every tab for a day.
+// Each time the blacklist stopped someone. The alert shows on every part for a day.
 function renderBlocked() {
   el("b-attempts").innerHTML = table(["When", "Name", "Phone number", "What happened", "Where"],
     team.blocked.length
@@ -586,27 +699,29 @@ function renderBlocked() {
           <td>${x(a.what)}${a.detail ? ` <code>${x(a.detail)}</code>` : ""}</td><td>${x(a.by_whom)}</td></tr>`).join("")
       : `<tr><td colspan="5" class="fixed">The blacklist has stopped no one yet.</td></tr>`);
   labelCells(el("b-attempts"));
-  const count = recent();
-  el("alert").innerHTML = count
-    ? `<div class="note bad alert"><span>The blacklist stopped ${count === 1 ? "one attempt" : `${count} attempts`}
+  const blocks = recentBlocks().length;
+  el("alert").innerHTML = blocks
+    ? `<div class="note bad alert"><span>The blacklist stopped ${blocks === 1 ? "one attempt" : `${blocks} attempts`}
         in the last 24 hours.</span><button class="small" data-section="blacklist">See who</button></div>`
     : "";
-  el("tabs").querySelector('[data-section="blacklist"]').innerHTML =
-    `Blacklist${count ? ` <span class="count">${count}</span>` : ""}`;
+  renderMenu();
 }
 
 function renderTeam() {
+  if (!el("s-table")) return;
   for (const kind of Object.keys(views)) renderTagged(kind);
-  for (const [kind, form] of Object.entries(FORMS)) {
+  for (const [kind, spec] of Object.entries(FORMS)) {
     if (!(kind in views)) {
-      el(`${form.prefix}-table`).innerHTML = TABLES[kind]();
-      labelCells(el(`${form.prefix}-table`));
+      el(`${spec.prefix}-table`).innerHTML = TABLES[kind]();
+      labelCells(el(`${spec.prefix}-table`));
     }
     const note = notes[kind];
-    el(`${form.prefix}-note`).innerHTML = note ? `<div class="note ${note.tone}">${note.html}</div>` : "";
-    for (const [name] of form.fields) {
-      el(`${form.prefix}-${name}-err`).textContent = formErrors[kind][name] || "";
+    el(`${spec.prefix}-note`).innerHTML = note ? `<div class="note ${note.tone}">${note.html}</div>` : "";
+    for (const [name] of spec.fields) {
+      el(`${spec.prefix}-${name}-err`).textContent = formErrors[kind][name] || "";
     }
+    // A form with a problem stays open, so the admin sees why.
+    if (Object.keys(formErrors[kind]).length) el(`${spec.prefix}-form`).hidden = false;
   }
   renderEntries();
   renderBlocked();
@@ -616,21 +731,33 @@ function renderTeam() {
     : `<tr><td colspan="4" class="fixed">No changes yet.</td></tr>`);
   labelCells(el("a-changes"));
   el("you").textContent = team.you ? `Signed in as ${team.you}${team.super ? " (super admin)" : ""}` : "";
-  if (el("list")) renderBulk();
+  // The logs hold every visitor's details and face: only a super admin downloads them.
+  el("csv").hidden = el("s-download").hidden = !team.super;
+  renderToday();
+  renderBulk();
 }
 
-const LAYOUT = {2: "pair", 3: "trio", 4: "quad"};
-
+// The add form, closed until its button opens it, so the list is the first thing on screen.
 function form(kind) {
-  const {prefix, fields, button} = FORMS[kind];
-  return `<div class="${LAYOUT[fields.length]}">${fields.map(([name, label, type]) => `<div>
+  const {prefix, fields, button, title, tone} = FORMS[kind];
+  return `<div class="addbox" id="${prefix}-form" hidden><h3>${title}</h3>
+    <div class="fields" data-cols="${fields.length}">${fields.map(([name, label, type]) => `<div>
       <label for="${prefix}-${name}">${label}</label>
-      <input id="${prefix}-${name}" type="${type}" ${type === "tel" ? `inputmode="tel" placeholder="+919876543210"`
-        : `maxlength="${name === "tag" ? 40 : 60}"`}
-        autocomplete="off"><p class="err" id="${prefix}-${name}-err"></p>
+      ${type === "tel"
+        ? `<input id="${prefix}-${name}" type="tel" inputmode="tel" placeholder="+919876543210" autocomplete="off">`
+        : `<input id="${prefix}-${name}" type="text" maxlength="${name === "tag" ? 40 : 60}" autocomplete="off">`}<p class="err" id="${prefix}-${name}-err"></p>
       ${name === "tag" ? `<div class="tagpick" id="${prefix}-tagpick"></div>` : ""}</div>`).join("")}</div>
-    <button class="btn${FORMS[kind].tone ? ` ${FORMS[kind].tone}` : ""}" id="${prefix}-add">${button}</button>`;
+    <div class="row-acts"><button class="btn${tone ? ` ${tone}` : ""}" id="${prefix}-add">${button}</button>
+      <button class="btn plain" data-close="${prefix}">Cancel</button></div></div>`;
 }
+
+// A part's title row: what it is for, and its main button.
+const head = (title, line, button = "") => `<header class="page-head"><div><h2>${title}</h2>
+  <p>${line}</p></div>${button ? `<div class="head-acts">${button}</div>` : ""}</header>`;
+const opener = kind => `<button class="btn inline ${FORMS[kind].tone || "edit"}" data-open="${FORMS[kind].prefix}">
+  ${FORMS[kind].open}</button>`;
+const help = (title, ...lines) => `<details class="help"><summary>${title}</summary>
+  ${lines.map(line => `<p>${line}</p>`).join("")}</details>`;
 
 // The search box and tag chips above a long list. Built once, so typing keeps the focus.
 const listBar = (kind, what) => `<div class="bar"><input id="${FORMS[kind].prefix}-q" type="search"
@@ -696,6 +823,7 @@ async function add(kind) {
     if (made && !shows(kind, made)) html += " It does not show below because of the tag or the search.";
     notes[kind] = {tone: "good", html};
     for (const [name] of fields) el(`${prefix}-${name}`).value = "";
+    el(`${prefix}-form`).hidden = true;
     renderTeam();
   }
   if (el(`${prefix}-add`)) el(`${prefix}-add`).disabled = false;
@@ -728,9 +856,7 @@ async function ban(button) {
     renderTeam();
     void load();
   }
-  section = "blacklist";
-  renderTabs();
-  window.scrollTo(0, 0);
+  goTo("blacklist");
 }
 
 function onTableClick(e) {
@@ -745,12 +871,53 @@ function onTableClick(e) {
 }
 
 // ------------------------------------------------------------------- the page
+const icon = name => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+  stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[name]}</svg>`;
+
+function buildMenu() {
+  el("tabs").innerHTML = MENU.map(([name, label]) => label === undefined
+    ? `<p data-group="${name}">${name}</p>`
+    : `<button role="tab" data-section="${name}" aria-controls="${name}">${icon(name)}<span>${label}</span>${name === "blacklist"
+          ? ` <span class="count" id="blocked-count" hidden></span>` : ""}</button>`).join("");
+}
+
+// Only the count changes, so a refresh never moves the keyboard focus out of the menu.
+function renderMenu() {
+  const blocks = recentBlocks().length;
+  el("blocked-count").textContent = blocks ? String(blocks) : "";
+  el("blocked-count").hidden = !blocks;
+}
+
 function renderTabs() {
-  for (const tab of el("tabs").children) {
-    const open = tab.dataset.section === section;
-    tab.setAttribute("aria-selected", open ? "true" : "false");
-    el(tab.dataset.section).hidden = !open;
+  for (const tab of el("tabs").querySelectorAll("[data-section]")) {
+    tab.setAttribute("aria-selected", tab.dataset.section === section ? "true" : "false");
   }
+  for (const name of Object.keys(SECTIONS)) {
+    if (el(name)) el(name).hidden = name !== section;
+  }
+  el("where").textContent = key() ? SECTIONS[section] : "";
+}
+
+// Opens a part, and keeps it in the address, so Back returns to the part before.
+function goTo(name, visitsFilter = null) {
+  closeMenu();
+  if (visitsFilter && visitsFilter !== filter) { filter = visitsFilter; void load(); }
+  section = name;
+  if (window.location.hash.slice(1) !== name) window.location.hash = name;
+  renderTabs();
+  window.scrollTo(0, 0);
+}
+
+function openMenu() {
+  el("side").classList.add("open");
+  el("scrim").classList.add("open");
+  el("menu").setAttribute("aria-expanded", "true");
+}
+
+function closeMenu() {
+  el("side").classList.remove("open");
+  el("scrim").classList.remove("open");
+  el("menu").setAttribute("aria-expanded", "false");
 }
 
 // Server settings still at a demo value. Only the server's host can change them, so it is a
@@ -784,7 +951,37 @@ async function sendKey() {
 }
 
 const PANELS = `
-  <section id="visits" role="tabpanel">
+  <section id="today" hidden>
+  <header class="page-head"><div><h2>Today</h2><p id="today-date"></p></div></header>
+  <div id="gaps"></div>
+  <div class="stats" id="stats"></div>
+  <div class="cols">
+    <div class="card">
+      <div class="card-head"><div><h3>Waiting for a decision <span class="pill" data-tone="wait" id="t-count"></span></h3>
+        <p>The approver decides on WhatsApp. A super admin can also decide here.</p></div>
+        <button class="link" data-go="visits:waiting">See all in Visits</button></div>
+      <div id="t-note"></div>
+      <div class="bulk" id="t-bulk" hidden>
+        <button class="small edit" id="t-pick-all"></button><span id="t-picked"></span>
+        <button class="btn go" id="t-yes" disabled>Approve</button>
+        <button class="btn stop" id="t-no" disabled>Decline</button>
+      </div>
+      <div class="list" id="t-list"></div>
+    </div>
+    <div>
+      <div class="card">
+        <div class="card-head"><h3>Staff in today</h3><button class="link" data-go="staff">Allow list</button></div>
+        <div id="t-staff"></div>
+      </div>
+      <div class="card">
+        <div class="card-head"><h3>Blocked in the last 24 hours</h3><button class="link" data-go="blacklist">Blacklist</button></div>
+        <div id="t-blocked"></div>
+      </div>
+    </div>
+  </div>
+  </section>
+  <section id="visits" hidden>
+  ${head("Visits", "Every request, newest first. Tap a request for its details, times and gate photo.")}
   <div class="tiles" id="tiles"></div>
   <div class="bar"><input id="q" type="search" placeholder="Search name, phone, code or person visited"
     aria-label="Search" autocomplete="off" spellcheck="false"></div>
@@ -798,112 +995,194 @@ const PANELS = `
   <div class="list" id="list"></div>
   <button class="btn plain" id="more" hidden>Show more</button>
   </section>
-  <section id="staff" role="tabpanel" hidden>
-  <h2>The allow list: staff and faculty who enter without a request</h2>
+  <section id="staff" hidden>
+  ${head("Allow list", "Staff and faculty who enter with a 7-digit code, without a request.", opener("staff"))}
   <div id="s-note"></div>
+  ${form("staff")}
   ${listBar("staff", "allow list")}
   <div class="wrap" id="s-table"></div>
-  <h2 class="gap">Add to the allow list</h2>
-  ${form("staff")}
-  <p class="hint">Each person on the allow list gets a 7-digit code. At the gate, they say it to the
-    guard. The guard sends the code to the app's WhatsApp number, or types it on the gate page, and
-    the entry is recorded at once. The person then gets a WhatsApp message about the entry, so a
-    code used by someone else is noticed. The guard's reply names the person, so the guard can
-    check the face. A number on the blacklist cannot be on the allow list.</p>
-  <p class="hint">A tag, such as a department, puts people into groups. Tap a tag in use, or type a
-    new one. Tag on a row moves that person to another tag, and their code stays the same. Tap a
-    tag above the list to see only that tag, and Rename this tag to rename it for everyone.</p>
-  <h2 class="gap">Recent entries</h2>
+  <div class="card-head gap-top"><h3>Recent entries</h3>
+    <button id="s-download" class="small edit" hidden>Download staff entries</button></div>
   <div class="wrap" id="s-entries"></div>
-  <p class="hint">The last 100 entries. Download staff entries saves all of them as a CSV file, with
-    the date in its own column, so a spreadsheet filter shows one day. Download log at the top saves
-    this file and the visit log together.</p>
-  <button id="s-download" class="small edit">Download staff entries</button>
+  ${help("How the allow list works",
+    `Each person on the allow list gets a 7-digit code. At the gate, they say it to the guard. The
+    guard sends the code to the app's WhatsApp number, or types it on the gate page in Staff code
+    mode, and the entry is recorded at once. The person then gets a WhatsApp message about the
+    entry, so a code used by someone else is noticed. The guard's reply names the person, so the
+    guard can check the face. A number on the blacklist cannot be on the allow list.`,
+    `A tag, such as a department, puts people into groups. Tap a tag in use, or type a new one. Tag
+    on a row moves that person to another tag, and their code stays the same. Tap a tag above the
+    list to see only that tag, and Rename this tag to rename it for everyone.`,
+    `Recent entries shows the last 100. A super admin can download all of them with Download staff
+    entries: a CSV file with the date in its own column, so a spreadsheet filter shows one day.`)}
   </section>
-  <section id="numbers" role="tabpanel" hidden>
-  <h2>Who approves each reason</h2>
-  <div id="approver-note"></div>
-  <div class="wrap" id="approvers"></div>
-  <p class="hint">Each reason needs an approver's number, with + and the country code. A
-    backup is a second person who gets the request when nobody answers in time. With no
-    backup, the approver gets a reminder instead.
-    A change works at once: the old numbers can no longer decide that reason's requests,
-    including requests already sent to them. See an office is not in this table: each office
-    below has its own approvers. A request with no office goes to the numbers for Other.
-    While the app uses Meta's test number, also add each new number to the recipient list in
-    Meta's API Setup page.</p>
-  <p class="hint" id="rules"></p>
-  <h2 class="gap" id="offices">Offices a visitor can pick</h2>
-  <div id="o-note"></div>
-  ${listBar("offices", "offices")}
-  <div class="wrap" id="o-table"></div>
-  <h2 class="gap">Add an office</h2>
-  ${form("offices")}
-  <p class="hint">A visitor who picks See an office then picks one of these offices. The request
-    goes to that office's approver, and to its backup if nobody answers. With no offices here, the
-    visitor types the office's name, and the request goes to the approvers for Other above.</p>
-  <p class="hint">A tag, such as a building, puts offices into groups, here and in the visitor's
-    list. Tap a tag in use, or type a new one. Tag on a row moves that office to another tag. Tap a
-    tag above the list to see only that tag, and Rename this tag to rename it for every office.</p>
-  </section>
-  <section id="guards" role="tabpanel" hidden>
-  <h2>Who can record entry and exit</h2>
-  <div id="g-note"></div>
-  <div class="wrap" id="g-table"></div>
-  <h2 class="gap">Add a guard</h2>
-  ${form("guards")}
-  <p class="hint">Each guard gets a gate key of their own, so the log names who let each visitor
-    in and out. A guard can also use IN and OUT from their WhatsApp number, and gets a message when
-    a request is approved. WhatsApp delivers that message only if the guard wrote to the app's
-    number in the last 24 hours. A guard who loses their key sends KEY from their phone to the
-    app's WhatsApp number, or you tap New key. Delete stops the key and the WhatsApp commands at once.
-    While the app uses Meta's test number, also add each guard's number to the recipient list
-    in Meta's API Setup page.</p>
-  </section>
-  <section id="admins" role="tabpanel" hidden>
-  <h2>Who can open this page</h2>
-  <div id="a-note"></div>
-  <div class="wrap" id="a-table"></div>
-  <h2 class="gap">Add an admin</h2>
-  ${form("admins")}
-  <p class="hint">Each admin gets an admin key of their own and sees everything on this page. An admin
-    who loses their key sends KEY from their phone to the app's WhatsApp number, or another admin
-    taps New key. A guard's number cannot be an admin, and an admin's number cannot be a guard.
-    Nobody can delete themselves.</p>
-  <p class="hint">A super admin can also approve and decline many waiting requests at once on the
-    Visits tab. The main admin is always a super admin, and a super admin can make another admin
-    one. Only a super admin can make a new key for, delete, or change a super admin.</p>
-  <h2 class="gap">Recent changes</h2>
-  <div class="wrap" id="a-changes"></div>
-  <p class="hint">Who added or deleted a guard, admin, office, allow list or blacklist entry,
-    changed approvers, or made a new key, also by KEY on WhatsApp. Keys never show here. The last
-    100 show here, and Download log saves all of them. A change you did not expect can mean a lost
-    phone or key: make a new key for that person, or delete them.</p>
-  </section>
-  <section id="blacklist" role="tabpanel" hidden>
-  <h2>Numbers that may not visit</h2>
+  <section id="blacklist" hidden>
+  ${head("Blacklist", "Numbers that may not request a visit or enter.", opener("blacklist"))}
   <div id="b-note"></div>
-  <div class="wrap" id="b-table"></div>
-  <h2 class="gap">Add to the blacklist</h2>
   ${form("blacklist")}
-  <p class="hint">A number on the blacklist cannot send a request: the visitor page says only that
-    the number cannot request a visit. The gate refuses an entry for a pass with that number, also
-    a pass approved before, on the gate page and on WhatsApp, and allow list codes for that number
-    stop. The app matches the last 10 digits, so 98765 43210 and +919876543210 are one number.
-    Each visit's details also have a "Blacklist this number" button. The blacklist cannot stop a
-    person who uses another phone, or who comes as a guest on someone else's request.</p>
-  <h2 class="gap">Blocked attempts</h2>
+  <div class="wrap" id="b-table"></div>
+  <h3 class="sub">Blocked attempts</h3>
   <div class="wrap" id="b-attempts"></div>
-  <p class="hint">Each time the blacklist stopped someone: a request on the visitor page, a pass
-    checked at the gate with its entry code, or an allow list code. Where names the guard. The last
-    100 show here, and Download log saves all of them. Tap Refresh to see new ones.</p>
+  ${help("How the blacklist works",
+    `A number on the blacklist cannot send a request: the visitor page says only that the number
+    cannot request a visit. The gate refuses an entry for a pass with that number, also a pass
+    approved before, on the gate page and on WhatsApp, and allow list codes for that number stop.
+    The app matches the last 10 digits, so 98765 43210 and +919876543210 are one number.`,
+    `Each visit's details also have a Blacklist this number button. The blacklist cannot stop a
+    person who uses another phone, or who comes as a guest on someone else's request.`,
+    `Blocked attempts lists each time the blacklist stopped someone: a request on the visitor page,
+    a pass checked at the gate, or an allow list code. Where names the guard. The last 100 show here.`)}
+  </section>
+  <section id="numbers" hidden>
+  ${head("Approvers & offices", "Who gets each request on WhatsApp, and the offices a visitor can pick.")}
+  <div class="card">
+    <div class="card-head"><div><h3>Who approves each reason</h3>
+      <p>See an office is not here: each office below has its own approvers.</p></div></div>
+    <div id="approver-note"></div>
+    <div class="wrap" id="approvers"></div>
+    <p class="hint" id="rules"></p>
+  </div>
+  <div class="card" id="offices">
+    <div class="card-head"><div><h3>Offices a visitor can pick</h3>
+      <p>Each office has its own approver, and a backup if you add one.</p></div>${opener("offices")}</div>
+    <div id="o-note"></div>
+    ${form("offices")}
+    ${listBar("offices", "offices")}
+    <div class="wrap" id="o-table"></div>
+  </div>
+  ${help("How approvers work",
+    `Each reason and each office needs an approver's number, with + and the country code. A backup
+    is a second person who gets the request when nobody answers in time. With no backup, the
+    approver gets a reminder instead.`,
+    `A change works at once. New requests go to the new numbers, and each open request goes to the
+    new number at once. The old numbers can no longer decide those requests. Deleting an office
+    sends its open requests to the approvers for Other.`,
+    `A visitor who picks See an office then picks one of the offices. With no offices here, the
+    visitor types the office's name, and the request goes to the approvers for Other. A tag, such
+    as a building, puts offices into groups, here and in the visitor's list.`,
+    `While the app uses Meta's test number, also add each new number to the recipient list in
+    Meta's API Setup page.`)}
+  </section>
+  <section id="guards" hidden>
+  ${head("Guards", "Who can record entry and exit, each with a gate key of their own.", opener("guards"))}
+  <div id="g-note"></div>
+  ${form("guards")}
+  <div class="wrap" id="g-table"></div>
+  ${help("How guards work",
+    `Each guard gets a gate key of their own, so the log names who let each visitor in and out. A
+    guard can also use IN and OUT from their WhatsApp number, and gets a message when a request is
+    approved. WhatsApp delivers that message only if the guard wrote to the app's number in the last
+    24 hours.`,
+    `A guard who loses their key sends KEY from their phone to the app's WhatsApp number, or you tap
+    New key. Delete stops the key and the WhatsApp commands at once. While the app uses Meta's test
+    number, also add each guard's number to the recipient list in Meta's API Setup page.`)}
+  </section>
+  <section id="admins" hidden>
+  ${head("Admins", "Who can open this page.", opener("admins"))}
+  <div id="a-note"></div>
+  ${form("admins")}
+  <div class="wrap" id="a-table"></div>
+  ${help("How admins work",
+    `Each admin gets an admin key of their own. An admin who loses their key sends KEY from their
+    phone to the app's WhatsApp number, or another admin taps New key. A guard's number cannot be an
+    admin, and an admin's number cannot be a guard. Nobody can delete themselves.`,
+    `A super admin can also approve and decline many waiting requests at once, and download the
+    logs. The main admin is always a super admin, and a super admin can make another admin one.
+    Only a super admin can make a new key for, delete, or change a super admin.`,
+    `The page signs out by itself after ${IDLE_MINUTES} minutes with no use. On a shared computer,
+    tap Sign out when you finish.`)}
+  </section>
+  <section id="log" hidden>
+  ${head("Change log", "Who changed what on this page, or by KEY on WhatsApp. Keys never show here.")}
+  <div class="wrap" id="a-changes"></div>
+  ${help("How the change log works",
+    `It lists who added or deleted a guard, admin, office, allow list or blacklist entry, changed
+    approvers, or made a new key. The last 100 show here, and Download logs saves all of them.`,
+    `A change you did not expect can mean a lost phone or key: make a new key for that person, or
+    delete them.`)}
   </section>`;
+
+function bindPanels() {
+  main.onclick = e => {
+    const go = e.target.closest("[data-go]");
+    if (go) { const [name, f] = go.dataset.go.split(":"); return goTo(name, f || null); }
+    const jump = e.target.closest("[data-section]");
+    if (jump) { goTo(jump.dataset.section); return el("b-attempts").scrollIntoView({block: "start"}); }
+    const open = e.target.closest("[data-open]");
+    if (open) {
+      el(`${open.dataset.open}-form`).hidden = false;
+      return el(`${open.dataset.open}-name`).focus();
+    }
+    const close = e.target.closest("[data-close]");
+    if (close) el(`${close.dataset.close}-form`).hidden = true;
+  };
+  el("tiles").onclick = e => {
+    const hit = e.target.closest("[data-filter]");
+    if (hit && hit.dataset.filter !== filter) { filter = hit.dataset.filter; void load(); }
+  };
+  el("q").oninput = e => {
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(() => { query = e.target.value.trim(); void load(); }, SEARCH_WAIT);
+  };
+  el("more").onclick = () => void load(true);
+  for (const box of [el("list"), el("t-list")]) {
+    box.addEventListener("click", e => {
+      const photo = e.target.closest("[data-photo]");
+      if (photo) void showPhoto(photo);
+      const banned = e.target.closest("[data-ban]");
+      if (banned) void ban(banned);
+    });
+    box.onchange = e => {
+      const tick = e.target.closest("[data-pick-ref]");
+      if (!tick) return;
+      if (tick.checked) picked.add(tick.dataset.pickRef);
+      else picked.delete(tick.dataset.pickRef);
+      bulkNote = null;
+      renderList();
+      renderToday();
+    };
+  }
+  el("pick-all").onclick = () => pickAll("visits");
+  el("t-pick-all").onclick = () => pickAll("today");
+  for (const id of ["bulk-yes", "t-yes"]) el(id).onclick = () => void bulkDecide("approve");
+  for (const id of ["bulk-no", "t-no"]) el(id).onclick = () => void bulkDecide("decline");
+  el("s-download").onclick = () => void downloadLogs(["staff"]);
+  for (const [kind, {prefix}] of Object.entries(FORMS)) {
+    el(`${prefix}-add`).onclick = () => void add(kind);
+    el(`${prefix}-table`).onclick = onTableClick;
+  }
+  for (const kind of Object.keys(views)) {
+    const {prefix} = FORMS[kind];
+    // Waits for a pause in typing, as the visits search does, then redraws this list only.
+    let typing = null;
+    el(`${prefix}-q`).oninput = e => {
+      clearTimeout(typing);
+      typing = setTimeout(() => {
+        views[kind].q = e.target.value.trim();
+        views[kind].limit = PAGE;
+        renderTagged(kind);
+      }, SEARCH_WAIT);
+    };
+    el(`${prefix}-chips`).onclick = e => onTagBar(kind, e);
+    el(`${prefix}-tagpick`).onclick = e => {
+      const pick = e.target.closest("[data-pick]");
+      if (pick) el(`${prefix}-tag`).value = pick.dataset.pick;
+    };
+  }
+  el("approvers").onclick = e => {
+    const hit = e.target.closest("[data-edit]");
+    if (hit) { editing = hit.dataset.edit; draft = null; fieldErrors = {}; approverNote = ""; renderApprovers(); }
+  };
+}
 
 function render() {
   const haveKey = !!key();
-  el("nav").hidden = !haveKey;
+  el("nav").hidden = el("side").hidden = el("menu").hidden = !haveKey;
+  el("shell").classList.toggle("out", !haveKey);
   if (!haveKey) {
     el("you").textContent = "";
+    el("where").textContent = "";
+    closeMenu();
     main.innerHTML = `<div class="keybox">
         <div class="hero"><h2>Sign in</h2><p>Type your admin key to see every request.</p></div>
         ${notice ? `<div class="note bad">${x(notice)}</div>` : ""}
@@ -922,80 +1201,13 @@ function render() {
     el("k").focus();
     return;
   }
-  // The search box is built once, so typing never loses focus to a redraw.
+  // The parts are built once, so typing in a search box never loses focus to a redraw.
   if (!el("list")) {
-    main.innerHTML = `
-      <div id="notice"></div>
-      <div id="alert"></div>
-      <div id="gaps"></div>
-      <div class="tabs" id="tabs" role="tablist">${TABS.map(([name, label]) =>
-        `<button role="tab" data-section="${name}" aria-controls="${name}">${label}</button>`).join("")}</div>
-      ${PANELS}`;
-    el("tabs").onclick = e => {
-      const hit = e.target.closest("[data-section]");
-      if (hit) { section = hit.dataset.section; renderTabs(); }
-    };
-    el("alert").onclick = e => {
-      if (!e.target.closest("[data-section]")) return;
-      section = "blacklist";
-      renderTabs();
-      el("b-attempts").scrollIntoView({block: "start"});
-    };
-    el("tiles").onclick = e => {
-      const hit = e.target.closest("[data-filter]");
-      if (hit && hit.dataset.filter !== filter) { filter = hit.dataset.filter; void load(); }
-    };
-    el("q").oninput = e => {
-      clearTimeout(searchTimer);
-      searchTimer = setTimeout(() => { query = e.target.value.trim(); void load(); }, SEARCH_WAIT);
-    };
-    el("more").onclick = () => void load(true);
-    el("list").onclick = e => {
-      const photo = e.target.closest("[data-photo]");
-      if (photo) void showPhoto(photo);
-      const banned = e.target.closest("[data-ban]");
-      if (banned) void ban(banned);
-    };
-    el("list").onchange = e => {
-      const box = e.target.closest("[data-pick-ref]");
-      if (!box) return;
-      if (box.checked) picked.add(box.dataset.pickRef);
-      else picked.delete(box.dataset.pickRef);
-      bulkNote = null;
-      renderBulk();
-    };
-    el("pick-all").onclick = pickAll;
-    el("s-download").onclick = () => void downloadLogs(["staff"]);
-    el("bulk-yes").onclick = () => void bulkDecide("approve");
-    el("bulk-no").onclick = () => void bulkDecide("decline");
-    for (const [kind, {prefix}] of Object.entries(FORMS)) {
-      el(`${prefix}-add`).onclick = () => void add(kind);
-      el(`${prefix}-table`).onclick = onTableClick;
-    }
-    for (const kind of Object.keys(views)) {
-      const {prefix} = FORMS[kind];
-      // Waits for a pause in typing, as the visits search does, then redraws this list only.
-      let typing = null;
-      el(`${prefix}-q`).oninput = e => {
-        clearTimeout(typing);
-        typing = setTimeout(() => {
-          views[kind].q = e.target.value.trim();
-          views[kind].limit = PAGE;
-          renderTagged(kind);
-        }, SEARCH_WAIT);
-      };
-      el(`${prefix}-chips`).onclick = e => onTagBar(kind, e);
-      el(`${prefix}-tagpick`).onclick = e => {
-        const pick = e.target.closest("[data-pick]");
-        if (pick) el(`${prefix}-tag`).value = pick.dataset.pick;
-      };
-    }
-    el("approvers").onclick = e => {
-      const hit = e.target.closest("[data-edit]");
-      if (hit) { editing = hit.dataset.edit; draft = null; fieldErrors = {}; approverNote = ""; renderApprovers(); }
-    };
+    main.innerHTML = `<div id="notice"></div><div id="alert"></div>${PANELS}`;
+    bindPanels();
   }
   renderNotice();
+  renderMenu();
   renderTabs();
   renderTiles();
   renderList();
@@ -1008,8 +1220,7 @@ async function load(more = false) {
   const mine = ++asked;
   loading = true;
   if (!more) { rows = []; next = null; }
-  renderTiles();
-  renderList();
+  if (el("list")) { renderTiles(); renderList(); }
   const params = new URLSearchParams({status: filter});
   if (query) params.set("q", query);
   if (more && next) params.set("after", next);
@@ -1055,6 +1266,7 @@ function refresh() {
   info = "";
   void loadSummary();
   void load();
+  void loadWaiting();
 }
 
 function saveKey() {
@@ -1065,6 +1277,8 @@ function saveKey() {
     return;
   }
   setKey(value);
+  seenWritten = 0;
+  touch();
   notice = "";
   info = "";
   render();
@@ -1095,8 +1309,31 @@ async function downloadLogs(which = ["visits", "staff"]) {
   renderNotice();
 }
 
-el("refresh").onclick = refresh;
+el("tabs").onclick = e => {
+  const hit = e.target.closest("[data-section]");
+  if (hit) goTo(hit.dataset.section);
+};
+el("menu").onclick = () => (el("side").classList.contains("open") ? closeMenu() : openMenu());
+el("scrim").onclick = closeMenu;
+document.addEventListener("keydown", e => {
+  if (e.key === "Escape" && el("side").classList.contains("open")) { closeMenu(); el("menu").focus(); }
+});
+el("refresh").onclick = () => { closeMenu(); refresh(); };
 el("csv").onclick = () => void downloadLogs();
 el("rekey").onclick = () => forgetKey();
+window.addEventListener("hashchange", () => {
+  const name = fromHash();
+  if (name && name !== section) { section = name; renderTabs(); }
+});
+// Clicks and key presses count as use. Background reloads do not.
+document.addEventListener("click", () => touch(), true);
+document.addEventListener("keydown", () => touch(), true);
+document.addEventListener("visibilitychange", () => { if (!document.hidden) idle(); });
+window.addEventListener("focus", () => idle());
+setInterval(idle, 60000);
+// Sign out in one tab signs out the others.
+window.addEventListener("storage", e => { if (e.key === "adminkey" && !e.newValue && el("list")) forgetKey(); });
+buildMenu();
+renderTabs();
 render();
-if (key()) refresh();
+if (key() && !idle()) { touch(); refresh(); }

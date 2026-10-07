@@ -82,9 +82,10 @@ def create_request():
     # A resend of the same form, after a slow answer, gets the first request back.
     key = payload.get("request_key")
     key = key if isinstance(key, str) and REQUEST_KEY.match(key) else None
-    earlier = visits.by_request_key(key) if key else None
-    if earlier:
-        return jsonify(visitor_view(earlier)), 200
+    if key:
+        earlier = visits.by_request_key(key)
+        if earlier:
+            return jsonify(visitor_view(earlier)), 200
     auto_at = timer.auto_approve_time(datetime.now(timezone.utc))
     try:
         visit = visits.create(fields, guests, auto_at, office, key)
@@ -93,6 +94,11 @@ def create_request():
     try:
         approvers = people.approvers_for(people.approver_table(), visit)
         notify.log_template_problem(whatsapp.notify_approver(visit, approvers))
+    except whatsapp.Uncertain as unsure:
+        # It may have arrived, so the request stays and the reminder asks again. A person must
+        # see it, so it is not approved by itself.
+        visits.stop_auto_approval(visit["reference"])
+        log.warning("WhatsApp send uncertain for %s, kept: %s", visit["reference"], unsure)
     except Exception as sending_failed:
         visits.delete(visit["reference"])
         log.error("WhatsApp send failed: %s", sending_failed)
@@ -130,7 +136,7 @@ def read_visit(token):
     if found is None:
         return jsonify(error="No request with that token"), 404
     visit, codes = found
-    # One code at a time: entry until the visitor is in, then exit. Neither before or after.
+    # One code at a time: entry until the visitor is in, then exit. Not before, and not after.
     visit = visitor_view(visit)
     showing = {db.APPROVED: db.ENTRY, db.INSIDE: db.EXIT}.get(visit["status"])
     if showing:

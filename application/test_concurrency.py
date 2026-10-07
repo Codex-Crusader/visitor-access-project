@@ -89,8 +89,8 @@ assert len(gate_codes) == 2 * N and len(set(gate_codes)) == 2 * N, "missing or s
 print("  every code unique, every token unique, two gate codes each")
 
 # --- Approve them all at once ---
-def approve(code):
-    visits.decide(code, db.APPROVED, db.BY_MAIN)
+def approve(reference):
+    visits.decide(reference, db.APPROVED, db.BY_MAIN)
 
 threads = [threading.Thread(target=approve, args=(c,)) for c in codes]
 for t in threads:
@@ -106,9 +106,9 @@ results = []
 def race(action):
     """Twenty guards press the same button on the same pass at once."""
     results.clear()
-    code = visits.codes_of(target)[action]
+    pass_code = visits.codes_of(target)[action]
     def press():
-        r = client.post(f"/api/pass/{code}/{action}", headers=KEY, json=photo())
+        r = client.post(f"/api/pass/{pass_code}/{action}", headers=KEY, json=photo())
         with lock:
             results.append(r.status_code)
     racers = [threading.Thread(target=press) for _ in range(20)]
@@ -186,8 +186,8 @@ print("  20 guards added at once -> 20 unique keys")
 
 # --- The same twenty race one entry, each with their own key ---
 def fresh_approved(count):
-    answers = [client.post("/api/requests", json=payload) for _ in range(count)]
-    new_refs = [r.get_json()["reference"] for r in answers]
+    responses = [client.post("/api/requests", json=payload) for _ in range(count)]
+    new_refs = [r.get_json()["reference"] for r in responses]
     for ref in new_refs:
         visits.decide(ref, db.APPROVED, db.BY_MAIN)
     return new_refs

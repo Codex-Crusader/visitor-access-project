@@ -90,9 +90,9 @@ screens, with fixed codes and no server, so some details are different.
 |:---:|:---:|:---:|
 | <img src="images/app-04-pass.png" alt="An entry pass with its entry code" width="250"> | <img src="images/app-05-gate.png" alt="The guard types the entry code and sees Let them in, and must take a photo before Record entry" width="250"> | <img src="images/app-07-gate-staff.png" alt="In Staff code mode the guard types a 7-digit code and sees the person's name and tag large, then records the entry" width="250"> |
 
-| The admin page |
+| The admin page: Today |
 |:---:|
-| <img src="images/app-06-admin.png" alt="Every request, newest first, with counts by status, bulk approval, and the approver who decided each one" width="760"> |
+| <img src="images/app-06-admin.png" alt="The admin page's Today view: a side menu, counts of what needs action, the waiting requests with bulk approval, staff in today and recent blocks" width="760"> |
 
 | The allow list and the staff entry log |
 |:---:|

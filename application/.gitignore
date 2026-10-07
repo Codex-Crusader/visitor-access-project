@@ -4,5 +4,4 @@
 __pycache__/
 .idea/
 node_modules/
-package-lock.json
 pictures/

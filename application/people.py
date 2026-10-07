@@ -13,22 +13,23 @@ def approver_table():
     """{"reasons": {reason: (main, backup)}, "offices": {name: (main, backup)}}.
 
     A reason uses the admin page's choice, else the settings. "See an office" has no pair of
-    its own: offices have theirs, and a visit with no office goes to the pair for Other."""
+    its own: each office has its own pair, and a visit with no office goes to the "Other" pair."""
     with db.connect() as conn:
         rows = conn.execute("SELECT reason, main, backup FROM approvers").fetchall()
-        offices = conn.execute("SELECT name, main, backup FROM offices ORDER BY name").fetchall()
+        office_rows = conn.execute(
+            "SELECT name, main, backup FROM offices ORDER BY name").fetchall()
     reasons = dict(config.APPROVERS)
     reasons.update({row["reason"]: (row["main"], row["backup"])
                     for row in rows if row["reason"] in reasons})
     reasons.pop(config.OFFICE_REASON, None)
     return {"reasons": reasons,
-            "offices": {row["name"]: (row["main"], row["backup"]) for row in offices}}
+            "offices": {row["name"]: (row["main"], row["backup"]) for row in office_rows}}
 
 
 def approvers_for(table, visit):
-    """(main, backup) for a visit: its office's pair, else its reason's, else the pair for Other.
+    """The (main, backup) pair of a visit's office, else of its reason, else the "Other" pair.
 
-    A typed-in reason, and an office visit whose office is gone, go to Other."""
+    A typed-in reason, and an office visit whose office is gone, use the "Other" pair."""
     office = table["offices"].get(visit.get("office") or "")
     if office:
         return office
@@ -93,7 +94,7 @@ def add_office(name, main, backup, tag=""):
 
 @db.writes
 def remove_office(name):
-    """Remove an office. Its open requests go to the approvers for Other. False if not found."""
+    """Remove an office. Its open requests use the "Other" pair. False if not found."""
     with db.connect() as conn:
         return conn.execute("DELETE FROM offices WHERE name = %s", (name,)).rowcount == 1
 
@@ -141,7 +142,7 @@ def _key_index(table):
     """Each guard or admin by phone and by key hash. Read-only, so shared: a lookup is O(1).
 
     Every gate and admin call looks its key up here."""
-    rows = _key_table(table)
+    rows: list[dict] = _key_table(table)
     by_phone = {row["phone"]: MappingProxyType(row) for row in rows}
     by_key = {row["key_hash"]: by_phone[row["phone"]] for row in rows}
     return MappingProxyType({"phone": MappingProxyType(by_phone), "key": MappingProxyType(by_key)})

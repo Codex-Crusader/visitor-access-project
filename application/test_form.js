@@ -141,8 +141,8 @@ ok("a re-render keeps what was typed", el("f_guest").value === "Ravi Rao");
 const enter = new w.KeyboardEvent("keydown", {key: "Enter", cancelable: true});
 el("f_guest").dispatchEvent(enter);
 ok("Enter adds the person", S.g.join() === "Ravi Rao");
-// Not cancelled, a browser sends the same Enter on to the focused +, and the box opens again.
-ok("Enter is cancelled, so it does not press the +", enter.defaultPrevented);
+// Not canceled, a browser sends the same Enter on to the focused +, and the box opens again.
+ok("Enter is canceled, so it does not press the +", enter.defaultPrevented);
 ok("the box closes after adding", el("f_guest") === null);
 ok("the + comes back", !!el("more"));
 ok("the focus goes back to the +", w.document.activeElement === el("more"));
@@ -446,10 +446,14 @@ async function wrongKeyChecks() {
 
   desk.eval('localStorage.setItem("gatekey","k")');
   desk.eval("render()");
+  ok("Lock shows in the header once the key is in", !byId("rekey").hidden
+     && byId("rekey").textContent === "Lock" && !!byId("rekey").closest(".nav"));
   byId("rekey").click();
-  ok("Change gate key shows no stray message", !byId("out").innerHTML.includes("Cannot do that"));
+  ok("Lock forgets the key at once", !!byId("k") && desk.eval('localStorage.getItem("gatekey")') === null);
+  ok("and shows no stray message", !byId("out").innerHTML.includes("Cannot do that"));
+  ok("with no key, Lock hides", byId("rekey").hidden);
 
-  const css = read("gate.html") + read("admin.html");
+  const css = read("gate.html") + read("admin.css");
   ok("both pages let hidden win over a display rule",
      (css.match(/\[hidden]\{display:none!important}/g) || []).length === 2);
 }
@@ -513,8 +517,21 @@ async function adminChecks() {
   ok("an open request has no decision line", admin.eval('decision({status: "pending"})[1]') === "");
 
   const tab = name => byId("tabs").querySelector(`[data-section="${name}"]`);
-  ok("the visits tab is open first", !byId("visits").hidden && byId("numbers").hidden
-     && tab("visits").getAttribute("aria-selected") === "true");
+  ok("Today is open first", !byId("today").hidden && byId("visits").hidden && byId("numbers").hidden
+     && tab("today").getAttribute("aria-selected") === "true");
+  const stats = [...byId("stats").querySelectorAll(".stat")]
+    .map(s => `${s.querySelector("b").textContent} ${s.querySelector("span").textContent}`);
+  ok("Today counts what needs action", stats[0] === "2 Waiting for a decision"
+     && stats[1] === "1 Visitors inside now");
+  ok("Today lists the waiting requests", byId("t-list").querySelectorAll("details").length === 2
+     && calls.some(u => u.includes("status=waiting")));
+  byId("stats").querySelector('[data-go="visits:inside"]').click();
+  await new Promise(done => setTimeout(done, 0));
+  ok("a count opens Visits with that filter", !byId("visits").hidden
+     && calls.at(-1).includes("status=inside") && admin.location.hash === "#visits");
+  admin.eval('filter = "all"; void load()');
+  await new Promise(done => setTimeout(done, 0));
+  await new Promise(done => setTimeout(done, 0));
   tab("numbers").click();
   ok("the numbers tab opens the approver table", byId("visits").hidden && !byId("numbers").hidden
      && tab("numbers").getAttribute("aria-selected") === "true");
@@ -535,7 +552,10 @@ async function adminChecks() {
   const token = (page, name) => (new RegExp(`--${name}:(#[0-9A-F]{6})`).exec(read(page)) || [])[1];
   ok("all three pages use the visitor page's colors", ["brand", "brand2", "go", "stop", "line", "mute"]
      .every(name => token("gate.html", name) === token("index.html", name)
-                    && token("admin.html", name) === token("index.html", name)));
+                    && token("admin.css", name) === token("index.html", name)));
+  // The admin page runs with no 'unsafe-inline': no <style>, no style or on* attribute anywhere.
+  const adminCode = read("admin.html") + read("admin.js");
+  ok("the admin page has no inline style or handler", !/<style|\sstyle=|\son[a-z]+=/i.test(adminCode));
   ok("the gate page is light only", !read("gate.html").includes("dark")
      && read("gate.html").includes('content="only light"'));
 
@@ -826,6 +846,42 @@ async function guardChecks() {
   ok("the guard is gone", !byId("g-table").textContent.includes("Ravi") && byId("over").innerHTML === "");
 }
 
+async function sessionChecks() {
+  console.log("admin page: signs out when idle, or in another tab, and keeps the part in the address");
+  const answer = body => Promise.resolve({status: 200, ok: true, json: () => Promise.resolve(body)});
+  const fetch = url => answer(url.includes("/summary") ? {counts: {}, approvers: []} : {visits: [], next: null});
+  const win = boot("admin.html", "admin.js", {fetch});
+  const byId = id => win.document.getElementById(id);
+  win.eval('localStorage.setItem("adminkey","k"); render()');
+  win.eval("touch(Date.now())");
+  ok("in use, it stays signed in", win.eval("idle()") === false && !!byId("list"));
+  win.eval(`localStorage.setItem("adminseen", String(Date.now() - (IDLE_MINUTES + 1) * 60000))`);
+  ok("after 30 minutes with no use it signs out", win.eval("idle()") === true
+     && win.eval('localStorage.getItem("adminkey")') === null);
+  ok("and says why", byId("main").textContent.includes("Signed out after 30 minutes"));
+  ok("signed out, the menu hides", byId("side").hidden && byId("menu").hidden);
+
+  win.eval('localStorage.setItem("adminkey","k"); render()');
+  win.localStorage.removeItem("adminkey");
+  win.dispatchEvent(new win.StorageEvent("storage", {key: "adminkey", newValue: null}));
+  ok("Sign out in another tab signs this tab out", !!byId("k"));
+
+  const deep = new JSDOM(read("admin.html"), {runScripts: "dangerously", url: "http://localhost/admin#guards"});
+  deep.window.fetch = fetch;
+  deep.window.scrollTo = () => {};
+  deep.window.eval('localStorage.setItem("adminkey","k")');
+  for (const src of ["shared.js", "admin.js"]) {
+    const tag = deep.window.document.createElement("script");
+    tag.textContent = read(src);
+    deep.window.document.body.appendChild(tag);
+  }
+  ok("a part in the address opens on load", !deep.window.document.getElementById("guards").hidden
+     && deep.window.document.getElementById("today").hidden);
+  deep.window.location.hash = "blacklist";
+  await new Promise(done => setTimeout(done, 20));
+  ok("Back and Forward move between parts", !deep.window.document.getElementById("blacklist").hidden);
+}
+
 async function forgotChecks() {
   console.log("both pages: Forgot key sends the key, and never shows it");
   for (const [page, script, store, which] of [["gate.html", "gate.js", "gatekey", "gate"],
@@ -1101,8 +1157,14 @@ async function teamChecks() {
   ok("the offices sit on the Approvers tab, under the reasons",
      !byId("numbers").hidden && byId("numbers").contains(byId("o-table"))
      && byId("numbers").innerHTML.indexOf("approvers") < byId("numbers").innerHTML.indexOf("o-table"));
-  ok("the tabs: allow list and blacklist side by side", [...byId("tabs").children]
-     .map(t => t.dataset.section).join() === "visits,numbers,staff,blacklist,guards,admins");
+  ok("the menu: daily work first, people, then setup", [...byId("tabs").querySelectorAll("[data-section]")]
+     .map(t => t.dataset.section).join() === "today,visits,staff,blacklist,numbers,guards,admins,log");
+  ok("each add form waits behind its button", byId("o-form").hidden
+     && !!byId("numbers").querySelector('[data-open="o"]'));
+  byId("numbers").querySelector('[data-open="o"]').click();
+  ok("Add office opens the form", !byId("o-form").hidden);
+  byId("numbers").querySelector('[data-close="o"]').click();
+  ok("Cancel closes it", byId("o-form").hidden);
   byId("o-add").click();
   ok("an empty office form is refused on the page", posts.filter(([u]) => u.includes("offices")).length === 0
      && byId("o-name-err").textContent !== "" && byId("o-main-err").textContent !== "");
@@ -1344,8 +1406,8 @@ async function tagChecks() {
     },
   });
   const byId = id => admin.document.getElementById(id);
-  const rows = () => [...byId("s-table").querySelectorAll("tbody tr:not(.group)")].map(r => r.cells[0].textContent);
-  const groups = () => [...byId("s-table").querySelectorAll("tr.group")].map(r => r.textContent.replace(/\s+/g, " ").trim());
+  const rows = () => [...byId("s-table").querySelectorAll("tbody tr:not([data-group])")].map(r => r.cells[0].textContent);
+  const groups = () => [...byId("s-table").querySelectorAll("tr[data-group]")].map(r => r.textContent.replace(/\s+/g, " ").trim());
   admin.eval('localStorage.setItem("adminkey","k")');
   admin.eval("render(); refresh()");
   await tick(); await tick();
@@ -1412,7 +1474,7 @@ async function tagChecks() {
   admin.eval("refresh()");
   await tick(); await tick();
   chips()[0].click();
-  const drawn = () => byId("s-table").querySelectorAll("tbody tr:not(.group):not(.more-row)").length;
+  const drawn = () => byId("s-table").querySelectorAll("tbody tr:not([data-group]):not(.more-row)").length;
   ok("a long list shows its first 200 rows", drawn() === 200
      && byId("s-table").querySelector("[data-more]").textContent.includes("of 250 not shown"));
   byId("s-table").querySelector("[data-more]").click();
@@ -1431,7 +1493,7 @@ async function tagChecks() {
   const labels = [...v.document.querySelectorAll("#f_office optgroup")].map(g => g.label);
   ok("each tag is a group, untagged last as Other offices, escaped",
      labels.join("|") === "Main <Building>|Other offices"
-     && v.document.querySelector("#f_office building") === null);
+     && v.document.getElementsByTagName("building").length === 0);
   S.cfg.office_groups = [{tag: "", offices: ["Exams", "Fees", "Library"]}];
   v.eval("render()");
   ok("no tags at all: a plain list, no group heading",
@@ -1492,23 +1554,27 @@ async function bulkChecks() {
      && boss.byId("bulk-note").textContent.includes("VR-10002: Already approved."));
   boss.byId("tabs").querySelector('[data-section="admins"]').click();
   ok("a super admin can make another admin super", !!boss.byId("a-table").querySelector('[data-super="+92"]'));
-  // One colour for each kind of action: green approves, red deletes or bans, amber is a key.
-  const has = (selector, colour) => {
+  // One color for each kind of action: green approves, red deletes or bans, amber is a key.
+  const has = (selector, color) => {
     const found = [...boss.win.document.querySelectorAll(selector)];
-    return found.length > 0 && found.every(b => b.classList.contains(colour));
+    return found.length > 0 && found.every(b => b.classList.contains(color));
   };
-  ok("buttons are colour coded by what they do",
+  ok("buttons are color coded by what they do",
      has("#bulk-yes", "go") && has("#bulk-no", "stop") && has("[data-delete]", "del")
      && has("[data-newkey]", "warn") && has("#rekey", "warn") && has("#b-add", "stop")
      && has('[data-super="+92"]', "go") && has("#g-add", "btn") && !has("#g-add", "stop")
      && has("#csv", "edit"));
   ok("but not change their own role", !boss.byId("a-table").querySelector('[data-super="+91"]'));
+  ok("a super admin sees the downloads", !boss.byId("csv").hidden && !boss.byId("s-download").hidden);
+  ok("Today offers the same bulk decision", !boss.byId("t-bulk").hidden
+     && boss.byId("t-list").querySelectorAll("[data-pick-ref]").length === 2);
 
   console.log("admin page: a regular admin sees no bulk controls, and keeps the key");
   const plain = make(false, 409);
   await tick(); await tick();
   ok("no tick boxes and no bulk buttons", !plain.byId("list").querySelector("[data-pick-ref]")
-     && plain.byId("bulk").hidden);
+     && plain.byId("bulk").hidden && plain.byId("t-bulk").hidden);
+  ok("and no downloads", plain.byId("csv").hidden && plain.byId("s-download").hidden);
   ok("a super admin's row offers them nothing", plain.byId("a-table").textContent
      .includes("Only a super admin can change this.") && !plain.byId("a-table").querySelector('[data-id="+91"]'));
   plain.win.eval('picked.add("VR-10001")');
@@ -1520,7 +1586,7 @@ async function bulkChecks() {
      && plain.byId("bulk-note").textContent.includes("Only a super admin"));
 }
 
-void boardChecks().then(officeFormChecks).then(bulkChecks).then(tagChecks).then(worstCaseChecks).then(blacklistChecks).then(staffGateChecks).then(teamChecks).then(staleGateChecks).then(stalePollChecks).then(staleApproverChecks).then(offlinePassChecks).then(approverChecks).then(guardChecks).then(forgotChecks).then(visitorAutoChecks).then(wrongKeyChecks).then(adminChecks).then(downloadChecks).then(() => {
+void boardChecks().then(officeFormChecks).then(bulkChecks).then(tagChecks).then(worstCaseChecks).then(blacklistChecks).then(staffGateChecks).then(teamChecks).then(staleGateChecks).then(stalePollChecks).then(staleApproverChecks).then(offlinePassChecks).then(approverChecks).then(guardChecks).then(forgotChecks).then(sessionChecks).then(visitorAutoChecks).then(wrongKeyChecks).then(adminChecks).then(downloadChecks).then(() => {
   console.log();
   console.log(failures ? `${failures} check(s) FAILED` : "all form checks passed");
   process.exit(failures ? 1 : 0);

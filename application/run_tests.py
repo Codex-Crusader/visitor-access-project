@@ -24,10 +24,10 @@ CHECKS = [
 ]
 MISSING = {
     "page tests": "Node.js is not installed. Install it from https://nodejs.org,"
-                  " then run npm install.",
+                  " then run npm ci.",
     "ruff": "ruff is not installed. Run:"
             " .venv\\Scripts\\python.exe -m pip install ruff==0.16.2",
-    "eslint": "npx is not installed. Install Node.js, then run npm install.",
+    "eslint": "npx is not installed. Install Node.js, then run npm ci.",
 }
 
 

@@ -217,6 +217,7 @@ function render() {
   el("entry").hidden = !haveKey;
   boardBox.hidden = !haveKey;
   tools.hidden = !haveKey;
+  el("rekey").hidden = !haveKey;
   el("sub").textContent = !haveKey ? "First, type the gate key your admin gave you."
     : mode === "staff" ? "Ask the staff member for their 7-digit allow list code, and type it here."
       : "Type the code on the visitor's pass, or tap a name below. For staff, tap Staff code.";
@@ -262,7 +263,6 @@ function render() {
   const closed = visit.status === "closed";
   const details = closed ? "" : `
       ${fact("Name", visit.name)}
-      ${fact("Phone", visit.phone)}
       ${fact("Visiting", visit.visiting)}
       ${fact("Reason", visit.reason)}
       ${visit.guests && visit.guests.length ? fact("With", visit.guests.join(", ")) : ""}
@@ -306,16 +306,16 @@ async function takePhoto(file) {
   if (!file || !visit) return;
   const forCode = visit.code;
   notice = "";
-  let shot = "", problem = "";
+  let shot = "", failed = "";
   try {
     shot = await shrink(file);
   } catch (err) {
-    problem = err.message;
+    failed = err.message;
   }
   // The guard may have moved to another pass while the photo was shrinking.
   if (!visit || visit.code !== forCode) return;
   photo = shot;
-  notice = problem;
+  notice = failed;
   render();
 }
 
@@ -385,7 +385,8 @@ function staffView(p) {
       ? banner("good", p.new === false ? "Already recorded" : "Entry recorded", entryLine(p))
       : banner("good", "On the allow list", "Check that this is them, then record the entry.");
   const canEnter = !p.entered_at && !p.blacklisted;
-  return `${notice ? problem(notice) : ""}${top}
+  return `${notice ? problem(notice) : ""}
+    ${top}
     <div class="who"><b>${x(p.name)}</b>${p.tag ? `<span>${x(p.tag)}</span>` : ""}</div>
     <div class="facts">${fact("Allow list code", p.code)}</div>
     ${canEnter ? `<button class="btn go" id="staff-enter" onclick="enterStaff()">Record entry</button>` : ""}
@@ -434,7 +435,7 @@ async function enterStaff() {
 }
 
 // Opens a pass by the code the guard typed, or by reference after a tap.
-async function show(key) {
+async function show(passCode) {
   const mine = ++latest;
   visit = null;
   person = null;
@@ -443,7 +444,7 @@ async function show(key) {
   busy = "Checking the pass";
   render();
   try {
-    const found = await call(`/api/pass/${encodeURIComponent(key)}`);
+    const found = await call(`/api/pass/${encodeURIComponent(passCode)}`);
     if (mine !== latest) return;
     visit = found;
   } catch (err) {

@@ -31,7 +31,7 @@ const hm=t=>t?new Date(t).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"
 const dayHm=t=>t?new Date(t).toLocaleString([],{weekday:"short",day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"}):"—";
 const plus=(t,m)=>hm(new Date(new Date(t).getTime()+m*60000).toISOString());
 
-function go(s,keep=1){if(keep)S.hist.push(S.s);S.s=s;S.sheet=0;render();el("view").scrollTop=0}
+function go(s,remember=1){if(remember)S.hist.push(S.s);S.s=s;S.sheet=0;render();el("view").scrollTop=0}
 function back(){S.s=S.hist.pop()||"home";S.sheet=0;render()}
 
 const T={home:["",0],step1:["Request a Visit",1],step2:["Request a Visit",1],review:["Review",1],sending:["",0],
@@ -42,7 +42,8 @@ const reasonText=()=>S.f.reason==="Other"?(S.f.other.trim()||"Other"):S.f.reason
 // True when the visitor picks an office from a list. With no offices set up, they type the place.
 const officeList=()=>S.f.reason===OFFICE&&(S.cfg.offices||[]).length>0;
 const visitingText=()=>officeList()?S.f.office:S.f.visiting;
-const officeOption=o=>`<option value="${x(o)}"${o===S.f.office?" selected":""}>${x(o)}</option>`;
+// The chosen office is set after drawing, in mark(): the list stays plain options.
+const officeOption=o=>`<option value="${x(o)}">${x(o)}</option>`;
 // Grouped by tag when the server sends groups. One group with no tag needs no heading.
 const officeOptions=()=>{
   const groups=S.cfg.office_groups||[];
@@ -259,6 +260,8 @@ function unmark(key){
 
 // What render() cannot put in the markup: changing attributes, the line height, two handlers.
 function mark(){
+  const office=el("f_office");
+  if(office)office.value=S.f.office;
   Object.keys(S.f).forEach(k=>{
     const box=el("f_"+k);
     if(!box)return;
@@ -272,7 +275,7 @@ function mark(){
   if(bar)bar.style.height=railPct()+"%";
   const guest=el("f_guest");
   if(guest)guest.onkeydown=e=>{
-    // Cancelled, or the same Enter presses the + that add() focuses, and the box opens again.
+    // Canceled, or the same Enter presses the + that add() focuses, and the box opens again.
     if(e.key==="Enter"){e.preventDefault();add()}
     else if(e.key==="Escape"){closeAdd();render();const more=el("more");if(more)more.focus()}
   };
@@ -296,7 +299,7 @@ function settle(keys,found){
 function newKey(){
   const bytes=new Uint8Array(16);
   window.crypto.getRandomValues(bytes);
-  return [...bytes].map(b=>b.toString(16).padStart(2,"0")).join("");
+  return Array.from(bytes,b=>Number(b).toString(16).padStart(2,"0")).join("");
 }
 
 function phoneOk(phone){

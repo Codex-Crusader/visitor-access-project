@@ -95,6 +95,8 @@ WhatsApp delivers it only if the guard wrote to the app's number in the last
      key?". The app sends the key to the gate desk WhatsApp. If it does not
      arrive, send `KEY` from the gate desk phone to the app's WhatsApp
      number.
+   - On a phone that other people also use, tap Lock at the top when you
+     finish. It forgets the key on that phone at once.
 3. Type the code on the visitor's pass, and tap "Check the pass". Small
    letters and spaces are correct, for example `kt 4821`. For a staff
    member, see "The allow list" below.
@@ -136,7 +138,7 @@ The rules for the photo:
    last `IN`, and the reply names that visitor.
 3. One photo lets in one person. A second photo on the same `IN` does nothing.
 4. Only a guard can send the photo: the `GUARD` number, or a guard on the
-   admin page's Guards tab.
+   admin page's Guards part.
 
 Both routes need a photo before the visitor goes in. A photo from the gate
 page is kept in the app's database, and the admin can see it. A photo sent on
@@ -201,10 +203,18 @@ blacklist". A banned visitor who is inside can still leave.
    - Another admin added you: use the key they gave you. Or send `KEY` from
      your own WhatsApp to the app's number. The app replies with a new admin
      key of your own, and your old key stops.
-3. The page has six tabs: Visits, Approvers, Allow list, Blacklist, Guards
-   and Admins. The offices are on the Approvers tab, under the reasons. Visits opens first. The line under the title names
-   who is signed in.
-4. On the Visits tab, tap a tile to show only the requests with that status.
+3. The menu on the left groups the parts of the page:
+   - Daily: Today and Visits.
+   - People: Allow list and Blacklist.
+   - Setup: Approvers & offices, Guards, Admins and Change log.
+
+   Today opens first. It shows the requests that wait for a decision, the
+   visitors inside, the staff entries today, and the blacklist's blocks in
+   the last 24 hours. Tap a number to open that list. On a phone, tap Menu
+   at the top to open the menu. Under the title, you see who is signed
+   in. The address keeps the part that is open, so Refresh and Back
+   keep your place.
+4. In Visits, tap a tile to show only the requests with that status.
    Waiting means pending, or asked again: sent to the backup, or a reminder
    to the approver.
 5. Use the search box to find a name, phone number, reference or the person
@@ -218,29 +228,35 @@ blacklist". A banned visitor who is inside can still leave.
    Entered and Exited name the guard who recorded them. "Gate desk (shared
    key)" means that someone used the shared `GATE_KEY`.
 8. Show more loads the next 50 requests.
-9. Use Download log to save the two logs: the visit log as a ZIP file, and
-   the staff entry log as a CSV file. See "Where the data lives". Only the
-   admin page can download them, because they hold personal details and
-   photos. The first time, the browser can ask if this site can download
+9. Use Download logs, at the bottom of the menu, to save the two logs: the
+   visit log as a ZIP file, and the staff entry log as a CSV file. See
+   "Where the data lives". Only a super admin can download them, because
+   they hold every visitor's details and face. Other admins do not see the
+   button. The first time, the browser can ask if this site can download
    more than one file. Allow it. If the browser does not save the second
-   file, use Download staff entries on the Allow list tab.
+   file, use Download staff entries in Allow list, above Recent entries.
 
-The admin page works on a phone and on a computer. On a phone, the tabs and
-the tiles scroll sideways, and each table row shows as a card.
+Each list has one button at the top right to add to it, such as Add person
+or Add guard. The form opens under the title. Cancel closes it. Under each
+list, "How ... works" opens the rules for that list.
 
-### Button colours
+The admin page works on a phone and on a computer. On a phone, the menu
+opens from the Menu button, the tiles scroll sideways, and each table row
+shows as a card.
 
-The buttons have one colour for each kind of action, on the admin page and
-the gate page. Each button also says what it does, so the colour is never
+### Button colors
+
+The buttons have one color for each kind of action, on the admin page and
+the gate page. Each button also says what it does, so the color is never
 the only sign.
 
-| Colour | Means                         | For example                                     |
-|--------|-------------------------------|-------------------------------------------------|
-| Green  | Approve, or let someone in    | Approve, Record entry, Make super admin         |
-| Red    | Delete, decline or ban        | Delete, Decline, Add to the blacklist           |
-| Amber  | A key                         | New key, Change key, Change gate key            |
-| Blue   | Add, change or look           | Add guard, Tag, Change, View photo, Download log |
-| White  | Neutral                       | Refresh, Cancel, Next visitor                   |
+| Color | Means                      | For example                                       |
+|-------|----------------------------|---------------------------------------------------|
+| Green | Approve, or let someone in | Approve, Record entry, Make super admin           |
+| Red   | Delete, decline or ban     | Delete, Decline, Add to the blacklist             |
+| Amber | A key, or leave            | New key, Sign out, Lock                           |
+| Blue  | Add, change or look        | Add guard, Tag, Change, View photo, Download logs |
+| White | Neutral                    | Refresh, Cancel, Next visitor                     |
 
 ### How the app knows who you are
 
@@ -253,16 +269,18 @@ owns that key, and the log names that person. So:
 2. Anyone who types the shared `GATE_KEY` shows as "Gate desk (shared key)",
    and anyone who types `ADMIN_KEY` shows as the main admin. The app cannot
    tell those people apart.
-3. On a shared device, tap Change key when you finish. Otherwise the next
-   person works under your name.
+3. On a shared device, tap Sign out at the bottom of the menu when you
+   finish. Otherwise, the next person works under your name. The admin page
+   also signs out by itself after 30 minutes with no click or key press, and
+   a sign-out in one browser tab signs out the others.
 
 ### Approve or decline many requests at once
 
-A super admin can decide many waiting requests on the Visits tab. The main
-admin is always a super admin. A super admin can make another admin one, on
-the Admins tab.
+A super admin can decide many waiting requests, on Today or in Visits. The
+main admin is always a super admin. A super admin can make another admin
+one, in Admins.
 
-1. On the Visits tab, tap the Waiting tile.
+1. Open Today. Or open Visits and tap the Waiting tile.
 2. Tick the requests, or tap "Select all waiting on screen". It picks only
    the requests on screen. Tap Show more first to load more of them.
 3. Tap Approve or Decline, then confirm in the "Are you sure?" box. One call
@@ -272,28 +290,33 @@ Each request is checked on its own, the same way as a `YES` on WhatsApp. The
 app skips a request that someone decided meanwhile, one that expired, or one
 whose number is on the blacklist. The note then names each skipped request
 and why. Each guard gets one WhatsApp message that lists all the approved
-visitors, not one message for each. The Visits tab shows "Approved by" and
+visitors, not one message for each. Visits shows "Approved by" and
 the admin's name, and the change log keeps a line with every reference.
 
 ### Delete something
 
-Each Delete button on the Approvers (offices), Allow list, Blacklist, Guards
-and Admins tabs opens a box that asks "Are you sure?". Tap Delete to delete, or Cancel
-to keep it.
+Each Delete button in Approvers & offices, Allow list, Blacklist, Guards and
+Admins opens a box that asks "Are you sure?". Tap Delete to delete, or
+Cancel to keep it.
 
 ### Change the approvers
 
-1. Tap the Approvers tab.
-2. Tap Change on the reason. See an office is not on this tab, because each
+1. Open Approvers & offices in the menu.
+2. Tap Change on the reason. See an office is not in that table, because each
    office has its own two numbers, in the offices list below the reasons.
-3. Type the approver's number and the backup's number. Write each one with
-   `+` and the country code, like `+919876543210`. Both are required, and
-   they must be different.
+3. Type the approver's number, and the backup's number if there is one.
+   Write each one with `+` and the country code, like `+919876543210`. The
+   backup must be a different person. With no backup, the approver gets a
+   reminder instead.
 4. Tap Save both numbers.
 
 The change works at once. New requests go to the new numbers. The old numbers
 can no longer decide that reason's requests, also the requests already sent
-to them. While the app uses Meta's test number, also add each new number to
+to them. The app sends each open request to the new number at once, so it
+does not wait for the reminder: a waiting request to the new approver, and a
+request already asked again to the new backup. The same happens when you
+delete an office: its open requests go to the approvers for "Other". The
+admin change log says how many requests went. While the app uses Meta's test number, also add each new number to
 the recipient list in Meta's API Setup page.
 
 Once the app sends from the campus's own WhatsApp number (step 4 of "Before
@@ -310,7 +333,8 @@ A visitor who picks the reason See an office then picks an office from a
 list. The request goes to that office's own approver, and to its backup if
 nobody answers in `ESCALATE_MINUTES`.
 
-1. Tap the Approvers tab. The offices list is under the reasons.
+1. Open Approvers & offices. The offices list is under the reasons. Tap
+   Add office.
 2. Type the office's name and the approver's number, with `+` and the
    country code. A backup is a second person, who gets the request when
    nobody answers in `ESCALATE_MINUTES`. Leave the backup empty for an office
@@ -320,12 +344,12 @@ nobody answers in `ESCALATE_MINUTES`.
 
 To change an office's numbers, delete the office and add it again with the
 same name. When you delete an office, its open requests go to the approvers
-for Other on the Approvers tab. With no offices, the visitor types the
-office's name, and the request goes to the approvers for Other.
+for "Other". With no offices, the visitor types the
+office's name, and the request goes to the approvers for "Other".
 
 ### Tags on long lists
 
-The offices list and the Allow list tab can hold hundreds of rows, so each office and
+The offices list and the allow list can hold hundreds of rows, so each office and
 each person can have one tag, such as a building or a department. The two
 lists have their own tags.
 
@@ -348,17 +372,17 @@ the admin change log.
 
 ### Manage the allow list
 
-1. Tap the Allow list tab.
+1. Open Allow list in the menu, and tap Add person.
 2. Type the person's name and WhatsApp number. You can also give a tag, see
    "Tags on long lists".
-3. Tap Add to the allow list and make a code.
+3. Tap Add and make a code.
 4. Tell the person the 7-digit code that shows. The list also shows it.
 
 Recent entries shows the last 100 entries and the guard who recorded each
 one. The staff entries are a log of their own, separate from the visit log.
-Download staff entries, below the list, saves all of them as
-`staff-entries-<date>.csv`. Download log at the top saves this file and the
-visit log together. The date and the time are in separate columns, so a
+Download staff entries, above Recent entries, saves all of them as
+`staff-entries-<date>.csv`. Download logs in the menu saves this file and the
+visit log together. Only a super admin sees these buttons. The date and the time are in separate columns, so a
 spreadsheet filter on the date shows one day's entries. Delete takes a person off the list, and
 their code stops at once. Their past entries stay until `RETAIN_DAYS` ends.
 A number on the blacklist cannot be on the allow list. While the app uses
@@ -373,21 +397,22 @@ person wrote to the app's number in the last 24 hours.
 
 A number on the blacklist cannot request a visit, and the gate refuses its
 passes, also a pass approved before. Its allow list code stops too. The
-visitor page says only "This number cannot request a visit. Call the gate
-desk.". It does not say why.
+visitor page says only this: "This number cannot request a visit. Call the
+gate desk." It does not say why.
 
-When you add a number, its waiting requests are declined at once, and the
-Visits tab shows "Declined by the blacklist". No approver or automatic
+When you add a number, its waiting requests are declined at once, and
+Visits shows "Declined by the blacklist". No approver or automatic
 approval can approve them later, and the guards get no "Approved visitor"
 message. A pass that was already approved stays approved, but the gate
 refuses it.
 
-1. Tap the Blacklist tab.
+1. Open Blacklist in the menu, and tap Add number.
 2. Type the name and the phone number. The reason is for the admins, and you
    may leave it empty.
 3. Tap Add to the blacklist.
 
-You can also open a visit on the Visits tab and tap "Blacklist this number".
+You can also open a visit, in Today or Visits, and tap "Blacklist this
+number".
 The app compares the last 10 digits, so `98765 43210` and `+919876543210` are
 the same number. Delete takes a number off the blacklist.
 
@@ -402,10 +427,10 @@ Each time the blacklist stops someone, the admin page records it:
    person need not be at the gate.
 3. An allow list code, on the gate page or on WhatsApp.
 
-Blocked attempts on the Blacklist tab shows the last 100, with the time, the
-name, the number, what happened and the guard. For 24 hours after an
-attempt, a red alert shows at the top of every tab, and the Blacklist tab
-shows the count. The page does not refresh by itself, so tap Refresh to see
+Blocked attempts in Blacklist shows the last 100, with the time, the name,
+the number, what happened and the guard. For 24 hours after an attempt, a
+red alert shows at the top of every part, Blacklist in the menu shows the
+count, and Today lists the attempts. The page does not refresh by itself, so tap Refresh to see
 new attempts. A page that refreshes by itself would keep the database awake
 and use up Neon's free hours.
 
@@ -414,7 +439,7 @@ and use up Neon's free hours.
 `ADMIN_PHONE` is the main admin. It uses `ADMIN_KEY` and cannot be deleted.
 You add the other admins on the admin page.
 
-1. Tap the Admins tab.
+1. Open Admins in the menu, and tap Add admin.
 2. Type the admin's name and WhatsApp number.
 3. Tap Add admin and make a key.
 4. Give the key that shows to that admin. The page shows it only once. If
@@ -431,10 +456,10 @@ on each other admin's row. Nobody can change their own role. Only a super
 admin can make a new key for, delete, or change a super admin, so a regular
 admin cannot take a super admin's place.
 
-Recent changes on the Admins tab lists who changed what: each guard, admin,
+Change log, in the menu, lists who changed what: each guard, admin,
 office, allow list or blacklist entry added or deleted, each approver change,
 each new key, and each key sent by "Forgot key?" or `KEY`. It never shows a
-key. Download log saves all of it as `admin-changes.csv`.
+key. Download logs saves all of it as `admin-changes.csv`.
 
 Read it when something looks wrong. Anyone who holds an admin's unlocked
 phone can send `KEY` and get a new admin key. If a change shows "KEY on
@@ -446,7 +471,7 @@ admin, or tap New key, at once.
 The `GUARD` number is the gate desk. It is always a guard and uses the shared
 `GATE_KEY`. You add the other guards on the admin page.
 
-1. Tap the Guards tab.
+1. Open Guards in the menu, and tap Add guard.
 2. Type the guard's name and WhatsApp number. Write the number with `+` and
    the country code, like `+919876543210`.
 3. Tap Add guard and make a key.
@@ -475,18 +500,18 @@ the gate desk. A removed guard who knows the shared key can still use it.
 One phone number can be an approver and a guard at the same time, so each
 job has its own word.
 
-| You send       | What happens                                                                                                    |
-|----------------|-----------------------------------------------------------------------------------------------------------------|
-| `VR-40221`     | Shows the pass by its reference                                                                                 |
-| `KT-4821`      | Shows the pass and the next step for that code                                                                  |
-| `YES VR-40221` | Approves the request                                                                                            |
-| `NO VR-40221`  | Declines the request                                                                                            |
-| `IN KT-4821`   | With the entry code: asks for a photo of the visitor                                                            |
-| a photo        | Records the entry for the last `IN`                                                                             |
-| `OUT RM-0937`  | With the exit code: records the exit                                                                            |
-| `4569918`      | From a guard, with an allow list code: records the entry at once. `IN 4569918` does the same                   |
-| `KEY`          | From `GUARD` or `ADMIN_PHONE`: sends back that number's key. From an added guard or admin: makes a new key      |
-| anything else  | Sends back the requests that wait for you                                                                       |
+| You send       | What happens                                                                                               |
+|----------------|------------------------------------------------------------------------------------------------------------|
+| `VR-40221`     | Shows the pass by its reference. A guard sees no phone. An approver sees only the requests they approve    |
+| `KT-4821`      | Shows the pass and the next step for that code                                                             |
+| `YES VR-40221` | Approves the request                                                                                       |
+| `NO VR-40221`  | Declines the request                                                                                       |
+| `IN KT-4821`   | With the entry code: asks for a photo of the visitor                                                       |
+| a photo        | Records the entry for the last `IN`                                                                        |
+| `OUT RM-0937`  | With the exit code: records the exit                                                                       |
+| `4569918`      | From a guard, with an allow list code: records the entry at once. `IN 4569918` does the same               |
+| `KEY`          | From `GUARD` or `ADMIN_PHONE`: sends back that number's key. From an added guard or admin: makes a new key |
+| anything else  | Sends back the requests that wait for you                                                                  |
 
 Any case works, and commas, full stops, `!` and `?` are ignored. A
 reference can also be typed as `VR40221`, `VR 40221` or `40221`. A
@@ -600,10 +625,11 @@ never touch Neon. Install it once.
 ```
 
 The page tests and eslint need Node.js, and ruff is a Python package.
-Install them once.
+Install them once. `npm ci` installs the exact versions in
+`package-lock.json`, the same versions that GitHub uses.
 
 ```
-npm install
+npm ci
 .venv\Scripts\python.exe -m pip install ruff==0.16.2
 ```
 
@@ -715,13 +741,13 @@ The visits live in the Neon database. They stay when Render deploys a new
 version. The app deletes each visit `RETAIN_DAYS` after the request, 90 days
 by default, as the privacy screen promises.
 
-Download log on the admin page saves the only copy that you control. Save it
+Download logs on the admin page saves the only copy that you control. Save it
 before a large change, and on a fixed day each week. Neon can restore the
 database to an earlier time, under Backup & Restore in the Neon console. On
 the free plan, that window is only 6 hours (the project's "History
 retention"). A mistake found the next day cannot be undone there.
 
-Download log saves two files. The first is `staff-entries-<date>.csv`, the
+Download logs saves two files. The first is `staff-entries-<date>.csv`, the
 staff entry log: one row for each allow list entry, with the date, the time,
 the person, their code and number, and the guard who recorded it. The second
 is the visit log, `visit-log-<date>.zip`. Unzip it first: a file inside a
@@ -754,7 +780,7 @@ The files are made for people to read:
    empty Entered and Exited cells.
 
 `visits.csv` has these columns: Reference, Name, Phone, Address, Reason,
-Office, Visiting, People with them, Status, Requested, Sent to backup,
+Office, Visiting, People with them, Status, Requested, Asked again,
 Decided, Decided by, Entered, Entered by, Exited, Exited by, Photo taken and
 Photo file. Photo file names the photo in the `photos` folder. It is empty for
 a photo sent on WhatsApp, because that photo stays in the guard's chat. The
@@ -845,20 +871,20 @@ read costs no database query until the app changes the data. The first
 read after a change, and every read in the first 2 minutes after the server
 starts, goes to the database.
 
-| Work                               | Cost          | How                                        |
-|------------------------------------|---------------|--------------------------------------------|
-| Visitor status check, 5 to 30 s    | O(1)          | From memory, after the first query         |
-| Look up a pass by its code         | O(log n)      | One query on the code key                  |
-| Decide, enter, exit                | O(log n)      | One UPDATE that returns the new row        |
-| Background round, when work is due | O(log n + k)  | Indexes on status and time                 |
-| Gate board, every 30 s             | O(k)          | From memory, after the first query         |
-| Blacklist check, for each row      | O(1)          | One shared set of numbers, not copied      |
-| Allow list code, guard or admin key | O(1)         | One shared index, not copied               |
-| One admin page, first or fiftieth  | O(log n + 50) | Starts after the last row of the last page |
-| Admin counts by status             | O(n)          | One pass over an index                     |
-| Admin search                       | O(n) at worst | Reads rows until the page is full          |
-| CSV export                         | O(n)          | It returns every row                       |
-| Allow list or office search        | O(m)          | m people; only 200 rows go on the page     |
+| Work                                | Cost          | How                                        |
+|-------------------------------------|---------------|--------------------------------------------|
+| Visitor status check, 5 to 30 s     | O(1)          | From memory, after the first query         |
+| Look up a pass by its code          | O(log n)      | One query on the code key                  |
+| Decide, enter, exit                 | O(log n)      | One UPDATE that returns the new row        |
+| Background round, when work is due  | O(log n + k)  | Indexes on status and time                 |
+| Gate board, every 30 s              | O(k)          | From memory, after the first query         |
+| Blacklist check, for each row       | O(1)          | One shared set of numbers, not copied      |
+| Allow list code, guard or admin key | O(1)          | One shared index, not copied               |
+| One admin page, first or fiftieth   | O(log n + 50) | Starts after the last row of the last page |
+| Admin counts by status              | O(n)          | One pass over an index                     |
+| Admin search                        | O(n) at worst | Reads rows until the page is full          |
+| CSV export                          | O(n)          | It returns every row                       |
+| Allow list or office search         | O(m)          | m people; only 200 rows go on the page     |
 
 A reference has five digits, so there are 90,000 references. A new request
 picks one at random and tries again if it is taken. The free storage fills
@@ -869,7 +895,7 @@ production. The retention period keeps n small, so the search stays fast.
 
 Measured on 6 October 2026, with 2,000 blacklisted numbers and 2,000 people
 on the allow list: the gate board with 60 expected visitors went from 254 ms
-to under 1 ms, and an allow list lookup from 8 ms to 0.2 ms. On the admin
+to under 1 millisecond, and an allow list lookup from 8 to 0.2 milliseconds. On the admin
 page, one search of 2,000 people went from 742 ms to 49 ms in the test
 browser. Before, each blacklist check copied the whole list, every row made
 a new date formatter, and the page drew every row. Now the lookups share one

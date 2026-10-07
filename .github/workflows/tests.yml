@@ -69,15 +69,15 @@ jobs:
         run: |
           pip install ruff==0.16.2
           ruff check .
-      - name: Install jsdom
+      - name: Install the page tools
         working-directory: application
-        run: npm install --no-audit --no-fund
+        run: npm ci --no-audit --no-fund
       - name: test_form.js
         working-directory: application
         run: node test_form.js
       - name: eslint
         working-directory: application
-        run: npx --yes eslint@10.12.0 static test_form.js
+        run: npx --no-install eslint static test_form.js
       - name: test_demo.js
         env:
           NODE_PATH: application/node_modules

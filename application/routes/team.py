@@ -7,6 +7,7 @@ import audit
 import blacklist
 import checks
 import config
+import notify
 import people
 import staff
 import tags
@@ -41,6 +42,11 @@ def lists():
 def changed(action, detail):
     """Record a change in the admin log, under the admin who made it."""
     audit.record(access.admin_caller(), action, detail)
+
+
+def sent_line(count):
+    """The audit note for open requests sent to a new approver. Empty when none."""
+    return f". Open requests sent to the new approver: {count}" if count else ""
 
 
 def payload():
@@ -142,8 +148,10 @@ def remove_holder(table):
 def guards_super(table, phone):
     """A refusal when a regular admin acts on a super admin, or None.
 
-    A new key or a delete would let a regular admin take a super admin's place."""
-    target = people.holder_by_phone(table, phone) if table == people.ADMINS else None
+    A new key or a deletion would let a regular admin take a super admin's place."""
+    if table != people.ADMINS:
+        return None
+    target = people.holder_by_phone(table, phone)
     if target and target["super"] and not access.admin_is_super():
         return jsonify(error=access.SUPER_ONLY), 409
     return None
@@ -220,23 +228,28 @@ def add_office():
         problems["backup"] = SAME_BACKUP
     if problems:
         return jsonify(error="Check the office's details.", fields=problems), 400
+    before = people.approver_table()
     if not people.add_office(name, main, backup, tag):
         return jsonify(error="Check the office's details.",
                        fields={"name": "An office has this name already."}), 400
-    changed("Added an office", f"{name}: {main}, backup {backup}" + tagged(tag))
+    # Open requests for a deleted office of this name go to this office's approver now.
+    resent = notify.resend_after_change(before, people.approver_table())
+    changed("Added an office", f"{name}: {main}, backup {backup}" + tagged(tag) + sent_line(resent))
     return jsonify(**lists())
 
 
 @bp.post("/api/admin/offices/remove")
 def remove_office():
-    """Delete an office. Its open requests go to the approvers of the reason "See an office"."""
+    """Delete an office. Its open requests go to the approvers for Other, and are sent to them."""
     refused = access.admin_refusal()
     if refused:
         return refused
     name = str(payload().get("name") or "")
+    before = people.approver_table()
     if not people.remove_office(name):
         return jsonify(error="No office has that name."), 404
-    changed("Deleted an office", name)
+    resent = notify.resend_after_change(before, people.approver_table())
+    changed("Deleted an office", name + sent_line(resent))
     return jsonify(**lists())
 
 
@@ -308,7 +321,7 @@ def rename_tag():
     refused = access.admin_refusal()
     if refused:
         return refused
-    table = payload().get("list")
+    table = str(payload().get("list") or "")
     if table not in tags.LISTS:
         return jsonify(error="Unknown list"), 400
     old = str(payload().get("old") or "")

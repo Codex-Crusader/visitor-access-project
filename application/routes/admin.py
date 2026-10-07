@@ -75,7 +75,7 @@ def bulk_decide():
     if refused:
         return refused
     payload = request.get_json(silent=True) or {}
-    status = DECISIONS.get(payload.get("decision"))
+    status = DECISIONS.get(str(payload.get("decision") or ""))
     given = payload.get("references")
     if status is None or not isinstance(given, list) or not given:
         return jsonify(error="Choose the requests, and approve or decline."), 400
@@ -201,9 +201,11 @@ def set_approvers():
         problems["backup"] = team.SAME_BACKUP
     if problems:
         return jsonify(error="Check the numbers.", fields=problems), 400
+    before = people.approver_table()
     people.save_approvers(reason, main, backup)
+    resent = notify.resend_after_change(before, people.approver_table())
     audit.record(access.admin_caller(), "Changed the approvers",
-                 f"{reason}: {main}, backup {backup}")
+                 f"{reason}: {main}, backup {backup}. Open requests sent to them: {resent}")
     return jsonify(approvers=approver_rows(people.approver_table()))
 
 
@@ -237,7 +239,7 @@ def forgot_key(which):
 @bp.get("/api/admin/export.csv")
 def admin_export_csv():
     """The whole visit log, with who decided and which guard let each visitor in and out."""
-    refused = access.admin_refusal()
+    refused = access.admin_refusal() or access.super_refusal()
     if refused:
         return refused
     return Response(
@@ -251,7 +253,7 @@ def admin_export_csv():
 @bp.get("/api/admin/staff-entries.csv")
 def admin_staff_entries_csv():
     """The staff entry log: each allow list entry and the guard who recorded it."""
-    refused = access.admin_refusal()
+    refused = access.admin_refusal() or access.super_refusal()
     if refused:
         return refused
     response = Response(
@@ -266,10 +268,14 @@ def admin_staff_entries_csv():
 
 @bp.get("/api/admin/export.zip")
 def admin_export_zip():
-    """The visit log and every gate page photo, in one ZIP. Staff entries are a separate file."""
-    refused = access.admin_refusal()
+    """The visit log and every gate page photo, in one ZIP. Staff entries are a separate file.
+
+    Super admins only: it holds every visitor's details and face."""
+    refused = access.admin_refusal() or access.super_refusal()
     if refused:
         return refused
+    # noinspection PyTypeChecker
+    # noinspection PyTypeChecker
     response = Response(
         stream_with_context(export.zip_parts()),
         mimetype="application/zip",

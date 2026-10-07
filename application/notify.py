@@ -4,8 +4,10 @@ import logging
 from concurrent.futures import ThreadPoolExecutor
 
 import config
+import db
 import people
 import staff
+import visits
 import whatsapp
 
 # The same logger as app.logger, so every message reaches one place.
@@ -16,15 +18,42 @@ log = logging.getLogger("app")
 GUARD_SENDS_AT_ONCE = 8
 
 
+def resend_after_change(before, after):
+    """Send each open request whose approver changed to the new one. Returns how many went.
+
+    Waiting: the new approver. Asked again: the new backup, or a reminder to an approver who is
+    their own backup."""
+    to_send = []
+    for visit in visits.open_requests():
+        old, new = people.approvers_for(before, visit), people.approvers_for(after, visit)
+        waiting = visit["status"] == db.PENDING
+        if not whatsapp.same_number(old[0 if waiting else 1], new[0 if waiting else 1]):
+            how = whatsapp.notify_approver if waiting else whatsapp.notify_backup
+            to_send.append((visit, new, how))
+
+    def send(job):
+        request, pair, ask = job
+        try:
+            log_template_problem(ask(request, pair))
+            return True
+        except Exception as failure:
+            log.error("Could not send %s to its new approver: %s", request["reference"], failure)
+            return False
+
+    # Together, as the guard messages go: one slow answer from Meta does not add up per request.
+    with ThreadPoolExecutor(max_workers=GUARD_SENDS_AT_ONCE) as pool:
+        return sum(pool.map(send, to_send))
+
+
 def tell_guards(visit, skip=()):
-    """Tell every guard, except skip, that a visitor is approved. Plain text, so best effort."""
+    """Tell every guard, except skip, that a visitor is approved. Plain text: a best effort."""
     _send_to_guards([whatsapp.guard_update_body(visit)], skip, visit["reference"])
 
 
-def tell_guards_many(visits):
+def tell_guards_many(approved):
     """Tell every guard about many approvals at once: one list, not one message per visitor."""
-    if visits:
-        _send_to_guards(whatsapp.guard_list_bodies(visits), (), f"{len(visits)} approvals")
+    if approved:
+        _send_to_guards(whatsapp.guard_list_bodies(approved), (), f"{len(approved)} approvals")
 
 
 def _send_to_guards(bodies, skip, about):

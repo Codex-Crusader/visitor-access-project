@@ -50,7 +50,8 @@ CLOSED_PASS = ("reference", "status", "created_at", "decided_at",
                "entered_at", "exited_at", "guests")
 
 # Never sent to the gate. The token opens the visitor's page, which shows the gate code.
-GATE_PRIVATE = ("token", "address", "decided_phone", "entered_by", "exited_by",
+# The guard decides by the name, the pass and the face. The phone stays with the admin.
+GATE_PRIVATE = ("token", "address", "phone", "decided_phone", "entered_by", "exited_by",
                 "request_key")
 
 

@@ -2,11 +2,12 @@
 
 > ## Documentation
 >
-> | Document                                   | Read it to                                            |
-> |--------------------------------------------|-------------------------------------------------------|
-> | [docs/setup.md](docs/setup.md)             | Set up a new copy, and learn each setting             |
-> | [docs/maintenance.md](docs/maintenance.md) | Use the app each day, and deploy, watch and repair it |
-> | [docs/safety.md](docs/safety.md)           | Know what the app protects, and its known limits      |
+> | Document                                                       | Read it to                                               |
+> |----------------------------------------------------------------|----------------------------------------------------------|
+> | [docs/setup.md](docs/setup.md)                                 | Set up a new copy, and learn each setting                |
+> | [docs/maintenance.md](docs/maintenance.md)                     | Use the app each day, and deploy, watch and repair it    |
+> | [docs/safety.md](docs/safety.md)                               | Know what the app protects, and its known limits         |
+> | [docs/university-deployment.md](docs/university-deployment.md) | Decide on real use: hosting, data, roles, outages, pilot |
 
 A visitor fills in a web form. The server sends the details to an approver on
 WhatsApp. The approver replies YES or NO. The visitor sees the decision on the

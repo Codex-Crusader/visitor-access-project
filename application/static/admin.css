@@ -1,0 +1,289 @@
+/* The admin page. A file, not a <style> block, so the page runs without 'unsafe-inline'. */
+:root{
+ --ink:#0F1822;--soft:#5A6979;--faint:#94A2B1;--line:#E2E8EE;--paper:#fff;--mute:#F5F8FB;
+ --brand:#16325B;--brand2:#27599C;--tint:#EDF2F9;
+ --go:#0C6B47;--goBg:#E8F5EF;--goLn:#A8D8C3;
+ --wait:#8A5710;--waitBg:#FDF4E6;--waitLn:#EBCE9E;
+ --stop:#992724;--stopBg:#FBEDEB;--stopLn:#E9B6B0;
+ --bg:#D9E1EA;--r:14px;--sh:0 1px 2px rgba(16,30,50,.06),0 1px 1px rgba(16,30,50,.04);
+ --side:236px;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+/* A class that sets display would otherwise beat the hidden attribute. */
+[hidden]{display:none!important}
+body{margin:0;min-height:100dvh;background:var(--bg);color:var(--ink);
+ font:16px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+ -webkit-font-smoothing:antialiased}
+button,input{font:inherit;color:inherit}
+button{cursor:pointer;border:0;background:none}
+:focus-visible{outline:3px solid var(--brand2);outline-offset:2px}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+
+/* The same card, logo bar and title row as the visitor page, wide enough for a side menu. */
+.app{max-width:1240px;margin:0 auto;background:var(--paper);min-height:100dvh;display:flex;flex-direction:column}
+@media(min-width:1280px){.app{margin:22px auto;min-height:calc(100dvh - 44px);border-radius:30px;overflow:hidden;
+ box-shadow:0 30px 70px rgba(10,22,38,.28),0 2px 8px rgba(10,22,38,.12)}}
+.brand{padding:16px 22px 12px;border-bottom:1px solid var(--line);background:var(--paper)}
+.brand img{display:block;width:auto;height:26px}
+.nav{display:flex;align-items:center;gap:12px;padding:12px 22px;border-bottom:1px solid var(--line)}
+.nav h1{margin:0;font-size:1.02rem;font-weight:650;letter-spacing:-.01em}
+.nav small{display:block;color:var(--soft);font-size:.8rem}
+.nav .where{display:none;margin-left:auto;font-weight:650;color:var(--brand);font-size:.92rem}
+.menu{display:none;padding:7px 12px;border:1px solid var(--line);border-radius:10px;font-weight:650;font-size:.88rem}
+
+/* The side menu: grouped by how often each part is used, the actions at the bottom. */
+.shell{flex:1;display:grid;grid-template-columns:var(--side) minmax(0,1fr);min-height:0}
+.shell.out{grid-template-columns:minmax(0,1fr)}
+.side{border-right:1px solid var(--line);background:var(--mute);padding:16px 12px;display:flex;flex-direction:column;gap:14px}
+.tabs{display:flex;flex-direction:column;gap:2px}
+.tabs [data-group]{margin:12px 10px 4px;font-size:.72rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--faint)}
+.tabs [data-group]:first-child{margin-top:0}
+.tabs button{display:flex;align-items:center;gap:10px;width:100%;padding:9px 10px;border-radius:10px;
+ text-align:left;font-size:.93rem;font-weight:560;color:var(--ink);transition:background .12s ease}
+.tabs button:hover{background:var(--tint)}
+.tabs button[aria-selected=true]{background:var(--brand);color:#fff}
+.tabs svg{flex:none;width:18px;height:18px;opacity:.8}
+.tabs .count{margin-left:auto;min-width:20px;padding:0 6px;border-radius:999px;background:var(--stop);color:#fff;
+ font-size:.74rem;font-weight:700;text-align:center}
+.side-actions{margin-top:auto;display:flex;flex-direction:column;gap:8px;padding-top:14px;border-top:1px solid var(--line)}
+.side-actions button{padding:9px 12px;border-radius:10px;border:1px solid var(--line);background:var(--paper);
+ font-size:.88rem;font-weight:600;text-align:left;box-shadow:var(--sh)}
+.side-actions button.edit{color:var(--brand2);border-color:#C4D3E6;background:var(--tint)}
+.side-actions button.warn{color:var(--wait);border-color:var(--waitLn);background:var(--waitBg)}
+.scrim{display:none}
+
+.main{padding:24px 28px 48px;min-width:0}
+.hero{margin-bottom:20px}
+.hero h2{margin:0 0 6px;font-size:1.62rem;font-weight:750;letter-spacing:-.03em;line-height:1.16}
+.hero p{margin:0;color:var(--soft);font-size:.96rem}
+.keybox{max-width:428px;margin:20px auto}
+
+/* Each part opens with a title, one line on what it is for, and its main button. */
+.page-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap;margin:0 0 18px}
+.page-head h2{margin:0;font-size:1.45rem;font-weight:750;letter-spacing:-.025em}
+.page-head p{margin:4px 0 0;color:var(--soft);font-size:.93rem;max-width:60ch}
+.head-acts{display:flex;gap:8px;flex-wrap:wrap}
+.card{border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--sh);background:var(--paper);padding:16px 18px;margin:0 0 18px;min-width:0}
+.card-head{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin:0 0 12px}
+.card-head h3{margin:0;font-size:1.02rem;font-weight:700}
+.card-head p{margin:2px 0 0;color:var(--soft);font-size:.85rem}
+h3.sub{margin:26px 0 10px;font-size:1.02rem;font-weight:700}
+.link{color:var(--brand2);font-weight:650;font-size:.88rem;padding:4px 2px}
+
+/* The add form opens under its button, so the list stays the first thing on the screen. */
+.addbox{border:1px solid #C4D3E6;background:var(--tint);border-radius:var(--r);padding:16px 18px;margin:0 0 18px}
+.addbox h3{margin:0 0 12px;font-size:1rem}
+.addbox .row-acts{display:flex;gap:10px;margin-top:14px}
+.addbox .row-acts .btn{width:auto;margin:0;padding:11px 18px}
+.help{margin:22px 0 0;border-top:1px solid var(--line);padding-top:12px;color:var(--soft);font-size:.88rem}
+.help summary{cursor:pointer;font-weight:650;color:var(--brand2);list-style:none}
+.help summary::-webkit-details-marker{display:none}
+.help summary::before{content:"?";display:inline-block;width:18px;height:18px;margin-right:8px;border-radius:50%;
+ background:var(--tint);text-align:center;font-size:.75rem;line-height:18px}
+.help p{margin:10px 0 0;max-width:75ch}
+
+/* Today: four numbers, then what needs action. */
+.stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin:0 0 18px}
+.stat{padding:14px 16px;border:1px solid var(--line);border-radius:var(--r);background:var(--paper);box-shadow:var(--sh);
+ text-align:left;transition:border-color .12s ease}
+.stat:hover{border-color:var(--brand2)}
+.stat b{display:block;font-size:1.7rem;font-weight:750;letter-spacing:-.03em;line-height:1.1}
+.stat span{font-size:.84rem;color:var(--soft);font-weight:600}
+.stat[data-tone=wait] b{color:var(--wait)}
+.stat[data-tone=stop] b{color:var(--stop)}
+.stat[data-tone=go] b{color:var(--go)}
+.cols{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(0,1fr);gap:18px;align-items:start}
+.mini{list-style:none;margin:0;padding:0}
+.mini li{display:flex;justify-content:space-between;gap:12px;padding:9px 0;border-bottom:1px solid var(--line);font-size:.9rem}
+.mini li:last-child{border-bottom:0}
+.mini small{display:block;color:var(--soft);font-size:.8rem}
+.mini time{color:var(--soft);white-space:nowrap;font-variant-numeric:tabular-nums}
+
+label{display:block;font-weight:650;font-size:.84rem;letter-spacing:.02em;margin:0 0 7px}
+input{width:100%;padding:13px;border:1px solid var(--line);border-radius:12px;background:var(--mute);
+ -webkit-appearance:none;appearance:none;transition:border-color .12s,background .12s}
+.addbox input{background:var(--paper)}
+input:focus{background:var(--paper);border-color:var(--brand2);outline:none;box-shadow:0 0 0 3px rgba(39,89,156,.12)}
+.btn{display:block;width:100%;padding:14px;border-radius:var(--r);background:var(--brand);color:#fff;
+ font-weight:650;margin-top:12px;border:1px solid var(--brand);box-shadow:var(--sh);
+ transition:transform .12s ease,background .12s ease}
+.btn:active{transform:scale(.988);background:var(--brand2)}
+.btn[disabled]{opacity:.5;cursor:default}
+.btn.plain{background:var(--paper);color:var(--ink);border-color:var(--line);font-weight:600}
+.btn.plain:active{background:var(--mute)}
+.btn.stop{background:var(--stop);border-color:var(--stop)}
+.btn.stop:active{background:#7E1F1D}
+.btn.inline{display:inline-block;width:auto;margin:0;padding:10px 16px;font-size:.92rem}
+
+.note{border-radius:var(--r);padding:14px 16px;margin:0 0 16px;border:1px solid;font-size:.93rem}
+.note.bad{background:var(--stopBg);border-color:var(--stopLn);color:var(--stop)}
+.note.good{background:var(--goBg);border-color:var(--goLn);color:var(--go)}
+.note.warn{background:var(--waitBg);border-color:var(--waitLn);color:var(--wait)}
+.note.warn summary{cursor:pointer;font-weight:650}
+.note.warn ul{margin:10px 0 6px;padding-left:20px}.note.warn li{margin:0 0 6px}
+.note.warn p{margin:0}
+.note.alert{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(112px,1fr));gap:9px;margin-bottom:16px}
+.tile{padding:12px 14px;border:1px solid var(--line);border-radius:var(--r);text-align:left;
+ background:var(--paper);box-shadow:var(--sh);transition:border-color .12s ease}
+.tile b{display:block;font-size:1.4rem;font-weight:750;letter-spacing:-.02em;line-height:1.1}
+.tile span{font-size:.82rem;color:var(--soft);font-weight:600}
+.tile[aria-pressed=true]{background:var(--tint);border-color:var(--brand2);box-shadow:0 0 0 2px var(--brand2) inset}
+
+.bar{display:flex;gap:10px;align-items:center;margin-bottom:12px}
+.bar input{flex:1}
+.found{color:var(--soft);font-size:.85rem;margin:0 0 10px}
+
+.list{border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--sh);overflow:hidden;background:var(--paper)}
+details.visit{border-bottom:1px solid var(--line)}
+details.visit:last-child{border-bottom:0}
+.visit summary{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(0,1.3fr) auto;gap:12px;align-items:center;
+ padding:13px 16px;cursor:pointer;list-style:none}
+.visit summary::-webkit-details-marker{display:none}
+.visit summary:hover{background:var(--mute)}
+.visit summary b{font-weight:650;overflow-wrap:anywhere}
+.visit summary small{display:block;color:var(--soft);font-size:.8rem;overflow-wrap:anywhere}
+.visit summary .side-col{text-align:right}
+.visit summary .by{margin-top:3px}
+.visit summary .by[data-tone=go]{color:var(--go)}
+.visit summary .by[data-tone=stop]{color:var(--stop)}
+code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-weight:650;letter-spacing:.04em}
+.pill{display:inline-block;padding:2px 9px;border-radius:999px;font-size:.76rem;font-weight:700;
+ border:1px solid;white-space:nowrap}
+.pill[data-tone=wait]{background:var(--waitBg);border-color:var(--waitLn);color:var(--wait)}
+.pill[data-tone=go]{background:var(--goBg);border-color:var(--goLn);color:var(--go)}
+.pill[data-tone=stop]{background:var(--stopBg);border-color:var(--stopLn);color:var(--stop)}
+.pill[data-tone=done]{background:var(--mute);border-color:var(--line);color:var(--soft)}
+.more{padding:4px 16px 14px 16px;background:var(--mute);border-top:1px solid var(--line)}
+.more dl{display:grid;grid-template-columns:max-content 1fr;gap:6px 16px;margin:10px 0 0;font-size:.9rem}
+.more dt{color:var(--soft)}
+.more dd{margin:0;font-weight:600;overflow-wrap:anywhere}
+.empty{padding:16px;color:var(--soft)}
+
+table{width:100%;border-collapse:collapse;font-size:.9rem}
+th,td{text-align:left;padding:11px 14px;border-bottom:1px solid var(--line)}
+tr:last-child td{border-bottom:0}
+th{color:var(--soft);font-weight:600;font-size:.8rem;background:var(--mute)}
+.wrap{overflow-x:auto;border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--sh);background:var(--paper)}
+.card .wrap{box-shadow:none}
+.hint{color:var(--soft);font-size:.85rem;margin:10px 0 0}
+.small{padding:6px 12px;border:1px solid var(--line);border-radius:999px;font-size:.82rem;font-weight:600;
+ background:var(--paper)}
+.small.del{color:var(--stop);border-color:var(--stopLn);background:var(--stopBg)}
+.small.del:active{background:#F6DCD8}
+/* Button colours, one for each kind of action. The words stay, so colour is never alone.
+   Green: approve or let in. Red: delete, decline or ban. Amber: a key. Blue: add or change. */
+.btn.go{background:var(--go);border-color:var(--go);color:#fff}
+.btn.go:active{background:#0A5A3C}
+.btn.warn{background:var(--waitBg);border-color:var(--waitLn);color:var(--wait)}
+.btn.warn:active{background:#F8E7C8}
+.btn.edit{background:var(--brand2);border-color:var(--brand2);color:#fff}
+.small.go{color:var(--go);border-color:var(--goLn);background:var(--goBg)}
+.small.warn{color:var(--wait);border-color:var(--waitLn);background:var(--waitBg)}
+.small.edit{color:var(--brand2);border-color:#C4D3E6;background:var(--tint)}
+.pair{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.fields{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.fields[data-cols="3"]{grid-template-columns:repeat(3,1fr)}
+.gap-top{margin-top:12px}
+/* Tags: filter chips above a list, and tappable tags under a tag box. */
+.chips{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 12px}
+.chips button{border:1px solid var(--line);border-radius:999px;padding:6px 12px;font-size:.86rem;
+ background:var(--paper);font-weight:550}
+.chips button span{color:var(--soft);font-weight:600;margin-left:2px}
+.chips button[aria-pressed=true]{background:var(--brand);color:#fff;border-color:var(--brand)}
+.chips button[aria-pressed=true] span{color:#fff;opacity:.8}
+.tagpick{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.tagpick:empty{display:none}
+.pick{border:1px dashed #C4D3E6;border-radius:999px;padding:5px 11px;font-size:.85rem;color:var(--brand);
+ background:var(--paper);font-weight:600}
+tr[data-group] td{background:var(--tint);color:var(--brand);font-weight:700;font-size:.85rem}
+tr[data-group] td span{color:var(--soft);font-weight:600;margin-left:4px}
+tr.more-row td{text-align:center;padding:14px}
+/* Bulk decisions: a tick box beside each waiting request, and the buttons for the selection. */
+.pickrow{display:flex;border-bottom:1px solid var(--line)}
+.pickrow:last-child{border-bottom:0}
+.pickrow details{flex:1;min-width:0;border-bottom:0}
+.tick{display:flex;padding:15px 0 0 14px;margin:0;cursor:pointer}
+.tick input{width:20px;height:20px;padding:0;margin:0;-webkit-appearance:auto;appearance:auto;
+ accent-color:var(--brand)}
+.bulk{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin:0 0 12px;padding:10px 12px;
+ border:1px solid var(--line);border-radius:var(--r);background:var(--mute)}
+.bulk span{color:var(--soft);font-size:.88rem;font-weight:600;flex:1}
+.bulk .btn{width:auto;margin:0;padding:9px 16px}
+.pair .btn{margin-top:0}
+.err{color:var(--stop);font-size:.82rem;margin:5px 0 0;font-weight:600}
+.err:empty{display:none}
+.more .ban{margin:14px 0 4px}
+.shot img{display:block;max-width:100%;max-height:360px;margin-top:8px;border-radius:10px}
+td.acts{white-space:nowrap;text-align:right}
+td.acts .small+.small{margin-left:6px}
+td .fixed,.fixed{color:var(--soft);font-size:.85rem}
+.you{display:inline-block;margin-left:6px;padding:1px 8px;border-radius:999px;font-size:.74rem;font-weight:700;
+ background:var(--tint);color:var(--brand)}
+.you.super{background:var(--goBg);color:var(--go)}
+code.key{display:block;margin:8px 0;padding:8px 10px;background:var(--paper);border-radius:8px;
+ user-select:all;overflow-wrap:anywhere}
+
+@media(max-width:1200px){
+ .cols{grid-template-columns:minmax(0,1fr)}
+ .stats{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+/* Below tablet width the side menu becomes a drawer behind the Menu button. */
+@media(max-width:860px){
+ .shell{grid-template-columns:minmax(0,1fr)}
+ .menu{display:inline-block}
+ .nav .where{display:block}
+ .side{position:fixed;top:0;bottom:0;left:0;z-index:20;width:min(280px,84vw);border-right:1px solid var(--line);
+  transform:translateX(-102%);transition:transform .2s ease;overflow-y:auto}
+ .side.open{transform:none;box-shadow:0 10px 40px rgba(10,22,38,.25)}
+ .scrim.open{display:block;position:fixed;top:0;right:0;bottom:0;left:0;z-index:15;background:rgba(9,18,30,.44)}
+}
+@media(max-width:620px){
+ .main{padding:16px 16px 32px}
+ .nav{padding:12px 16px}
+ .brand{padding:14px 16px 10px}
+ .page-head h2{font-size:1.25rem}
+ .stats{gap:9px}
+ .stat{padding:12px}
+ .stat b{font-size:1.4rem}
+ .pair,.fields,.fields[data-cols="3"]{grid-template-columns:1fr}
+ .visit summary{grid-template-columns:minmax(0,1fr) auto}
+ .visit summary .mid{display:none}
+ .tiles{display:flex;flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;margin-left:-16px;margin-right:-16px;padding:2px 16px}
+ .tiles::-webkit-scrollbar{display:none}
+ .tile{flex:none;min-width:92px;padding:10px 12px}
+ .tile b{font-size:1.25rem}
+ .card{padding:14px}
+ .wrap{overflow:visible;border:0;border-radius:0;box-shadow:none;background:none}
+ .wrap thead{display:none}
+ .wrap table,.wrap tbody,.wrap tr,.wrap td{display:block;width:100%}
+ .wrap tr{border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--sh);
+  margin-bottom:9px;padding:6px 0;background:var(--paper)}
+ .wrap td{display:flex;justify-content:space-between;align-items:baseline;gap:14px;
+  border:0;padding:6px 14px;text-align:right;overflow-wrap:anywhere}
+ .wrap td[data-label]::before{content:attr(data-label);flex:none;color:var(--soft);
+  font-size:.8rem;font-weight:600;text-align:left}
+ .wrap td[colspan]{display:block;text-align:left}
+ .wrap td.acts{justify-content:flex-end;padding-top:10px}
+ .wrap td.acts::before{display:none}
+ .wrap tr[data-group]{border:0;box-shadow:none;background:none;margin:16px 0 6px;padding:0}
+ .wrap tr[data-group] td{background:none;padding:0 2px}
+ .chips{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;margin-left:-16px;margin-right:-16px;padding:2px 16px}
+ .chips::-webkit-scrollbar{display:none}
+ .chips button{flex:none}
+ .more dl{grid-template-columns:1fr}
+ .more dd{margin-bottom:6px}
+ .addbox .row-acts .btn{flex:1}
+}
+
+/* The "Are you sure?" box, as the visitor page's Finish later sheet. */
+.sheet{position:fixed;top:0;right:0;bottom:0;left:0;z-index:30;background:rgba(9,18,30,.44);
+ display:flex;align-items:flex-end;justify-content:center;animation:fade .18s ease}
+@keyframes fade{from{opacity:0}}
+.box{background:var(--paper);width:100%;max-width:428px;border-radius:22px 22px 0 0;
+ padding:24px 22px calc(26px + env(safe-area-inset-bottom));animation:rise .22s ease}
+@media(min-width:600px){.sheet{align-items:center}.box{border-radius:22px}}
+@keyframes rise{from{transform:translateY(14px)}}
+.box h2{margin:0 0 6px;font-size:1.3rem;font-weight:750;letter-spacing:-.02em}
+.box p{margin:0 0 6px;color:var(--soft)}

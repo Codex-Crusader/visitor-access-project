@@ -43,6 +43,10 @@ def escalate_due():
         try:
             approvers = people.approvers_for(table, visit)
             notify.log_template_problem(whatsapp.notify_backup(visit, approvers))
+        except whatsapp.Uncertain as unsure:
+            # It may have arrived. Asking again each round could send it many times.
+            log.warning("Asking about %s again is uncertain, marked as asked: %s",
+                        visit["reference"], unsure)
         except Exception as failure:
             log.error("Could not ask the backup approver about %s: %s",
                              visit["reference"], failure)

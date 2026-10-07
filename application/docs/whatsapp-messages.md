@@ -15,7 +15,7 @@ arrives, because the person just wrote.
 To the approver:
 
 ```
-Campus visit request VR-73741.
+Campus visit request VR-39738.
 New request, waiting for your decision.
 
 Name: Asha Rao
@@ -35,7 +35,7 @@ Reply YES or NO followed by the reference to decide this request.
 To the backup approver:
 
 ```
-Campus visit request VR-49443.
+Campus visit request VR-65713.
 Backup approver: no answer from the first approver.
 
 Name: Asha Rao
@@ -55,7 +55,7 @@ Reply YES or NO followed by the reference to decide this request.
 To an office approver:
 
 ```
-Campus visit request VR-67194.
+Campus visit request VR-29041.
 Reminder: this request still waits for your decision.
 
 Name: Asha Rao
@@ -70,28 +70,48 @@ Reply YES or NO followed by the reference to decide this request.
 (template visit_request)
 ```
 
+## An admin changes the approver: open requests go to the new one
+
+To +919000000077:
+
+```
+Campus visit request VR-87140.
+New request, waiting for your decision.
+
+Name: Asha Rao
+Phone: 9876543210
+Address: Karjat
+Reason: Delivery
+Visiting: Front office
+With: Ravi Rao
+
+Reply YES or NO followed by the reference to decide this request.
+
+(template visit_request)
+```
+
 ## Nobody answers in working hours: the app approves by itself
 
 To the approver:
 
 ```
-VR-34316 was approved automatically. No one answered within 30 minutes of the request, made in working hours.
+VR-17243 was approved automatically. No one answered within 30 minutes of the request, made in working hours.
 
-VR-34316: Asha Rao, visiting Annual fest (Event)
+VR-17243: Asha Rao, visiting Annual fest (Event)
 ```
 
 To the backup approver:
 
 ```
-VR-34316 was approved automatically. No one answered within 30 minutes of the request, made in working hours.
+VR-17243 was approved automatically. No one answered within 30 minutes of the request, made in working hours.
 
-VR-34316: Asha Rao, visiting Annual fest (Event)
+VR-17243: Asha Rao, visiting Annual fest (Event)
 ```
 
 To the gate desk:
 
 ```
-Approved visitor on the way. VR-34316: Asha Rao, visiting Annual fest (Event)
+Approved visitor on the way. VR-17243: Asha Rao, visiting Annual fest (Event)
 With: Ravi Rao
 
 When they arrive, send IN and the entry code on their pass, then a photo of the visitor.
@@ -100,7 +120,7 @@ When they arrive, send IN and the entry code on their pass, then a photo of the 
 To a guard:
 
 ```
-Approved visitor on the way. VR-34316: Asha Rao, visiting Annual fest (Event)
+Approved visitor on the way. VR-17243: Asha Rao, visiting Annual fest (Event)
 With: Ravi Rao
 
 When they arrive, send IN and the entry code on their pass, then a photo of the visitor.
@@ -108,12 +128,12 @@ When they arrive, send IN and the entry code on their pass, then a photo of the 
 
 ## The approver replies YES
 
-The approver sends: `yes vr-73741`
+The approver sends: `yes vr-39738`
 
 To the gate desk:
 
 ```
-Approved visitor on the way. VR-73741: Asha Rao, visiting Annual fest (Event)
+Approved visitor on the way. VR-39738: Asha Rao, visiting Annual fest (Event)
 With: Ravi Rao
 
 When they arrive, send IN and the entry code on their pass, then a photo of the visitor.
@@ -122,7 +142,7 @@ When they arrive, send IN and the entry code on their pass, then a photo of the 
 To a guard:
 
 ```
-Approved visitor on the way. VR-73741: Asha Rao, visiting Annual fest (Event)
+Approved visitor on the way. VR-39738: Asha Rao, visiting Annual fest (Event)
 With: Ravi Rao
 
 When they arrive, send IN and the entry code on their pass, then a photo of the visitor.
@@ -131,31 +151,31 @@ When they arrive, send IN and the entry code on their pass, then a photo of the 
 To the approver:
 
 ```
-VR-73741 is now approved.
+VR-39738 is now approved.
 
-VR-73741: Asha Rao, visiting Annual fest (Event)
+VR-39738: Asha Rao, visiting Annual fest (Event)
 ```
 
 ## A second YES on the same request
 
-The approver sends: `YES VR-73741`
+The approver sends: `YES VR-39738`
 
 To the approver:
 
 ```
-VR-73741 was already approved.
+VR-39738 was already approved.
 ```
 
 ## The approver replies NO
 
-The approver sends: `No, VR-26548.`
+The approver sends: `No, VR-33468.`
 
 To the approver:
 
 ```
-VR-26548 is now declined.
+VR-33468 is now declined.
 
-VR-26548: Asha Rao, visiting Annual fest (Event)
+VR-33468: Asha Rao, visiting Annual fest (Event)
 ```
 
 ## A reference with a typing mistake
@@ -170,22 +190,22 @@ No request has reference VR-12. Check the reference in the request message.
 
 ## An approver decides another reason's request
 
-An office approver sends: `YES VR-49443`
+An office approver sends: `YES VR-65713`
 
 To an office approver:
 
 ```
-VR-49443 goes to another approver. You cannot decide it.
+VR-65713 goes to another approver. You cannot decide it.
 ```
 
 ## YES on a request older than the pass time
 
-The approver sends: `YES VR-36098`
+The approver sends: `YES VR-87322`
 
 To the approver:
 
 ```
-VR-36098 expired: it was made more than 48 hours ago. The visitor must send a new request.
+VR-87322 expired: it was made more than 48 hours ago. The visitor must send a new request.
 ```
 
 ## YES with no reference while several wait
@@ -197,9 +217,10 @@ To the approver:
 ```
 These requests are waiting for you:
 
-VR-49443: Asha Rao, visiting Annual fest (Event)
-VR-76362: Neha Joshi, visiting Annual fest (Event)
-VR-69306: Karan Mehta, visiting Annual fest (Event)
+VR-65713: Asha Rao, visiting Annual fest (Event)
+VR-87140: Asha Rao, visiting Front office (Delivery)
+VR-38753: Neha Joshi, visiting Annual fest (Event)
+VR-64427: Karan Mehta, visiting Annual fest (Event)
 
 Reply YES <reference> or NO <reference>.
 ```
@@ -213,21 +234,22 @@ To the approver:
 ```
 These requests are waiting for you:
 
-VR-49443: Asha Rao, visiting Annual fest (Event)
-VR-76362: Neha Joshi, visiting Annual fest (Event)
-VR-69306: Karan Mehta, visiting Annual fest (Event)
+VR-65713: Asha Rao, visiting Annual fest (Event)
+VR-87140: Asha Rao, visiting Front office (Delivery)
+VR-38753: Neha Joshi, visiting Annual fest (Event)
+VR-64427: Karan Mehta, visiting Annual fest (Event)
 
 Reply YES <reference> or NO <reference>.
 ```
 
 ## YES on a request whose number was just blacklisted
 
-The approver sends: `YES VR-76660`
+The approver sends: `YES VR-58893`
 
 To the approver:
 
 ```
-VR-76660 cannot be approved: the number is on the blacklist.
+VR-58893 cannot be approved: the number is on the blacklist.
 ```
 
 ## YES with nothing waiting
@@ -245,16 +267,15 @@ YES <reference> approves. NO <reference> declines. Small letters work too.
 
 ## A guard looks up a pass by its entry code
 
-A guard sends: `LQ-1630`
+A guard sends: `QC-6221`
 
 To a guard:
 
 ```
-Approved. Reply IN LQ-1630, then send a photo of the visitor.
+Approved. Reply IN QC-6221, then send a photo of the visitor.
 
-Reference: VR-71305
+Reference: VR-36479
 Name: Asha Rao
-Phone: 9876543210
 Visiting: Annual fest
 Reason: Event
 With: Ravi Rao
@@ -278,23 +299,23 @@ KEY sends you your key for the gate page.
 
 ## IN with the exit code
 
-A guard sends: `IN YT-0001`
+A guard sends: `IN UK-5954`
 
 To a guard:
 
 ```
-YT-0001 is the exit code. The entry needs the entry code on the visitor's pass.
+UK-5954 is the exit code. The entry needs the entry code on the visitor's pass.
 ```
 
 ## IN with the entry code
 
-A guard sends: `in LQ-1630`
+A guard sends: `in QC-6221`
 
 To a guard:
 
 ```
 Take a photo of Asha Rao and send it here.
-LQ-1630 is let in once the photo arrives.
+QC-6221 is let in once the photo arrives.
 ```
 
 ## The guard sends the photo
@@ -306,13 +327,12 @@ To a guard:
 ```
 Inside now. Reply OUT and the exit code on the visitor's pass to record the exit.
 
-Reference: VR-71305
+Reference: VR-36479
 Name: Asha Rao
-Phone: 9876543210
 Visiting: Annual fest
 Reason: Event
 With: Ravi Rao
-Entered: 6 Oct, 20:33
+Entered: 7 Oct, 12:37
 ```
 
 ## A photo with no IN before it
@@ -328,7 +348,7 @@ Send IN <entry code>, then the photo within 10 minutes.
 
 ## IN again for a visitor inside
 
-A guard sends: `IN LQ-1630`
+A guard sends: `IN QC-6221`
 
 To a guard:
 
@@ -338,21 +358,21 @@ Already inside.
 
 ## OUT with the exit code
 
-A guard sends: `OUT YT-0001`
+A guard sends: `OUT UK-5954`
 
 To a guard:
 
 ```
 Closed. The visit is over and its codes are finished.
 
-Reference: VR-71305
-Entered: 6 Oct, 20:33
-Exited: 6 Oct, 20:33
+Reference: VR-36479
+Entered: 7 Oct, 12:37
+Exited: 7 Oct, 12:37
 ```
 
 ## OUT again on a closed pass
 
-A guard sends: `OUT YT-0001`
+A guard sends: `OUT UK-5954`
 
 To a guard:
 
@@ -392,12 +412,12 @@ On the blacklist. Do not let them in. Tell the admin.
 
 ## A guard sends an allow list code
 
-A guard sends: `3009180`
+A guard sends: `9436429`
 
 To the staff member:
 
 ```
-Campus entry recorded for Dr Anita Rao at 6 Oct, 20:33 by Ravi.
+Campus entry recorded for Dr Anita Rao at 7 Oct, 12:37 by Ravi.
 
 If this was not you, tell the campus admin.
 ```
@@ -405,18 +425,18 @@ If this was not you, tell the campus admin.
 To a guard:
 
 ```
-Entry recorded: Dr Anita Rao, allow list code 3009180, at 6 Oct, 20:33.
+Entry recorded: Dr Anita Rao, allow list code 9436429, at 7 Oct, 12:37.
 Check that this is Dr Anita Rao. A WhatsApp message about this entry was sent to them.
 ```
 
 ## The same code again within 2 minutes
 
-A guard sends: `IN 3009180`
+A guard sends: `IN 9436429`
 
 To a guard:
 
 ```
-Already recorded: Dr Anita Rao entered at 6 Oct, 20:33. Nothing new was recorded or sent.
+Already recorded: Dr Anita Rao entered at 7 Oct, 12:37. Nothing new was recorded or sent.
 ```
 
 ## An allow list code nobody has
@@ -431,12 +451,12 @@ No one on the allow list has the code 1000000. Check the code, or ask the admin.
 
 ## An allow list code, with the staff_entry template set
 
-A guard sends: `3009180`
+A guard sends: `9436429`
 
 To the staff member:
 
 ```
-Campus entry recorded for Dr Anita Rao at 6 Oct, 20:33 by Ravi.
+Campus entry recorded for Dr Anita Rao at 7 Oct, 12:37 by Ravi.
 
 If this was not you, tell the campus admin.
 
@@ -446,13 +466,13 @@ If this was not you, tell the campus admin.
 To a guard:
 
 ```
-Entry recorded: Dr Anita Rao, allow list code 3009180, at 6 Oct, 20:33.
+Entry recorded: Dr Anita Rao, allow list code 9436429, at 7 Oct, 12:37.
 Check that this is Dr Anita Rao. A WhatsApp message about this entry was sent to them.
 ```
 
 ## An allow list code whose number is on the blacklist
 
-A guard sends: `9458098`
+A guard sends: `5905535`
 
 To a guard:
 
@@ -465,7 +485,7 @@ Mohan: On the blacklist. Do not let them in. Tell the admin.
 To the staff member:
 
 ```
-Campus entry recorded for Dr Anita Rao at 6 Oct, 20:33 by Gate desk.
+Campus entry recorded for Dr Anita Rao at 7 Oct, 12:37 by Gate desk.
 
 If this was not you, tell the campus admin.
 ```
@@ -477,9 +497,9 @@ To the gate desk:
 ```
 3 approved visitors on the way:
 
-VR-84147: Neha Joshi, visiting Annual fest (Event), with Ravi Rao
-VR-17481: Karan Mehta, visiting Annual fest (Event), with Ravi Rao
-VR-70413: Isha Rao, visiting Annual fest (Event), with Ravi Rao
+VR-20227: Neha Joshi, visiting Annual fest (Event), with Ravi Rao
+VR-84638: Karan Mehta, visiting Annual fest (Event), with Ravi Rao
+VR-94211: Isha Rao, visiting Annual fest (Event), with Ravi Rao
 
 When they arrive, send IN and the entry code on their pass, then a photo of each visitor.
 ```
@@ -489,9 +509,9 @@ To a guard:
 ```
 3 approved visitors on the way:
 
-VR-84147: Neha Joshi, visiting Annual fest (Event), with Ravi Rao
-VR-17481: Karan Mehta, visiting Annual fest (Event), with Ravi Rao
-VR-70413: Isha Rao, visiting Annual fest (Event), with Ravi Rao
+VR-20227: Neha Joshi, visiting Annual fest (Event), with Ravi Rao
+VR-84638: Karan Mehta, visiting Annual fest (Event), with Ravi Rao
+VR-94211: Isha Rao, visiting Annual fest (Event), with Ravi Rao
 
 When they arrive, send IN and the entry code on their pass, then a photo of each visitor.
 ```

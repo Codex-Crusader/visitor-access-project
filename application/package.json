@@ -4,10 +4,11 @@
   "description": "Tooling for the two web pages. The app itself uses no npm package.",
   "scripts": {
     "test": "node test_form.js",
-    "lint": "npx eslint static test_form.js"
+    "lint": "eslint static test_form.js"
   },
   "devDependencies": {
-    "@types/node": "^26.6.3",
-    "jsdom": "^26.1.0"
+    "@types/node": "26.6.3",
+    "eslint": "10.12.0",
+    "jsdom": "26.1.0"
   }
 }

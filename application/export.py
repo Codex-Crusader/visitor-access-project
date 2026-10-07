@@ -8,6 +8,7 @@ import io
 import re
 import zipfile
 from datetime import datetime, timezone
+from typing import Any
 
 import audit
 import blacklist
@@ -53,7 +54,7 @@ VISIT_COLUMNS = (
     ("People with them", lambda v: ", ".join(v["guests"])),
     ("Status", lambda v: STATUS_WORDS.get(v["status"], v["status"])),
     (f"Requested ({ZONE})", lambda v: local(v["created_at"])),
-    (f"Sent to backup ({ZONE})", lambda v: local(v["escalated_at"])),
+    (f"Asked again ({ZONE})", lambda v: local(v["escalated_at"])),
     (f"Decided ({ZONE})", lambda v: local(v["decided_at"])),
     ("Decided by", decided_by),
     (f"Entered ({ZONE})", lambda v: local(v["entered_at"])),
@@ -96,7 +97,7 @@ def safe_cell(value):
     return "'" + text if text.startswith(FORMULA_START) else text
 
 
-def read(row, how):
+def read(row, how) -> Any:
     return how(row) if callable(how) else row.get(how)
 
 
@@ -210,6 +211,10 @@ def zip_parts():
     stamp = local(datetime.now(timezone.utc).isoformat(timespec="seconds"))
     rows = visit_rows()
     sink = _Chunks()
+    # ZipFile only writes to the sink, so the writable part of a file is enough.
+    # noinspection PyTypeChecker
+    # ZipFile only writes to the sink, so the writable part of a file is enough.
+    # noinspection PyTypeChecker
     with zipfile.ZipFile(sink, "w", zipfile.ZIP_STORED) as archive:
         archive.writestr("README.txt", README.format(stamp=stamp, zone=ZONE))
         archive.writestr("visits.html", visits_page(rows, stamp))
