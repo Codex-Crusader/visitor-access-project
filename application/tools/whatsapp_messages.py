@@ -102,6 +102,12 @@ def clear_entries():
         conn.execute("DELETE FROM staff_entries")
 
 
+def later():
+    """Moves the allow list entries 3 minutes back, past the repeat window, still today."""
+    with db.connect() as conn:
+        conn.execute("UPDATE staff_entries SET entered_at = %s", (db.ago(3 / 1440),))
+
+
 sections = []
 problems = []
 
@@ -231,6 +237,14 @@ def main():
     scenario("A guard sends an allow list code", lambda: say(GUARD[1:], code), GUARD[1:], code)
     scenario("The same code again within 2 minutes", lambda: say(GUARD[1:], f"IN {code}"),
              GUARD[1:], f"IN {code}")
+    later()
+    scenario("The same code later that day: the exit", lambda: say(GUARD[1:], code),
+             GUARD[1:], code)
+    later()
+    say(GUARD[1:], code)  # back in, so OUT below corrects an entry
+    later()
+    scenario("OUT with an allow list code, to correct a wrong scan",
+             lambda: say(GUARD[1:], f"OUT {code}"), GUARD[1:], f"OUT {code}")
     scenario("An allow list code nobody has", lambda: say(GUARD[1:], "1000000"), GUARD[1:],
              "1000000")
     clear_entries()
@@ -246,7 +260,10 @@ def main():
              lambda: say(GUARD[1:], blocked), GUARD[1:], blocked)
     clear_entries()
     scenario("A staff entry recorded on the gate page",
-             lambda: client.post(f"/api/staff/{code}/entry", headers=GATE))
+             lambda: client.post(f"/api/staff/{code}/scan", headers=GATE))
+    later()
+    scenario("A staff exit recorded on the gate page: no message",
+             lambda: client.post(f"/api/staff/{code}/scan", headers=GATE))
 
     # --- Bulk approval and keys
     many = [request(name=name) for name in ("Neha Joshi", "Karan Mehta", "Isha Rao")]

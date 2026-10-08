@@ -135,7 +135,7 @@ def add_visits(codes):
                         json={"name": "Suresh", "phone": "+919000000005"}).get_json()
     suresh = {"X-Gate-Key": guard["key"]}
     for name in ("Prof Vikram Joshi", "Sunita Pawar"):
-        client.post(f"/api/staff/{codes[name]}/entry", headers=suresh)
+        client.post(f"/api/staff/{codes[name]}/scan", headers=suresh)
     photo = grey_photo()
     made_up = [
         ("Kavita Shah", "9820011223", "Delivery", "Main office", [], "closed", 180),

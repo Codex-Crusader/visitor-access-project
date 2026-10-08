@@ -27,8 +27,9 @@ by face.
 4. At the gate, the guard types the entry code on the gate page, takes a
    photo of the visitor, and records the entry. On the way out, the visitor
    shows an exit code.
-5. Staff and faculty on the allow list say a 7-digit code to the guard. The
-   guard records the entry, and the person gets a WhatsApp message about it.
+5. Staff and faculty on the allow list say a 7-digit code to the guard when
+   they come in and when they go out. The guard records the entry or the
+   exit, and the person gets a WhatsApp message about each entry.
 6. The admin page shows every request, the lists of people, and the logs.
 
 If nobody answers in 15 minutes, the request goes to a backup approver, or
@@ -120,7 +121,7 @@ once a day to get them.
 | Entry and exit times, and the guard                | The gate           | `RETAIN_DAYS`                |
 | Gate photo, a small JPEG with no location data     | The gate page      | `RETAIN_DAYS`                |
 | Allow list: name, WhatsApp number, code, tag       | An admin           | Until an admin deletes it    |
-| Staff entries: name, code, time, guard             | The gate           | `RETAIN_DAYS`                |
+| Staff entries and exits: name, code, time, guard   | The gate           | `RETAIN_DAYS`                |
 | Blacklist: name, number, reason                    | An admin           | Until an admin deletes it    |
 | Blocked attempts                                   | The app            | `RETAIN_DAYS`                |
 | Admin change log                                   | The app            | `RETAIN_DAYS`                |

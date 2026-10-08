@@ -1159,13 +1159,17 @@ async function officeFormChecks() {
 
 // ------------------------------------------------ a staff code at the gate
 async function staffGateChecks() {
-  console.log("gate desk: a staff code shows the name, then records the entry");
+  console.log("gate desk: a staff code records an entry, the next scan an exit");
   const calls = [];
+  // The server decides: an entry, then an exit. This stub alternates as it would.
+  let scans = 0;
   const desk = boot("gate.html", "gate.js", {
     fetch: (url, options = {}) => {
       calls.push([url, options.method || "GET"]);
+      const kind = url.endsWith("/in") ? "entry" : url.endsWith("/out") ? "exit"
+        : url.endsWith("/scan") && scans++ % 2 ? "exit" : "entry";
       const body = url.includes("/api/gate/board") ? {inside: [], expected: []}
-        : url.endsWith("/entry") ? {code: "1234567", name: "Dr Dev", entered_at: new Date().toISOString()}
+        : options.method === "POST" ? {code: "1234567", name: "Dr Dev", kind, at: new Date().toISOString(), new: true}
         : url.includes("/api/staff/") ? {code: "1234567", name: "Dr Dev"} : {};
       return Promise.resolve({status: 200, ok: true, headers: {get: () => null},
                               json: () => Promise.resolve(body)});
@@ -1177,12 +1181,12 @@ async function staffGateChecks() {
   ok("visitor mode has its own background", desk.document.body.dataset.mode === "pass");
   desk.document.querySelector('[data-mode="staff"]').click();
   ok("Staff code opens the number keypad, on the staff background", byId("code").inputMode === "numeric"
-     && byId("code").getAttribute("pattern") === "[0-9]*" && byId("look").textContent === "Record staff entry"
+     && byId("code").getAttribute("pattern") === "[0-9]*" && byId("look").textContent === "Record entry or exit"
      && byId("sub").textContent.includes("7-digit") && desk.document.body.dataset.mode === "staff");
   byId("code").value = "123 4567";
   await desk.eval("look()");
-  ok("one action records the entry: no check first, no pass lookup",
-     calls.some(([u, m]) => u === "/api/staff/1234567/entry" && m === "POST")
+  ok("one action records the scan: no check first, no pass lookup",
+     calls.some(([u, m]) => u === "/api/staff/1234567/scan" && m === "POST")
      && !calls.some(([u, m]) => u === "/api/staff/1234567" && m === "GET")
      && !calls.some(([u]) => u.startsWith("/api/pass/")));
   ok("it says the entry is recorded, with the name and tag large for the face check",
@@ -1191,12 +1195,22 @@ async function staffGateChecks() {
   ok("the page stays in Staff code mode, the box empty and ready for the next person",
      desk.document.body.dataset.mode === "staff" && byId("code").value === ""
      && desk.document.activeElement === byId("code") && !byId("out").textContent.includes("Next person"));
+  ok("an entry is green", !!byId("out").querySelector(".state.good"));
   desk.eval("clear_()");
   byId("code").value = "1234567";
   await desk.eval("look()");
-  ok("7 digits in visitor mode record the entry and switch to Staff code mode",
-     calls.filter(([u]) => u === "/api/staff/1234567/entry").length === 2
+  ok("7 digits in visitor mode record the scan and switch to Staff code mode",
+     calls.filter(([u]) => u === "/api/staff/1234567/scan").length === 2
      && desk.document.body.dataset.mode === "staff");
+  ok("the second scan is an exit, on a bright red banner", byId("out").textContent.includes("Exit recorded")
+     && byId("out").textContent.includes("Dr Dev left at") && !!byId("out").querySelector(".state.out")
+     && !byId("out").textContent.includes("WhatsApp"));
+  ok("a wrong scan offers the other one", byId("fix").textContent.includes("Change to entry"));
+  byId("fix").click();
+  await tick(); await tick();
+  ok("the change sends IN for that code, and the page says Entry",
+     calls.some(([u, m]) => u === "/api/staff/1234567/in" && m === "POST")
+     && byId("out").textContent.includes("Entry recorded") && byId("fix").textContent.includes("Change to exit"));
   // A blacklisted number: the banner with the name, and no entry.
   desk.fetch = () => Promise.resolve({status: 409, ok: false, json: () => Promise.resolve({
     error: "On the blacklist.", code: "7654321", name: "Kavita", tag: "", blacklisted: true})});
@@ -1213,7 +1227,10 @@ async function teamChecks() {
   let lists = {gate_desk: "+911", guards: [], main_admin: "+919", you: "Meera +918", offices: [], super: true,
     admins: [{name: "Meera", phone: "+918", added_at: "2026-10-05T05:00:00+00:00"}],
     staff: [], staff_entries: [{code: "1234567", name: "Dr Dev", entered_at: "2026-10-06T04:00:00+00:00",
-                                entered_by: "Ravi +919800000001"}]};
+                                entered_by: "Ravi +919800000001", kind: "exit"}],
+    staff_today: Array.from({length: 40}, (_, i) => ({code: String(1000000 + i), name: `Staff ${i}`,
+      tag: i % 2 ? "Faculty" : "", last_kind: i < 30 ? "entry" : "exit", last_by: "Gate desk",
+      last_at: "2026-10-06T04:00:00+00:00", first_in: "2026-10-06T03:00:00+00:00"}))};
   const answer = (status, body) => Promise.resolve({status, ok: status < 300, json: () => Promise.resolve(body)});
   const admin = boot("admin.html", "admin.js", {
     fetch: (url, options = {}) => {
@@ -1254,11 +1271,29 @@ async function teamChecks() {
   admin.eval("render(); refresh()");
   await tick(); await tick();
   ok("the header names who is signed in", byId("you").textContent === "Signed in as Meera +918 (super admin)");
+  const staffRows = () => byId("t-staff").querySelectorAll("li").length;
+  ok("Today counts the staff on campus now", byId("stats").textContent.includes("30 Staff on campus now"));
+  ok("Today shows the staff on campus, 25 at a time", staffRows() === 25
+     && byId("t-staff-chips").textContent.includes("On campus 30") && byId("t-staff-chips").textContent.includes("Left 10")
+     && byId("t-staff").textContent.includes("In since") && byId("t-staff").textContent.includes("Show more (5 left)"));
+  byId("t-staff").querySelector("[data-staff-more]").click();
+  ok("Show more shows the rest", staffRows() === 30 && !byId("t-staff").querySelector("[data-staff-more]"));
+  byId("t-staff-chips").querySelector('[data-show="exit"]').click();
+  ok("Left shows who went out, with their exit time", staffRows() === 10
+     && byId("t-staff").textContent.includes("Out at") && byId("t-staff").textContent.includes("First in"));
+  byId("t-staff-q").value = "staff 35";
+  byId("t-staff-q").dispatchEvent(new admin.Event("input"));
+  await new Promise(done => setTimeout(done, 350));
+  ok("the search finds one person", staffRows() === 1 && byId("t-staff").textContent.includes("Staff 35"));
+  admin.eval("loadWaiting()");
+  await tick(); await tick();
+  ok("a refresh keeps the search box and its text", byId("t-staff-q").value === "staff 35" && staffRows() === 1);
 
   tab("staff").click();
   ok("the staff tab opens", !byId("staff").hidden && byId("visits").hidden);
   ok("the staff entries name the guard", byId("s-entries").textContent.includes("Ravi +919800000001")
      && byId("s-entries").textContent.includes("1234567"));
+  ok("the staff entries say in or out", byId("s-entries").textContent.includes("Out"));
   byId("s-name").value = "Dr Dev";
   byId("s-phone").value = "+917000000001";
   byId("s-add").click();
@@ -1450,9 +1485,13 @@ async function worstCaseChecks() {
   ok("the row is red and says On the blacklist", banned.dataset.banned === "true"
      && banned.textContent.includes("On the blacklist"));
   const out = () => desk.document.getElementById("out").textContent;
-  desk.eval('person = {code:"1234567", name:"Dev", entered_at:new Date().toISOString(), new:false, told:false}; render()');
+  desk.eval('person = {code:"1234567", name:"Dev", at:new Date().toISOString(), new:false, told:false}; render()');
   ok("a repeat says Already recorded, nothing sent", out().includes("Already recorded")
-     && out().includes("Nothing new"));
+     && out().includes("Nothing new") && !out().includes("—"));
+  desk.eval('person = {...person, kind:"exit", at:new Date().toISOString(), blacklisted:true}; render()');
+  ok("a blacklisted person may leave, and the guard is told", out().includes("Already recorded: exit")
+     && out().includes("on the blacklist. Tell the admin"));
+  desk.eval('person = {...person, kind:"entry", blacklisted:false}; render()');
   desk.eval('person = {...person, new:true, told:false}; render()');
   ok("a failed message is said plainly", out().includes("could not be sent"));
 

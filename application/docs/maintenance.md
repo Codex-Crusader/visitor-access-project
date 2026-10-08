@@ -12,7 +12,7 @@ new copy, read [setup.md](setup.md). For security and privacy, read
 | Visitor  | The web page on a phone    | Asks to come in, and shows the pass       |
 | Approver | WhatsApp                   | Says yes or no to each request            |
 | Guard    | The gate page, or WhatsApp | Records each entry and exit               |
-| Allowed  | Their 7-digit code         | Enter without a request (allow list)      |
+| Allowed  | Their 7-digit code         | Enter and leave with no request           |
 | Admin    | The admin page             | Reads every request and downloads the log |
 
 ## Visitor
@@ -169,25 +169,39 @@ WhatsApp stays in the guard's chat.
 People on the admin page's allow list, such as staff and faculty, do not send
 a request. Each one has a 7-digit allow list code.
 
+Use the same code when the person comes in and when the person goes out. The
+app decides which one it is. If the person came in during the last 16 hours
+and did not go out, the code records an exit. In all other cases, the code
+records an entry. A night shift from 22:00 to 06:00 works. A forgotten exit
+does not carry over to the next day.
+
 1. The person says their code to you.
-2. On WhatsApp, send the code, for example `4569918`. You can also send
-   `IN 4569918`. The entry is recorded at once.
+2. On WhatsApp, send the code, for example `4569918`. The entry or exit is
+   recorded at once, and the reply says which one.
 3. On the gate page, tap Staff code at the top. The background turns light
    green, and the phone shows the number keypad. Type the code and tap
-   "Record staff entry", or press Enter. The entry is recorded at once, and
-   the page shows the name in large letters, with their tag, such as their
+   "Record entry or exit", or press Enter. The page shows which one it
+   recorded: "Entry recorded" on green, or "Exit recorded" on bright red. It
+   also shows the name in large letters, with their tag, such as their
    department. A code typed in the Visitor pass mode works too, and switches
    the page to Staff code.
-4. Read the name. If it is not the person in front of you, do not let them
+4. Read the banner. If it says exit and the person is coming in, or the
+   opposite, tap "Wrong? Change to entry" or "Wrong? Change to exit" under
+   the name. On WhatsApp, send `IN 4569918` or `OUT 4569918`. Within 10
+   minutes, this changes the wrong scan, so the log keeps no wrong row.
+5. Read the name. If it is not the person in front of you, do not let them
    in, and tell the admin.
-5. The page stays in Staff code, with the code box empty, so type the next
+6. The page stays in Staff code, with the code box empty, so type the next
    person's code at once. Tap Visitor pass for a visitor: its background is
    light blue.
 
-The person gets a WhatsApp message about the entry, with the time and your
-name, but not your number. The reply tells you if that message could not be sent. The admin page
-shows each entry and the guard who recorded it. The app records no exit for
-the allow list.
+The same code again within 2 minutes records nothing new. A person on the
+blacklist cannot enter, but the code always records their exit.
+
+The person gets a WhatsApp message about each entry, with the time and your
+name, but not your number. The reply tells you if that message could not be
+sent. An exit sends no message. The admin page shows each entry and exit and
+the guard who recorded it.
 
 If the same code comes again within 2 minutes, from you or from another
 guard, the reply says "Already recorded" with the first time. Nothing new is
@@ -220,8 +234,12 @@ blacklist". A banned visitor who is inside can still leave.
    - Setup: Approvers & offices, Guards, Admins and Change log.
 
    Today opens first. It shows the requests that wait for a decision, the
-   visitors inside, the staff entries today, and the blacklist's blocks in
-   the last 24 hours. Tap a number to open that list. On a phone, tap Menu
+   visitors inside, the staff today, and the blacklist's blocks in the last
+   24 hours. Staff today has one row for each person who came in or went out
+   since midnight, and each person still in from a night shift. The "On
+   campus" chip lists the people inside now. The "Left" chip lists the people
+   who went out. The search box finds a name, code or tag. Tap a number to
+   open that list. On a phone, tap Menu
    at the top to open the menu. Under the title, you see who is signed
    in. The address keeps the part that is open, so Refresh and Back
    keep your place.
@@ -545,7 +563,9 @@ job has its own word.
 | `IN KT-4821`   | With the entry code: asks for a photo of the visitor                                                       |
 | a photo        | Records the entry for the last `IN`                                                                        |
 | `OUT RM-0937`  | With the exit code: records the exit                                                                       |
-| `4569918`      | From a guard, with an allow list code: records the entry at once. `IN 4569918` does the same               |
+| `4569918`      | From a guard, with an allow list code: records the entry, or the exit after an entry in the last 16 hours  |
+| `IN 4569918`   | From a guard: records the entry. Within 10 minutes of a wrong scan, it changes that scan                   |
+| `OUT 4569918`  | From a guard: records the exit. Within 10 minutes of a wrong scan, it changes that scan                    |
 | `CANCEL`       | Drops the photo you still owe after `IN`. Nobody is let in                                                 |
 | `KEY`          | From `GUARD` or `ADMIN_PHONE`: sends back that number's key. From an added guard or admin: makes a new key |
 | anything else  | Sends back the requests that wait for you                                                                  |
@@ -796,8 +816,12 @@ the free plan, that window is only 6 hours (the project's "History
 retention"). A mistake found the next day cannot be undone there.
 
 Download logs saves two files. The first is `staff-entries-<date>.csv`, the
-staff entry log: one row for each allow list entry, with the date, the time,
-the person, their code and number, and the guard who recorded it. The second
+staff entry log. It has one row for each allow list visit: the date, the
+person, their code and number, the entry time and the exit time, and the
+guards who recorded them. An entry with no exit in the next 16 hours reads
+EXIT NOT RECORDED. An exit with no entry in the 16 hours before reads ENTRY
+NOT RECORDED. A person who came in less than 16 hours ago and did not go out
+reads Still inside. The second
 is the visit log, `visit-log-<date>.zip`. Unzip it first: a file inside a
 ZIP does not show its photos. It holds:
 
@@ -922,8 +946,9 @@ the reply is lost.
 ### How the work grows
 
 In this table, n is the number of stored visits. k is the number of rows
-that an operation returns or changes. "From memory" means that a repeated
-read costs no database query until the app changes the data. The first
+that an operation returns or changes. s is the number of stored staff scans.
+"From memory" means that a repeated read costs no database query until the
+app changes the data. The first
 read after a change, and every read in the first 2 minutes after the server
 starts, goes to the database.
 
@@ -941,6 +966,10 @@ starts, goes to the database.
 | Admin search                        | O(n) at worst | Reads rows until the page is full          |
 | CSV export                          | O(n)          | It returns every row                       |
 | Allow list or office search         | O(m)          | m people; only 200 rows go on the page     |
+| Staff scan, entry or exit           | O(log s)      | One query on the code and time index       |
+| Staff today, on each admin refresh  | O(t log t)    | t scans in the last 16 hours, sorted once  |
+| Staff today search and chips        | O(p)          | p people today; 25 rows go on the page     |
+| Staff entry log CSV                 | O(s log s)    | One pass pairs entries and exits, one sort |
 
 A reference has five digits, so there are 90,000 references. A new request
 picks one at random and tries again if it is taken. The free storage fills

@@ -6,7 +6,7 @@ import logging
 from flask import Blueprint, Response, jsonify, request, stream_with_context
 
 from core import checks, config, db, limits
-from models import audit, entries, people, visits
+from models import audit, entries, people, staff, visits
 from routes import access, team
 from services import export, notify, timer, whatsapp
 
@@ -65,15 +65,9 @@ def bulk_decide():
     refused = access.admin_refusal() or access.super_refusal()
     if refused:
         return refused
-    payload = request.get_json(silent=True) or {}
-    status = DECISIONS.get(str(payload.get("decision") or ""))
-    given = payload.get("references")
-    if status is None or not isinstance(given, list) or not given:
-        return jsonify(error="Choose the requests, and approve or decline."), 400
-    references = list(dict.fromkeys(
-        whatsapp.normalize_reference(str(ref)) or str(ref).upper() for ref in given))
-    if len(references) > BULK_LIMIT:
-        return jsonify(error=f"Choose {BULK_LIMIT} requests at most at once."), 400
+    status, references, problem = read_bulk(request.get_json(silent=True) or {})
+    if problem:
+        return jsonify(error=problem), 400
 
     me = access.admin_caller()
     done, skipped = [], []
@@ -89,6 +83,19 @@ def bulk_decide():
         audit.record(me, f"{'Approved' if status == db.APPROVED else 'Declined'} {len(done)}"
                      " requests at once", ", ".join(v["reference"] for v in done))
     return jsonify(decided=[v["reference"] for v in done], skipped=skipped)
+
+
+def read_bulk(payload):
+    """(status, references, problem) from a bulk decision's JSON. Repeats are dropped."""
+    status = DECISIONS.get(str(payload.get("decision") or ""))
+    given = payload.get("references")
+    if status is None or not isinstance(given, list) or not given:
+        return None, None, "Choose the requests, and approve or decline."
+    references = list(dict.fromkeys(
+        whatsapp.normalize_reference(str(ref)) or str(ref).upper() for ref in given))
+    if len(references) > BULK_LIMIT:
+        return None, None, f"Choose {BULK_LIMIT} requests at most at once."
+    return status, references, None
 
 
 def why_not_decided(reference, status):
@@ -130,6 +137,8 @@ def admin_summary():
         counts=visits.status_counts(),
         approvers=approver_rows(people.approver_table()),
         **team.lists(),
+        # Only here, not after each change: with many staff members it is the longest list.
+        staff_today=staff.today(),
         escalate_minutes=config.ESCALATE_MINUTES,
         auto_approve_minutes=config.AUTO_APPROVE_MINUTES,
         work_hours=[config.WORK_START, config.WORK_END],

@@ -239,6 +239,16 @@ CREATE TABLE reason_auto (
 );
 ALTER TABLE offices ADD COLUMN auto_minutes INTEGER CHECK (auto_minutes >= 0);
 """,
+    # 11: the gate records staff exits too, in the same log as their entries.
+    """
+-- 'entry' or 'exit'. Every row before this step is an entry. The old version writes no kind,
+-- so it keeps working while Render deploys, and after a rollback.
+ALTER TABLE staff_entries ADD COLUMN kind TEXT NOT NULL DEFAULT 'entry';
+ALTER TABLE staff_entries ADD CONSTRAINT staff_entries_kind_known CHECK (kind IN ('entry', 'exit'))
+  NOT VALID;
+-- Today's last movement of each person, for the admin page.
+CREATE INDEX staff_entries_code_at ON staff_entries (code, entered_at);
+""",
 ]
 
 # Advisory lock id, so two starting instances never run a step twice.

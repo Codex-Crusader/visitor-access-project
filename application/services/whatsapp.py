@@ -34,7 +34,10 @@ HELP_LINES = {
         "Send a pass code like KT-4821 to see that pass.",
         "IN <entry code>, then a photo of the visitor, records entry.",
         "OUT <exit code> records exit. Both codes are on the visitor's pass.",
-        "A staff member's 7-digit allow list code records their entry at once.",
+        "A staff member's 7-digit allow list code records their entry, or their exit if"
+        " they came in within 16 hours.",
+        "IN or OUT with a 7-digit allow list code records that one. Within 10 minutes of a"
+        " wrong scan, it changes that scan.",
         "CANCEL drops the photo you still owe after IN.",
     ],
 }
@@ -325,8 +328,9 @@ def read_command(parts):
         # An unreadable reference goes on as typed. It must never decide the one request waiting.
         key = first_code(parts[1:], normalize_reference)
         return "decide", DECIDE_WORDS[word], key or rest.upper() or None
-    if word == "IN" and staff.normalize_code(rest):
-        return "staff", None, rest
+    # IN or OUT with 7 digits is an allow list code, not a pass code.
+    if word in GATE_WORDS and staff.normalize_code(rest):
+        return "staff", GATE_WORDS[word], rest
     if word in GATE_WORDS:
         # Whatever was typed goes on, so a wrong code is named in the reply.
         key = first_code(parts[1:], normalize_gate_code)
@@ -502,6 +506,15 @@ def notify_staff_entry(person, stamp, by):
                       config.STAFF_ENTRY_TEMPLATE)
     else:
         send(person["phone"], staff_entry_body(person, stamp, by))
+
+
+def staff_exit_reply(person, stamp, new):
+    """What the guard reads after OUT with an allow list code. The person gets no message."""
+    if not new:
+        return (f"Already recorded: {person['name']} left at {local_time(stamp)}."
+                " Nothing new was recorded.")
+    return (f"Exit recorded: {person['name']}, allow list code {person['code']},"
+            f" at {local_time(stamp)}.")
 
 
 def staff_entry_reply(person, stamp, new, told):

@@ -98,18 +98,21 @@ def handle_gate(guard, sender, action, code, help_lines=whatsapp.HELP):
     if why:
         return why
 
-    reference = visit["reference"]
     # IN only asks for the photo. The photo lets the visitor in, see handle_photo.
     if action == db.ENTRY:
-        pending = entries.wait_for_photo(whatsapp.digits(sender), reference, PHOTO_MINUTES)
-        if pending:
-            return whatsapp.photo_owed(visits.get(pending))
-        return whatsapp.photo_request(visit, code)
-
-    done = entries.check_out(reference, guard)
+        return ask_for_photo(sender, visit, code)
+    done = entries.check_out(visit["reference"], guard)
     if done is None:
-        return gate.REFUSALS[action][visits.get(reference)["status"]]
+        return gate.REFUSALS[action][visits.get(visit["reference"])["status"]]
     return whatsapp.pass_body(done)
+
+
+def ask_for_photo(sender, visit, code):
+    """The reply to IN: send the photo, or the photo this guard still owes."""
+    pending = entries.wait_for_photo(whatsapp.digits(sender), visit["reference"], PHOTO_MINUTES)
+    if pending:
+        return whatsapp.photo_owed(visits.get(pending))
+    return whatsapp.photo_request(visit, code)
 
 
 def handle_cancel(guard, sender):
@@ -147,8 +150,9 @@ def handle_photo(guard, sender, media_id):
     return whatsapp.pass_body(visit)
 
 
-def handle_staff(guard, code):
-    """A guard sent an allow list code. The entry is recorded at once. The reply names them."""
+def handle_staff(guard, kind, code):
+    """A guard sent an allow list code: alone it toggles, IN or OUT says which. The move is
+    recorded at once. The reply names them. A blacklisted number cannot enter, but can leave."""
     if not guard:
         return "Only a guard can record entry and exit."
     if limits.too_many("allow-code", gate.CODES_PER_MINUTE, 60, who=guard):
@@ -156,10 +160,14 @@ def handle_staff(guard, code):
     person = staff.by_code(code)
     if person is None:
         return f"No one on the allow list has the code {code}. Check the code, or ask the admin."
-    if blacklist.has(person["phone"]):
+    kind, stamp, new, told = notify.staff_moved(person, guard, kind,
+                                                may_enter=not blacklist.has(person["phone"]))
+    if stamp is None:
         gate.stopped_code(person, guard)
         return f"{person['name']}: {gate.BLACKLISTED}"
-    return whatsapp.staff_entry_reply(person, *notify.staff_entered(person, guard))
+    if kind == db.EXIT:
+        return whatsapp.staff_exit_reply(person, stamp, new)
+    return whatsapp.staff_entry_reply(person, stamp, new, told)
 
 
 def handle_lookup(guard, sender, key, table):
@@ -239,7 +247,7 @@ def answer_message(sender, text, photo, table, guard):
         "cancel": lambda: handle_cancel(guard, sender),
         "decide": lambda: handle_decide(sender, value, key, table, help_lines),
         "gate": lambda: handle_gate(guard, sender, value, key, help_lines),
-        "staff": lambda: handle_staff(guard, key),
+        "staff": lambda: handle_staff(guard, value, key),
         "lookup": lambda: handle_lookup(guard, sender, key, table),
     }
     if kind in handlers:

@@ -188,6 +188,9 @@ created = datetime.fromisoformat(visits.get(waits["reference"])["created_at"])
 with db.connect() as conn:
     conn.execute("UPDATE visits SET auto_approve_at = %s WHERE reference = %s",
                  (timer.after(created, 30), waits["reference"]))
+    # Made out of hours: no time. Set here, so the test passes at any hour.
+    conn.execute("UPDATE visits SET auto_approve_at = NULL WHERE reference = %s",
+                 (out_of_hours["reference"],))
 db.forget_cache()
 set_time = client.post("/api/admin/approvers", headers=ADMIN, json={**pair, "auto_minutes": "45"})
 assert set_time.status_code == 200, set_time.get_json()

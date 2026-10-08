@@ -10,7 +10,7 @@ import zipfile
 from datetime import datetime, timezone
 from typing import Any
 
-from core import config
+from core import config, db
 from models import audit, blacklist, entries, staff, visits
 
 ZONE = config.WORK_TIMEZONE.key
@@ -65,11 +65,26 @@ ZIP_VISIT_COLUMNS = (
     *VISIT_COLUMNS,
     ("Photo file", lambda v: photo_file(v["reference"]) if v["photo_stored"] else ""),
 )
-# The date in its own column, so a spreadsheet filter shows one day's entries.
+# A staff visit with one side missing, see staff.pair_visits().
+NO_EXIT = "EXIT NOT RECORDED"
+NO_ENTRY = "ENTRY NOT RECORDED"
+STILL_INSIDE = "Still inside"
+
+
+def exit_cell(row):
+    if row["out"]:
+        return local(row["out"], "%H:%M")
+    still = row.get("open") and row["in"] >= db.ago(staff.SHIFT_HOURS / 24)
+    return STILL_INSIDE if still else NO_EXIT
+
+
+# One row per staff visit. The date in its own column, so a spreadsheet filter shows one day.
 ALLOW_COLUMNS = (
-    (f"Date ({ZONE})", lambda e: local(e["entered_at"], "%Y-%m-%d")),
-    (f"Time ({ZONE})", lambda e: local(e["entered_at"], "%H:%M")), ("Name", "name"),
-    ("Allow list code", "code"), ("WhatsApp number", "phone"), ("Recorded by", "entered_by"),
+    (f"Date ({ZONE})", lambda r: local(r["in"] or r["out"], "%Y-%m-%d")), ("Name", "name"),
+    ("Allow list code", "code"), ("WhatsApp number", "phone"),
+    (f"Entry time ({ZONE})", lambda r: local(r["in"], "%H:%M") if r["in"] else NO_ENTRY),
+    ("Entered by", "in_by"),
+    (f"Exit time ({ZONE})", exit_cell), ("Exited by", "out_by"),
 )
 BLOCKED_COLUMNS = (
     (f"When ({ZONE})", lambda a: local(a["at"])), ("Name", "name"), ("Phone", "phone"),
@@ -110,8 +125,8 @@ def csv_text(columns, rows):
 
 
 def staff_entries_csv():
-    """Every staff entry still kept, oldest first, one row each."""
-    return csv_text(ALLOW_COLUMNS, staff.all_entries())
+    """Every staff visit still kept, oldest first, one row each."""
+    return csv_text(ALLOW_COLUMNS, staff.all_visits())
 
 
 def visit_rows():
@@ -134,8 +149,9 @@ blocked-attempts.csv   Each time the blacklist stopped someone.
 admin-changes.csv      Who changed what on the admin page, or by KEY.
 photos/                The photos taken on the gate page, named by reference.
 
-The staff entry log, each allow list entry and the guard who recorded it, is
-a separate file: staff-entries-<date>.csv. Download log saves both files.
+The staff entry log is a separate file: staff-entries-<date>.csv. It has one
+row for each allow list visit, with its entry, its exit and the guards who
+recorded them. Download log saves both files.
 
 Times are campus time, {zone}. A photo sent on WhatsApp is not here: it stays
 in the guard's WhatsApp chat. This copy holds personal details and faces.

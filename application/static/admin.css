@@ -98,6 +98,10 @@ h3.sub{margin:26px 0 10px;font-size:1.02rem;font-weight:700}
 .mini li:last-child{border-bottom:0}
 .mini small{display:block;color:var(--soft);font-size:.8rem}
 .mini time{color:var(--soft);white-space:nowrap;font-variant-numeric:tabular-nums}
+.mini .pill{align-self:center;white-space:nowrap}
+/* Today's staff can be hundreds of people, so the list scrolls inside its card. */
+.scroll{max-height:420px;overflow-y:auto}
+.scroll > .small{margin:10px 0 2px}
 
 label{display:block;font-weight:650;font-size:.84rem;letter-spacing:.02em;margin:0 0 7px}
 input{width:100%;padding:13px;border:1px solid var(--line);border-radius:12px;background:var(--mute);

@@ -81,16 +81,17 @@ def reply_to(phone, text):
         log.error("Could not reply: %s", failure)
 
 
-def staff_entered(person, by):
-    """Record an allow list entry, then tell the person. Returns (time, new, told).
+def staff_moved(person, by, kind=None, may_enter=True):
+    """Record an allow list entry or exit, see staff.record_move(). A new entry tells the person.
+    Returns (kind, time, new, told). The time is None for an entry may_enter refused.
 
     A repeat within a few minutes records and sends nothing. A failed message keeps the entry."""
-    stamp, new = staff.record_entry(person, by)
-    if not new:
-        return stamp, False, False
+    kind, stamp, new = staff.record_move(person, by, kind, may_enter)
+    if not new or kind != db.ENTRY:
+        return kind, stamp, new, False
     try:
         whatsapp.notify_staff_entry(person, stamp, by)
     except Exception as failure:
         log.error("Could not tell code %s about their entry: %s", person["code"], failure)
-        return stamp, True, False
-    return stamp, True, True
+        return kind, stamp, True, False
+    return kind, stamp, True, True

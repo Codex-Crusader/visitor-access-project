@@ -19,6 +19,7 @@ from kit import (
 )
 import app as application
 from routes import access
+from routes import gate
 from models import blacklist
 from core import checks
 from core import config
@@ -315,7 +316,8 @@ assert [p["code"] for p in made["staff"]] == [dev_code]
 again = add_staff("Dev again", DEV_PHONE)
 assert again.status_code == 400, (again.status_code, again.get_data(as_text=True))
 assert whatsapp.read_reply(dev_code) == ("staff", None, dev_code)
-assert whatsapp.read_reply(f"in {dev_code[:3]} {dev_code[3:]}") == ("staff", None, dev_code)
+assert whatsapp.read_reply(f"in {dev_code[:3]} {dev_code[3:]}") == ("staff", "entry", dev_code)
+assert whatsapp.read_reply(f"OUT {dev_code}") == ("staff", "exit", dev_code)
 assert whatsapp.read_reply("40221")[0] == "lookup", "a reference is still a reference"
 
 sent.clear()
@@ -351,17 +353,17 @@ assert client.get(f"/api/staff/{dev_code}").status_code == 403
 seen = client.get(f"/api/staff/{dev_code}", headers=KEY).get_json()
 assert seen == {"code": dev_code, "name": "Dr Dev", "tag": "", "blacklisted": False}, seen
 assert client.get(f"/api/staff/{unknown_code}", headers=KEY).status_code == 404
-by_page = client.post(f"/api/staff/{dev_code}/entry", headers=KEY)
+by_page = client.post(f"/api/staff/{dev_code}/in", headers=KEY)
 assert by_page.status_code == 200 and DEV_PHONE not in by_page.get_data(as_text=True)
 assert by_page.get_json()["new"] is True and by_page.get_json()["told"] is True
 assert staff.recent_entries()[0]["entered_by"] == access.DESK_KEY
-double = client.post(f"/api/staff/{dev_code}/entry", headers=KEY).get_json()
-assert double["new"] is False and double["entered_at"] == by_page.get_json()["entered_at"]
+double = client.post(f"/api/staff/{dev_code}/in", headers=KEY).get_json()
+assert double["new"] is False and double["at"] == by_page.get_json()["at"]
 later()
 # With a template set, the message goes as that template. A failed message keeps the entry.
 config.STAFF_ENTRY_TEMPLATE = "staff_entry"
 try:
-    client.post(f"/api/staff/{dev_code}/entry", headers=KEY)
+    client.post(f"/api/staff/{dev_code}/in", headers=KEY)
     assert templates[-1][0] == DEV_PHONE and templates[-1][1][0] == "Dr Dev", templates[-1]
 finally:
     config.STAFF_ENTRY_TEMPLATE = ""
@@ -379,13 +381,119 @@ def fails_for_dev(to, body):
 whatsapp.send = fails_for_dev
 try:
     before = len(staff.recent_entries())
-    failed_send = client.post(f"/api/staff/{dev_code}/entry", headers=KEY)
+    failed_send = client.post(f"/api/staff/{dev_code}/in", headers=KEY)
     assert failed_send.status_code == 200 and failed_send.get_json()["told"] is False
     assert len(staff.recent_entries()) == before + 1
     later()
-    assert "could not be sent" in say(APPROVER, dev_code), "the guard is told the truth"
+    assert "could not be sent" in say(APPROVER, f"IN {dev_code}"), "the guard is told the truth"
 finally:
     whatsapp.send = real_send
+later()
+
+# A scan is a toggle: an entry, then an exit after an entry today. A double tap repeats.
+EVE_PHONE = "+919500000003"
+eve_code = add_staff("Eve", EVE_PHONE).get_json()["code"]
+
+
+def eve_moves():
+    return [e["kind"] for e in staff.recent_entries() if e["code"] == eve_code]
+
+
+def eve_today():
+    """Eve's row in the Today list, or {} when she is not in it."""
+    return next((p for p in staff.today() if p["code"] == eve_code), {})
+
+
+assert eve_today() == {}
+sent.clear()
+assert say(APPROVER, eve_code).startswith("Entry recorded: Eve")
+assert say(APPROVER, eve_code).startswith("Already recorded: Eve entered"), "a double tap"
+assert eve_moves() == ["entry"] and eve_today()["last_kind"] == "entry"
+later()
+left = say(APPROVER, eve_code)
+assert left.startswith("Exit recorded: Eve"), left
+assert [to for to, _ in sent].count(EVE_PHONE) == 1, "no message to the person on exit"
+assert say(APPROVER, eve_code).startswith("Already recorded: Eve left"), "a double tap"
+assert eve_moves() == ["exit", "entry"]
+assert eve_today()["last_kind"] == "exit" and eve_today()["first_in"], eve_today()
+later()
+# The gate page sends scan, and reads which one it was.
+back = client.post(f"/api/staff/{eve_code}/scan", headers=KEY).get_json()
+assert back["kind"] == "entry" and back["new"] is True and back["told"] is True, back
+later()
+out = client.post(f"/api/staff/{eve_code}/scan", headers=KEY).get_json()
+assert out["kind"] == "exit" and out["new"] is True and EVE_PHONE not in str(out), out
+assert client.post(f"/api/staff/{eve_code}/sideways", headers=KEY).status_code == 404
+later()
+# IN and OUT say which one, to correct a wrong scan. OUT twice is one exit.
+assert say(APPROVER, f"OUT {eve_code}").startswith("Exit recorded: Eve")
+assert say(APPROVER, f"OUT {eve_code}").startswith("Already recorded: Eve left")
+summary_today = client.get("/api/admin/summary", headers=ADMIN).get_json()["staff_today"]
+assert [p["last_kind"] for p in summary_today if p["code"] == eve_code] == ["exit"]
+assert "phone" not in summary_today[0], "the Today list needs no number"
+# After 16 hours a scan starts again: yesterday's entry with no exit does not turn a scan
+# into an exit, and it is not in the Today list.
+with db.connect() as conn:
+    conn.execute("DELETE FROM staff_entries WHERE code = %s", (eve_code,))
+    conn.execute("INSERT INTO staff_entries (code, name, phone, entered_at, entered_by)"
+                 " VALUES (%s, 'Eve', %s, %s, 'test')", (eve_code, EVE_PHONE, db.ago(1)))
+assert staff.recent_entries()[0]["kind"] == "entry", "a row with no kind is an entry"
+assert eve_today() == {}
+assert say(APPROVER, eve_code).startswith("Entry recorded: Eve"), "a new day starts with an entry"
+# A night shift: the entry 8 hours ago, before midnight or not, makes this scan the exit.
+with db.connect() as conn:
+    conn.execute("DELETE FROM staff_entries WHERE code = %s", (eve_code,))
+    conn.execute("INSERT INTO staff_entries (code, name, phone, entered_at, entered_by)"
+                 " VALUES (%s, 'Eve', %s, %s, 'test')", (eve_code, EVE_PHONE, db.ago(8 / 24)))
+assert eve_today()["last_kind"] == "entry", "still in from the night shift: on campus"
+assert say(APPROVER, eve_code).startswith("Exit recorded: Eve"), "the night shift ends"
+# A wrong scan changed within 10 minutes: the same row, the other kind, nothing added.
+with db.connect() as conn:
+    conn.execute("DELETE FROM staff_entries WHERE code = %s", (eve_code,))
+assert client.post(f"/api/staff/{eve_code}/scan", headers=KEY).get_json()["kind"] == "entry"
+changed = client.post(f"/api/staff/{eve_code}/out", headers=KEY).get_json()
+assert changed["kind"] == "exit" and changed["new"] is True and eve_moves() == ["exit"], changed
+assert say(APPROVER, f"IN {eve_code}").startswith("Entry recorded: Eve")
+assert eve_moves() == ["entry"], "changed back, still one row"
+# A gate page opened before the toggle records every code as an entry, so it must reload.
+old_page = client.post(f"/api/staff/{eve_code}/entry", headers=KEY)
+assert old_page.status_code == 409 and "Reload" in old_page.get_json()["error"]
+assert eve_moves() == ["entry"]
+# A stolen gate key cannot try every code: scans share the 60 a minute of reads.
+limits.forget_hits()
+for guess in range(gate.CODES_PER_MINUTE):
+    client.post(f"/api/staff/{9000000 + guess}/scan", headers=KEY)
+assert client.post(f"/api/staff/{eve_code}/scan", headers=KEY).status_code == 429
+assert eve_moves() == ["entry"], "a refused scan records nothing"
+limits.forget_hits()
+# A blacklisted number cannot enter by a scan, but can leave.
+later()
+add_black(EVE_PHONE, "Eve")
+assert client.post(f"/api/staff/{eve_code}/scan", headers=KEY).get_json()["kind"] == "exit"
+later()
+refused = client.post(f"/api/staff/{eve_code}/scan", headers=KEY)
+assert refused.status_code == 409 and refused.get_json()["kind"] == "entry", refused.get_json()
+assert "blacklist" in say(APPROVER, eve_code)
+assert eve_moves()[0] == "exit", "the refused entry is not recorded"
+client.post("/api/admin/blacklist/remove", json={"phone": EVE_PHONE}, headers=ADMIN)
+
+# The staff log has one row per visit: each entry with the exit after it on the same day.
+YESTERDAY = db.ago(1)
+day_rows = staff.pair_visits([
+    {"code": "1", "name": "A", "phone": "+91", "entered_at": YESTERDAY, "entered_by": "g",
+     "kind": "entry"},
+    {"code": "2", "name": "B", "phone": "+91", "entered_at": YESTERDAY, "entered_by": "g",
+     "kind": "exit"},
+    {"code": "1", "name": "A", "phone": "+91", "entered_at": db.now(), "entered_by": "g",
+     "kind": "entry"},
+])
+cells = {(row["name"], export.local(row["in"] or row["out"], "%Y-%m-%d")):
+         [export.read(row, how) for _, how in export.ALLOW_COLUMNS] for row in day_rows}
+yesterday, today_date = export.local(YESTERDAY, "%Y-%m-%d"), export.local(db.now(), "%Y-%m-%d")
+assert len(day_rows) == 3, day_rows
+assert cells["A", yesterday][6] == export.NO_EXIT, "yesterday's entry with no exit"
+assert cells["B", yesterday][4] == export.NO_ENTRY, "an exit with no entry"
+assert cells["A", today_date][6] == export.STILL_INSIDE, "today, still inside"
 later()
 summary = client.get("/api/admin/summary", headers=ADMIN).get_json()
 assert access.DESK_KEY in [e["entered_by"] for e in summary["staff_entries"]]
@@ -403,14 +511,19 @@ allow_rows = csv_rows(allow_csv)
 assert list(allow_rows[0]) == [heading for heading, _ in export.ALLOW_COLUMNS], allow_rows[0]
 today = datetime.now(config.WORK_TIMEZONE).strftime("%Y-%m-%d")
 assert allow_rows[-1][f"Date ({export.ZONE})"] == today, allow_rows[-1]
-assert re.fullmatch(r"\d\d:\d\d", allow_rows[-1][f"Time ({export.ZONE})"]), allow_rows[-1]
+assert re.fullmatch(r"\d\d:\d\d", allow_rows[-1][f"Entry time ({export.ZONE})"]), allow_rows[-1]
+eve_rows = [r for r in allow_rows if r["Allow list code"] == eve_code]
+assert eve_rows and all(re.fullmatch(r"\d\d:\d\d", r[f"Exit time ({export.ZONE})"])
+                        or r[f"Exit time ({export.ZONE})"] in (export.NO_EXIT, export.STILL_INSIDE)
+                        for r in eve_rows), eve_rows
 assert "allow-list-entries.csv" not in zipfile.ZipFile(io.BytesIO(
     client.get("/api/admin/export.zip", headers=ADMIN).get_data())).namelist(), "a separate log"
-assert len(allow_rows) == len(staff.all_entries()), "every entry, not only the last 100"
+assert len(allow_rows) == len(staff.all_visits()) > 3, "every visit, not the last 100"
 assert '="+919500000001"' in [r["WhatsApp number"] for r in allow_rows], "shown as text"
 assert f"Gate desk {config.GUARD}" in allow_csv and access.DESK_KEY in allow_csv
 assert "'=HYPERLINK(1)" in allow_csv, "a formula name gets a quote in front"
 client.post("/api/admin/staff/remove", json={"code": sneaky_code}, headers=ADMIN)
+client.post("/api/admin/staff/remove", json={"code": eve_code}, headers=ADMIN)
 # A sleeping database leaves the visitor page its settings, with no office list.
 real_names = people.office_names
 people.office_names = broken

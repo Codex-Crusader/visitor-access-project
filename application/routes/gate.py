@@ -146,29 +146,40 @@ def gate_action(key, action):
     if action not in NEEDS:
         return jsonify(error="Unknown action"), 404
 
-    code = whatsapp.normalize_gate_code(key)
-    visit, kind = visits.by_code(code) if code else (None, None)
+    code, visit, kind = by_typed_code(key)
     if visit is None:
         return jsonify(error="No pass has that code. Type the code on the visitor's pass."), 404
     why = refusal(visit, action, kind, code, guard)
     if why:
         return jsonify(error=why, visit=typed_pass(visit, code, kind)), 409
-
-    # The update itself decides. Two guards pressing at once must not both win.
-    if action == db.ENTRY:
-        # Checked last, so a pass that cannot enter never asks for a photo.
-        photo = checks.read_photo(request.get_json(silent=True))
-        if photo is None:
-            return jsonify(error=checks.NO_PHOTO, visit=typed_pass(visit, code, kind)), 400
-        done = entries.check_in(visit["reference"], guard, photo)
-    else:
-        done = entries.check_out(visit["reference"], guard)
+    done, no_photo = record_action(visit, action, guard)
+    if no_photo:
+        return jsonify(error=checks.NO_PHOTO, visit=typed_pass(visit, code, kind)), 400
     if done is None:
         fresh = visits.get(visit["reference"])
         # Still approved means the number joined the blacklist a moment ago.
         why = REFUSALS[action].get(fresh["status"], BLACKLISTED)
         return jsonify(error=why, visit=typed_pass(fresh, code, kind)), 409
     return jsonify(typed_pass(done, code, kind))
+
+
+def by_typed_code(key):
+    """(code, visit, kind) for a typed pass code. The visit is None when no pass has it."""
+    code = whatsapp.normalize_gate_code(key)
+    visit, kind = visits.by_code(code) if code else (None, None)
+    return code, visit, kind
+
+
+def record_action(visit, action, guard):
+    """(visit after the entry or exit, True when the entry has no photo). The update itself
+    decides, so two guards pressing at once never both win."""
+    if action == db.EXIT:
+        return entries.check_out(visit["reference"], guard), False
+    # Read last, so a pass that cannot enter never asks for a photo.
+    photo = checks.read_photo(request.get_json(silent=True))
+    if photo is None:
+        return None, True
+    return entries.check_in(visit["reference"], guard, photo), False
 
 
 def refusal(visit, action, kind, code, guard):
@@ -186,7 +197,7 @@ def refusal(visit, action, kind, code, guard):
 
 NO_SUCH_CODE = "No one on the allow list has that code."
 # Allow list calls one guard may make in a minute, so a stolen key cannot list the names.
-# The gate page makes one for each person, so one guard can take 60 people a minute.
+# A scan is one call, so one guard can take 60 people a minute.
 CODES_PER_MINUTE = 60
 TOO_MANY_CODES = "Too many allow list codes in a minute. Wait a minute and try again."
 
@@ -197,34 +208,53 @@ def staff_view(person):
             "blacklisted": blacklist.has(person["phone"])}
 
 
+def staff_caller(code):
+    """(guard, person, refusal) for an allow list call. Each call counts toward the limit, so a
+    stolen gate key cannot try every code."""
+    guard = access.gate_guard()
+    if not guard:
+        return None, None, (jsonify(error="Wrong gate key"), 403)
+    if limits.too_many("allow-code", CODES_PER_MINUTE, 60, who=guard):
+        return guard, None, (jsonify(error=TOO_MANY_CODES), 429)
+    person = staff.by_code(staff.normalize_code(code) or "")
+    if person is None:
+        return guard, None, (jsonify(error=NO_SUCH_CODE), 404)
+    return guard, person, None
+
+
 @bp.get("/api/staff/<code>")
 def read_staff(code):
     """A person on the allow list, by their 7-digit code. Records no entry."""
-    guard = access.gate_guard()
-    if not guard:
-        return jsonify(error="Wrong gate key"), 403
-    if limits.too_many("allow-code", CODES_PER_MINUTE, 60, who=guard):
-        return jsonify(error=TOO_MANY_CODES), 429
-    person = staff.by_code(staff.normalize_code(code) or "")
-    if person is None:
-        return jsonify(error=NO_SUCH_CODE), 404
+    guard, person, refused = staff_caller(code)
+    if refused:
+        return refused
     shown = staff_view(person)
     if shown["blacklisted"]:
         stopped_code(person, guard)
     return jsonify(shown)
 
 
-@bp.post("/api/staff/<code>/entry")
-def staff_entry(code):
-    """Record an allow list entry at once, and send the person a WhatsApp message."""
-    guard = access.gate_guard()
-    if not guard:
-        return jsonify(error="Wrong gate key"), 403
-    person = staff.by_code(staff.normalize_code(code) or "")
-    if person is None:
-        return jsonify(error=NO_SUCH_CODE), 404
-    if blacklist.has(person["phone"]):
+# A scan is the toggle. In and out change a wrong scan, see staff.record_move().
+STAFF_ACTIONS = {"scan": None, "in": db.ENTRY, "out": db.EXIT}
+# A gate page opened before the toggle sends entry for every code, so it must reload.
+OLD_PAGE = "This gate page is out of date. Reload the page, then type the code again."
+
+
+@bp.post("/api/staff/<code>/<action>")
+def staff_move(code, action):
+    """Record an allow list entry or exit at once, see staff.record_move(). A new entry also
+    sends the person a WhatsApp message. A blacklisted number cannot enter, but can leave."""
+    guard, person, refused = staff_caller(code)
+    if refused:
+        return refused
+    if action in NEEDS:
+        return jsonify(error=OLD_PAGE), 409
+    if action not in STAFF_ACTIONS:
+        return jsonify(error="Unknown action"), 404
+    shown = staff_view(person)
+    kind, stamp, new, told = notify.staff_moved(person, guard, STAFF_ACTIONS[action],
+                                                may_enter=not shown["blacklisted"])
+    if stamp is None:
         stopped_code(person, guard)
-        return jsonify(error=BLACKLISTED, **staff_view(person)), 409
-    stamp, new, told = notify.staff_entered(person, guard)
-    return jsonify(**staff_view(person), entered_at=stamp, new=new, told=told)
+        return jsonify(error=BLACKLISTED, **shown, kind=kind), 409
+    return jsonify(**shown, kind=kind, at=stamp, new=new, told=told)

@@ -15,7 +15,7 @@ const dayHm = t => t ? new Date(t).toLocaleString([], {weekday:"short", hour:"2-
 // A pass code is KT-4821, typed any way. A reference is VR-40221, VR-4022 or the digits alone.
 const PASS_CODE = /^([A-HJ-NP-Z]{2})-?(\d{4})$/;
 const REFERENCE = /^(?:VR-?)?(\d{4,5})$/;
-// An allow list code: 7 digits. It records that person's entry, with no pass.
+// An allow list code: 7 digits. It records that person's entry or exit, with no pass.
 const STAFF_CODE = /^\d{7}$/;
 const tidy = text => {
   const squeezed = text.replace(/\s+/g, "").toUpperCase();
@@ -30,8 +30,8 @@ let mode = "pass";
 const MODES = {
   pass: {title: "Check a pass", label: "Code on the visitor's pass", placeholder: "KT-4821",
          button: "Check the pass", keyboard: "text"},
-  staff: {title: "Staff entry", label: "7-digit allow list code", placeholder: "1234567",
-          button: "Record staff entry", keyboard: "numeric"},
+  staff: {title: "Staff entry and exit", label: "7-digit allow list code", placeholder: "1234567",
+          button: "Record entry or exit", keyboard: "numeric"},
 };
 
 function setMode(next) {
@@ -53,7 +53,7 @@ function setMode(next) {
 }
 
 let visit = null;
-// The person an allow list code opened, as {code, name, blacklisted}, with entered_at once recorded.
+// The person an allow list code moved, as {code, name, tag, blacklisted, kind, at, new, told}.
 let person = null;
 // The visitor's photo as a JPEG data URL. Belongs to this pass only.
 let photo = "";
@@ -114,6 +114,7 @@ const ICON = {
   good: svg('<circle cx="12" cy="12" r="10"/><path d="m7.5 12.5 3 3 6-6.5"/>'),
   wait: svg('<circle cx="12" cy="12" r="10"/><path d="M12 7v5l3 2"/>'),
   bad:  svg('<circle cx="12" cy="12" r="10"/><path d="m15 9-6 6M9 9l6 6"/>'),
+  out:  svg('<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/>'),
 };
 const banner = (tone, title, line) =>
   `<div class="state ${tone}">${ICON[tone]}<div><h2>${x(title)}</h2><p>${x(line)}</p></div></div>`;
@@ -234,7 +235,7 @@ function renderBoard() {
 
 const SUBTITLES = {
   pass: "Type the code on the visitor's pass, or tap a name below. For staff, tap Staff code.",
-  staff: "Type the staff member's 7-digit code. The entry is recorded at once, and the name shows for the face check.",
+  staff: "Type the staff member's 7-digit code. It records an entry, or an exit if they came in within 16 hours. The name shows for the face check.",
 };
 
 function render() {
@@ -268,7 +269,7 @@ function renderKeyForm() {
   box.focus();
 }
 
-// Under the code box: a wait, a staff entry, a pass, or only a problem.
+// Under the code box: a wait, a staff entry or exit, a pass, or only a problem.
 function passArea() {
   if (busy) return working(busy);
   if (person) return staffView(person);
@@ -407,51 +408,83 @@ async function look() {
   await (STAFF_CODE.test(code) ? recordStaff(code) : show(code));
 }
 
-// What the guard reads after the entry: a repeat is not recorded twice, a failed message says so.
-function entryLine(p) {
-  if (p.new === false) return `${p.name} entered at ${hm(p.entered_at)}. Nothing new was recorded or sent.`;
-  return `${p.name} entered at ${hm(p.entered_at)}. `
+// What the guard reads after the scan: a repeat is not recorded twice, a failed message says so.
+function moveLine(p) {
+  const at = hm(p.at);
+  const done = p.kind === "exit" ? "left" : "entered";
+  if (p.new === false) return `${p.name} ${done} at ${at}. Nothing new was recorded or sent.`;
+  if (p.kind === "exit") return `${p.name} left at ${at}. Scan again only if they come back in.`;
+  return `${p.name} entered at ${at}. `
     + (p.told === false ? "The WhatsApp message to them could not be sent." : "A WhatsApp message about it was sent to them.");
 }
 
-// A staff entry is recorded at once. The name and tag then show large, for the face check,
-// until the guard types the next code: the box is empty and ready, so there is no extra tap.
+// A scan records an entry, or an exit after an entry in the last 16 hours. The server decides. The name and
+// tag then show large, for the face check, until the guard types the next code: the box is
+// empty and ready, so there is no extra tap. A blacklisted number cannot enter, but can leave.
+function staffBanner(p) {
+  const exit = p.kind === "exit";
+  if (p.blacklisted && !exit) return banner(...BLACKLISTED);
+  const [title, again] = exit ? ["Exit recorded", "Already recorded: exit"] : ["Entry recorded", "Already recorded: entry"];
+  return banner(exit ? "out" : "good", p.new === false ? again : title, moveLine(p));
+}
+
+function staffWarning(p) {
+  if (p.kind === "exit") return p.blacklisted ? problem("This number is on the blacklist. Tell the admin.") : "";
+  return p.blacklisted ? ""
+    : `<p class="sub">If this is not the person in front of you, do not let them in, and tell the admin.</p>`;
+}
+
+// The person walked the other way: within 10 minutes the server changes the scan, not adds one.
+function fixButton(p) {
+  if (!p.at || p.blacklisted) return "";
+  return `<button class="btn plain" id="fix" onclick="fixStaff()">Wrong? Change to ${p.kind === "exit" ? "entry" : "exit"}</button>`;
+}
+
 function staffView(p) {
-  const top = p.blacklisted ? banner(...BLACKLISTED)
-    : banner("good", p.new === false ? "Already recorded" : "Entry recorded", entryLine(p));
+  const top = staffBanner(p);
+  const after = staffWarning(p);
   return `${notice ? problem(notice) : ""}
     ${top}
     <div class="who"><b>${x(p.name)}</b>${p.tag ? `<span>${x(p.tag)}</span>` : ""}</div>
     <div class="facts">${fact("Allow list code", p.code)}</div>
-    ${p.blacklisted ? "" : `<p class="sub">If this is not the person in front of you, do not let them in, and tell the admin.</p>`}`;
+    ${after}
+    ${fixButton(p)}`;
 }
 
-// One action: the code records the entry. The page stays in Staff code mode, with the code
-// box empty and focused, ready for the next person.
-async function recordStaff(code) {
+function fixStaff() {
+  void recordStaff(person.code, person.kind === "exit" ? "in" : "out");
+}
+
+// One action: the code records the entry or exit. The page stays in Staff code mode, with the
+// code box empty and focused, ready for the next person.
+async function recordStaff(code, action = "scan") {
   const mine = ++latest;
   visit = null;
   person = null;
   photo = "";
   notice = "";
   if (mode !== "staff") setMode("staff");
-  busy = "Recording the entry";
+  busy = "Recording";
   render();
   try {
-    const done = await call(`/api/staff/${code}/entry`, {method: "POST"});
+    const done = await call(`/api/staff/${code}/${action}`, {method: "POST"});
     if (mine !== latest) return;
     person = done;
   } catch (err) {
     if (mine !== latest) return;
     if (err instanceof WrongKey) { busy = ""; return forgetKey(err.message); }
-    // A blacklisted number comes back with its name, so the banner can say who it is.
-    if (err.data && err.data.blacklisted) person = err.data;
-    else notice = err.message;
+    staffRefused(err);
   }
   busy = "";
   codeBox.value = "";
   render();
   codeBox.focus();
+}
+
+// A blacklisted number comes back with its name, so the banner can say who it is.
+function staffRefused(err) {
+  if (err.data?.blacklisted) person = err.data;
+  else notice = err.message;
 }
 
 // Opens a pass by the code the guard typed, or by reference after a tap.
@@ -484,19 +517,28 @@ function openPass(reference) {
   void show(reference).then(() => codeBox.focus());
 }
 
+// The entry carries the photo. The exit needs nothing.
+const actOptions = action => action === "entry"
+  ? {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({photo})}
+  : {method: "POST"};
+
+// The pass as it is now, after a refusal. The refusal is what the guard needs, so a failed
+// re-read adds nothing.
+async function reread(code, mine) {
+  try {
+    const fresh = await call(`/api/pass/${encodeURIComponent(code)}`);
+    if (mine === latest) visit = fresh;
+  } catch { /* keep the refusal */ }
+}
+
 async function act(action) {
   const mine = ++latest;
   const code = visit.code;
   notice = "";
   busy = action === "entry" ? "Recording the entry" : "Recording the exit";
   render();
-  const options = {method: "POST"};
-  if (action === "entry") {
-    Object.assign(options, {headers: {"Content-Type": "application/json"},
-                            body: JSON.stringify({photo})});
-  }
   try {
-    const done = await call(`/api/pass/${encodeURIComponent(code)}/${action}`, options);
+    const done = await call(`/api/pass/${encodeURIComponent(code)}/${action}`, actOptions(action));
     // The entry or exit is recorded either way. The board refresh shows it.
     if (mine !== latest) return void loadBoard();
     visit = done;
@@ -506,11 +548,7 @@ async function act(action) {
     busy = "";
     if (err instanceof WrongKey) return forgetKey(err.message);
     notice = err.message;
-    // The refusal above is what the guard needs. A failed re-read adds nothing.
-    try {
-      const fresh = await call(`/api/pass/${encodeURIComponent(code)}`);
-      if (mine === latest) visit = fresh;
-    } catch { /* keep the refusal */ }
+    await reread(code, mine);
     if (mine !== latest) return;
   }
   busy = "";

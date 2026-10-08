@@ -63,13 +63,9 @@ def create_request():
         return refused
     fields, guests, office = form
 
-    # A resend of the same form, after a slow answer, gets the first request back.
-    key = payload.get("request_key")
-    key = key if isinstance(key, str) and REQUEST_KEY.match(key) else None
-    if key:
-        earlier = visits.by_request_key(key)
-        if earlier:
-            return jsonify(visitor_view(earlier)), 200
+    key, earlier = resent(payload)
+    if earlier:
+        return jsonify(visitor_view(earlier)), 200
     # Counted only here, so a refused or repeated form never uses up the campus's hour.
     if limits.too_many("request-all", config.REQUESTS_PER_HOUR_ALL, 3600, who="campus"):
         return jsonify(error="The campus has too many requests right now. Call the gate desk."), 429
@@ -86,6 +82,14 @@ def create_request():
     # The new request brings new deadlines, so the timer works out when to run next.
     timer.wake.set()
     return jsonify(visitor_view(visit)), 201
+
+
+def resent(payload):
+    """(request key, the first request for it). A resend after a slow answer gets that back."""
+    key = payload.get("request_key")
+    if not isinstance(key, str) or not REQUEST_KEY.match(key):
+        return None, None
+    return key, visits.by_request_key(key)
 
 
 def read_form(payload):

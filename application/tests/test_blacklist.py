@@ -79,7 +79,7 @@ client.post("/api/admin/blacklist/remove", json={"phone": "9876543210"}, headers
 kiran_code = add_staff("Kiran", allowed_phone).get_json()["code"]
 add_black("9876543210")
 assert "blacklist" in say(APPROVER, kiran_code)
-banned_entry = client.post(f"/api/staff/{kiran_code}/entry", headers=KEY)
+banned_entry = client.post(f"/api/staff/{kiran_code}/scan", headers=KEY)
 assert banned_entry.status_code == 409
 # The refusal names the person for the gate's banner, never their number.
 assert banned_entry.get_json()["name"] == "Kiran" and banned_entry.get_json()["blacklisted"] is True
@@ -136,7 +136,7 @@ say(APPROVER, caught_code)
 older()
 client.get(f"/api/staff/{caught_code}", headers=KEY)
 older()
-client.post(f"/api/staff/{caught_code}/entry", headers=KEY)
+client.post(f"/api/staff/{caught_code}/scan", headers=KEY)
 assert [a["what"] for a in attempts()[:3]] == [blacklist.ALLOW_CODE] * 3
 assert attempts()[0]["detail"] == caught_code
 assert len(attempts()) == 7, [a["what"] for a in attempts()]
@@ -161,6 +161,24 @@ assert "is now approved" in approved_reply, "the approval checks the visit's own
 with db.connect() as conn:
     conn.execute("DELETE FROM blacklist")
 db.forget_cache()
+
+print("the blacklist goes by the number only: one name on two numbers is two people")
+limits.forget_hits()
+assert add_black("+91 98111 00000", payload["name"]).status_code == 200
+# Another person with the same name, on another number, can ask and can enter.
+twin_request = client.post("/api/requests", json={**payload, "phone": "9822200000"})
+assert twin_request.status_code == 201, twin_request.get_json()
+twin_code = add_staff(payload["name"], "+919822200001").get_json()["code"]
+twin_scan = client.post(f"/api/staff/{twin_code}/scan", headers=KEY)
+twin_seen = twin_scan.get_json()
+assert twin_scan.status_code == 200 and twin_seen["kind"] == "entry", twin_seen
+# The listed number with another name typed is still refused.
+renamed = client.post("/api/requests",
+                      json={**payload, "name": "Someone Else", "phone": "9811100000"})
+assert renamed.status_code == 403, renamed.get_json()
+client.post("/api/admin/blacklist/remove", headers=ADMIN, json={"phone": "+91 98111 00000"})
+client.post("/api/admin/staff/remove", json={"code": twin_code}, headers=ADMIN)
+print("  same name on another number passes; another name on the listed number is refused")
 
 print("the blacklist keeps two countries apart, and migration 8 converts old rows")
 limits.forget_hits()

@@ -95,7 +95,7 @@ let waiting = [];
 let waitingMore = false;
 // What the server's lists hold. Every change answers with all of them.
 const EMPTY_TEAM = {gate_desk: "", guards: [], main_admin: "", admins: [], you: "",
-                    offices: [], staff: [], staff_entries: [], blacklist: [], blocked: [],
+                    offices: [], staff: [], staff_entries: [], staff_today: [], blacklist: [], blocked: [],
                     changes: [], super: false};
 let team = {...EMPTY_TEAM};
 const formErrors = {staff: {}, offices: {}, guards: {}, admins: {}, blacklist: {}};
@@ -326,17 +326,21 @@ function renderBulk() {
   // A row that left the screen, or stopped waiting, leaves the selection too.
   const open = new Set([...rows, ...waiting].filter(pickable).map(v => v.reference));
   for (const reference of [...picked]) if (!open.has(reference)) picked.delete(reference);
-  for (const b of Object.values(BULKS)) {
-    const mine = b.rows().filter(pickable);
-    el(b.box).hidden = !mine.length;
-    const all = mine.length && mine.every(v => picked.has(v.reference));
-    el(b.all).textContent = all ? "Clear the selection" : `Select all ${mine.length} waiting on screen`;
-    el(b.count).textContent = `${picked.size} selected`;
-    el(b.yes).textContent = picked.size ? `Approve ${picked.size}` : "Approve";
-    el(b.no).textContent = picked.size ? `Decline ${picked.size}` : "Decline";
-    el(b.yes).disabled = el(b.no).disabled = !picked.size;
-    el(b.note).innerHTML = bulkNote ? `<div class="note ${bulkNote.tone}">${bulkNote.html}</div>` : "";
-  }
+  for (const b of Object.values(BULKS)) drawBulk(b);
+}
+
+// One bulk bar: Select all, the count, Approve and Decline.
+function drawBulk(b) {
+  const mine = b.rows().filter(pickable);
+  const n = picked.size;
+  el(b.box).hidden = !mine.length;
+  const all = mine.length && mine.every(v => picked.has(v.reference));
+  el(b.all).textContent = all ? "Clear the selection" : `Select all ${mine.length} waiting on screen`;
+  el(b.count).textContent = `${n} selected`;
+  el(b.yes).textContent = n ? `Approve ${n}` : "Approve";
+  el(b.no).textContent = n ? `Decline ${n}` : "Decline";
+  el(b.yes).disabled = el(b.no).disabled = !n;
+  el(b.note).innerHTML = bulkNote ? `<div class="note ${bulkNote.tone}">${bulkNote.html}</div>` : "";
 }
 
 function pickAll(which = "visits") {
@@ -393,8 +397,6 @@ function renderList() {
 }
 
 // ------------------------------------------------------------------- Today
-// The entries made today, by this device's date. The campus and its admins share a time zone.
-const isToday = t => new Date(t).toDateString() === new Date().toDateString();
 const DAY_MS = 86400000;
 const recentBlocks = () => team.blocked.filter(a => Date.now() - Date.parse(a.at) < DAY_MS);
 
@@ -402,24 +404,64 @@ function stat(go, n, label, tone) {
   return `<button class="stat" data-go="${go}" data-tone="${n ? tone : ""}"><b>${n}</b> <span>${label}</span></button>`;
 }
 
+// Staff today, from the server: each person who moved since midnight, or is still in from a
+// night shift, once, newest first. Cut down by the chips and the search, and shown STAFF_PAGE rows at a time.
+const STAFF_PAGE = 25;
+const staffDay = {show: "entry", q: "", limit: STAFF_PAGE};
+const STAFF_SHOWS = [["entry", "On campus"], ["exit", "Left"], ["all", "All today"]];
+const onCampus = () => team.staff_today.filter(p => p.last_kind === "entry");
+
+function staffMatches(p) {
+  if (staffDay.show !== "all" && p.last_kind !== staffDay.show) return false;
+  const q = staffDay.q.toLowerCase();
+  return !q || [p.name, p.code, p.tag].some(v => String(v || "").toLowerCase().includes(q));
+}
+
+// A time from yesterday, as after a night shift, shows its date.
+const dayClock = t => new Date(t).toDateString() === new Date().toDateString() ? clock(t) : when(t);
+
+function staffRow(p) {
+  const [tone, state] = p.last_kind === "entry" ? ["go", "In since"] : ["stop", "Out at"];
+  const first = p.last_kind === "exit" && p.first_in ? ` · First in ${dayClock(p.first_in)}` : "";
+  return `<li><span><b>${x(p.name)}</b><small>${p.tag ? `${x(p.tag)} · ` : ""}<code>${x(p.code)}</code>${first}
+    · ${x(p.last_by)}</small></span><span class="pill" data-tone="${tone}">${state} ${dayClock(p.last_at)}</span></li>`;
+}
+
+function renderStaffToday() {
+  const all = team.staff_today;
+  const inside = onCampus().length;
+  const n = {entry: inside, exit: all.length - inside, all: all.length};
+  el("t-staff-chips").innerHTML = STAFF_SHOWS.map(([show, label]) =>
+    `<button data-show="${show}">${label} <span>${n[show]}</span></button>`).join("");
+  for (const chip of el("t-staff-chips").children) {
+    chip.setAttribute("aria-pressed", chip.dataset.show === staffDay.show ? "true" : "false");
+  }
+  const found = all.filter(staffMatches);
+  const shown = found.slice(0, staffDay.limit);
+  const empty = !all.length ? "No staff came in yet today."
+    : staffDay.q ? "No one today matches the search."
+    : staffDay.show === "entry" ? "No staff member is on campus now." : "No staff member left yet today.";
+  el("t-staff").innerHTML = shown.length
+    ? `<ul class="mini">${shown.map(staffRow).join("")}</ul>`
+      + (found.length > shown.length
+        ? `<button class="small edit" data-staff-more>Show more (${found.length - shown.length} left)</button>` : "")
+    : `<p class="fixed">${empty}</p>`;
+}
+
 function renderToday() {
   if (!el("t-list")) return;
-  const staffToday = team.staff_entries.filter(e => isToday(e.entered_at));
   const blocks = recentBlocks();
   el("today-date").textContent = LONG_DAY.format(new Date());
   el("stats").innerHTML = stat("visits:waiting", count("waiting"), "Waiting for a decision", "wait")
     + stat("visits:inside", count("inside"), "Visitors inside now", "go")
-    + stat("staff", staffToday.length, "Staff entries today", "go")
+    + stat("staff", onCampus().length, "Staff on campus now", "go")
     + stat("blacklist", blocks.length, "Blocked in 24 hours", "stop");
   el("t-count").textContent = waiting.length ? `${waiting.length}${waitingMore ? "+" : ""}` : "";
   el("t-count").hidden = !waiting.length;
   el("t-list").innerHTML = waiting.length ? waiting.map(item).join("")
     : `<div class="empty">Nothing is waiting. New requests show here.</div>`;
   tickPicked(el("t-list"));
-  el("t-staff").innerHTML = staffToday.length
-    ? `<ul class="mini">${staffToday.slice(0, 8).map(e => `<li><span><b>${x(e.name)}</b>
-        <small>Recorded by ${x(e.entered_by)}</small></span><time>${clock(e.entered_at)}</time></li>`).join("")}</ul>`
-    : `<p class="fixed">No staff entries yet today.</p>`;
+  renderStaffToday();
   el("t-blocked").innerHTML = blocks.length
     ? `<ul class="mini">${blocks.slice(0, 5).map(a => `<li><span><b>${x(a.name)}</b>
         <small>${x(a.what)}</small></span><time>${clock(a.at)}</time></li>`).join("")}</ul>`
@@ -762,11 +804,14 @@ const DELETES = {
   admins: [id => ({phone: id}), l => `Delete the admin ${l}? Their admin key stops at once.`],
 };
 
+const MOVE_PILLS = {entry: `<span class="pill" data-tone="go">In</span>`,
+                    exit: `<span class="pill" data-tone="stop">Out</span>`};
+
 function renderEntries() {
-  el("s-entries").innerHTML = table(["When", "Name", "Code", "Recorded by"], team.staff_entries.length
-    ? team.staff_entries.map(e => `<tr><td>${when(e.entered_at)}</td><td>${x(e.name)}</td>
-        <td><code>${x(e.code)}</code></td><td>${x(e.entered_by)}</td></tr>`).join("")
-    : `<tr><td colspan="4" class="fixed">No entries yet.</td></tr>`);
+  el("s-entries").innerHTML = table(["When", "In or out", "Name", "Code", "Recorded by"], team.staff_entries.length
+    ? team.staff_entries.map(e => `<tr><td>${when(e.entered_at)}</td><td>${MOVE_PILLS[e.kind] || ""}</td>
+        <td>${x(e.name)}</td><td><code>${x(e.code)}</code></td><td>${x(e.entered_by)}</td></tr>`).join("")
+    : `<tr><td colspan="5" class="fixed">No entries yet.</td></tr>`);
   labelCells(el("s-entries"));
 }
 
@@ -1060,8 +1105,13 @@ const PANELS = `
     </div>
     <div>
       <div class="card">
-        <div class="card-head"><h3>Staff in today</h3><button class="link" data-go="staff">Allow list</button></div>
-        <div id="t-staff"></div>
+        <div class="card-head"><div><h3>Staff today</h3>
+          <p>A scan records an entry, the next one within 16 hours an exit.</p></div>
+          <button class="link" data-go="staff">Allow list</button></div>
+        <div class="bar"><input id="t-staff-q" type="search" placeholder="Search name, code or tag"
+          aria-label="Search today's staff" autocomplete="off" spellcheck="false"></div>
+        <div class="chips" id="t-staff-chips"></div>
+        <div class="scroll" id="t-staff"></div>
       </div>
       <div class="card">
         <div class="card-head"><h3>Blocked in the last 24 hours</h3><button class="link" data-go="blacklist">Blacklist</button></div>
@@ -1238,6 +1288,22 @@ function bindPanels() {
   }
   el("pick-all").onclick = () => pickAll("visits");
   el("t-pick-all").onclick = () => pickAll("today");
+  el("t-staff-chips").onclick = e => {
+    const hit = e.target.closest("[data-show]");
+    if (hit) { staffDay.show = hit.dataset.show; staffDay.limit = STAFF_PAGE; renderStaffToday(); }
+  };
+  let staffTyping = null;
+  el("t-staff-q").oninput = e => {
+    clearTimeout(staffTyping);
+    staffTyping = setTimeout(() => {
+      staffDay.q = e.target.value.trim();
+      staffDay.limit = STAFF_PAGE;
+      renderStaffToday();
+    }, SEARCH_WAIT);
+  };
+  el("t-staff").onclick = e => {
+    if (e.target.closest("[data-staff-more]")) { staffDay.limit += STAFF_PAGE; renderStaffToday(); }
+  };
   for (const id of ["bulk-yes", "t-yes"]) el(id).onclick = () => void bulkDecide("approve");
   for (const id of ["bulk-no", "t-no"]) el(id).onclick = () => void bulkDecide("decline");
   el("s-download").onclick = () => void downloadLogs(["staff"]);
@@ -1338,6 +1404,18 @@ async function load(more = false) {
   render();
 }
 
+// The server's timing rules, in one line above the approvers.
+function renderRules(s) {
+  if (!el("rules")) return;
+  const auto = s.work_days
+    ? ` A request made ${s.work_days.join(", ")}, ${s.work_hours[0]}:00 to ${s.work_hours[1]}:00,`
+      + " with no answer, is approved automatically after the time in its row."
+    : "";
+  el("rules").textContent = `A request is sent again, to the backup or as a reminder, after ${s.escalate_minutes} minutes`
+    + ` with no answer.${auto} A pass works for ${s.pass_hours} hours after the request.`
+    + ` Records are deleted after ${s.retain_days} days.`;
+}
+
 async function loadSummary() {
   try {
     const s = await call("/api/admin/summary");
@@ -1346,15 +1424,7 @@ async function loadSummary() {
     autoDefault = s.auto_approve_minutes ?? autoDefault;
     for (const name of Object.keys(team)) if (name in s) team[name] = s[name];
     renderGaps(s.setup_gaps || []);
-    if (el("rules")) {
-      const auto = s.work_days
-        ? ` A request made ${s.work_days.join(", ")}, ${s.work_hours[0]}:00 to ${s.work_hours[1]}:00,`
-          + " with no answer, is approved automatically after the time in its row."
-        : "";
-      el("rules").textContent = `A request is sent again, to the backup or as a reminder, after ${s.escalate_minutes} minutes`
-        + ` with no answer.${auto} A pass works for ${s.pass_hours} hours after the request.`
-        + ` Records are deleted after ${s.retain_days} days.`;
-    }
+    renderRules(s);
   } catch (err) {
     if (err instanceof WrongKey) return forgetKey(err.message);
     notice = err.message;

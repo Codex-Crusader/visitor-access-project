@@ -258,7 +258,8 @@ Never put a secret in git, in a chat or in a screenshot. `.gitignore` keeps
 | A stolen gate key lists the staff      | 60 allow list calls a minute for each key                                                              |
 | A regular admin acts as a super one    | Only a super admin may renew the key of, delete or change a super admin                                |
 | A bulk approval of the wrong rows      | An "Are you sure?" box with the count, and every reference in the log                                  |
-| Two guards record one staff entry      | One entry for each code in 2 minutes, with a database lock                                             |
+| Two guards record one staff entry      | One scan for each code in 2 minutes, with a database lock                                              |
+| A missed staff scan flips in and out   | The banner says entry or exit. Change, or IN or OUT, fixes it. A scan looks back 16 hours only         |
 | A guard's second IN before the photo   | Refused until the first photo arrives, or CANCEL. A photo never goes to the wrong visitor              |
 | Two countries share the last 10 digits | The blacklist compares the full number with its country code                                           |
 | A visitor's link or a code in a log    | Access log lines show `<hidden>` in place of the token or code                                         |

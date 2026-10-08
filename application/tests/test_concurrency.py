@@ -285,7 +285,7 @@ answers = []
 
 
 def same_code(name):
-    r = client.post(f"/api/staff/{code}/entry", headers={"X-Gate-Key": guard_keys[name]})
+    r = client.post(f"/api/staff/{code}/scan", headers={"X-Gate-Key": guard_keys[name]})
     with lock:
         answers.append(r.get_json())
 
@@ -297,7 +297,8 @@ for t in threads:
     t.join()
 fresh = [a for a in answers if a.get("new")]
 assert len(answers) == 20 and len(fresh) == 1, [a.get("new") for a in answers]
-assert len({a["entered_at"] for a in answers}) == 1, "the repeats name the one entry"
+assert len({a["at"] for a in answers}) == 1, "the repeats name the one entry"
+assert {a["kind"] for a in answers} == {"entry"}, "a double tap never turns into an exit"
 assert len([to for to, _ in sent if to == "+919500000001"]) == 1, "one message, not twenty"
 with db.connect() as conn:
     assert conn.execute("SELECT COUNT(*) AS n FROM staff_entries").fetchone()["n"] == 1

@@ -73,8 +73,8 @@ The working app lives in [`application/`](application/). A visitor fills in the 
 sends the details to an approver on WhatsApp. The approver replies `YES` or `NO`. The visitor sees
 the decision on the same page a few seconds later. At the gate, a guard checks the entry code on the
 pass, takes a photo of the visitor and records the entry. On the way out, the pass shows a new exit
-code. After the exit, neither code works. Staff and faculty on the allow list enter with a 7-digit
-code, and get a WhatsApp message about each entry. The admin page lists every request, and keeps
+code. After the exit, neither code works. Staff and faculty on the allow list use a 7-digit code:
+one scan records the entry, the next one the exit, and each entry sends them a WhatsApp message. The admin page lists every request, and keeps
 the offices, the allow list, the blacklist, and the two logs to download.
 
 The pictures below come from the working app, with made-up visitors. The demo has only the visitor
@@ -88,15 +88,15 @@ screens, with fixed codes and no server, so some details are different.
 
 | Approved, with the pass | The gate desk | A staff code at the gate |
 |:---:|:---:|:---:|
-| <img src="images/app-04-pass.png" alt="An entry pass with its entry code" width="250"> | <img src="images/app-05-gate.png" alt="The guard types the entry code and sees Let them in, and must take a photo before Record entry" width="250"> | <img src="images/app-07-gate-staff.png" alt="In Staff code mode the guard types a 7-digit code and sees the person's name and tag large, then records the entry" width="250"> |
+| <img src="images/app-04-pass.png" alt="An entry pass with its entry code" width="250"> | <img src="images/app-05-gate.png" alt="The guard types the entry code and sees Let them in, and must take a photo before Record entry" width="250"> | <img src="images/app-07-gate-staff.png" alt="In Staff code mode one scan of a 7-digit code records an entry, or an exit on red, with the name and tag large and a button to change a wrong scan" width="250"> |
 
 | The admin page: Today |
 |:---:|
-| <img src="images/app-06-admin.png" alt="The admin page's Today view: a side menu, counts of what needs action, the waiting requests with bulk approval, staff in today and recent blocks" width="760"> |
+| <img src="images/app-06-admin.png" alt="The admin page's Today view: a side menu, counts of what needs action, the waiting requests with bulk approval, the staff on campus or gone with a search box, and recent blocks" width="760"> |
 
 | The allow list and the staff entry log |
 |:---:|
-| <img src="images/app-08-admin-allow.png" alt="The allow list grouped by tag, each person's 7-digit code, and the recent staff entries with a download button" width="760"> |
+| <img src="images/app-08-admin-allow.png" alt="The allow list grouped by tag, each person's 7-digit code, and the recent staff entries and exits with a download button" width="760"> |
 
 </div>
 
