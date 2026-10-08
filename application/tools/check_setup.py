@@ -49,8 +49,10 @@ except Exception as error:
     fail(f"Cannot use the database in DATABASE_URL. {error}")
 print(f"Database        reachable, schema version {version}")
 # The numbers in use, with any change made on the admin page.
-for reason, (main, backup) in people.approver_table().items():
-    print(f"  {reason:<14} {main}, backup {backup}")
+table = people.approver_table()
+for group in ("reasons", "offices"):
+    for name, (main, backup) in table[group].items():
+        print(f"  {name:<14} {main}, backup {backup}")
 print()
 
 # The template, as the real request uses: plain text can pass here and never arrive.

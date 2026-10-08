@@ -36,7 +36,7 @@ EXPIRED_REQUEST = ("{reference} expired: it was made more than {hours} hours ago
 
 
 def handle_decide(sender, status, reference, table, help_lines=whatsapp.HELP):
-    if not access.is_approver(sender, table):
+    if not access.is_approver(sender):
         return "Only an approver can decide a request."
     if reference is None:
         waiting = access.waiting_for(sender, table)
@@ -172,7 +172,7 @@ def handle_staff(guard, kind, code):
 
 def handle_lookup(guard, sender, key, table):
     """A reference or a pass code. The reply repeats only the code that was sent."""
-    if not guard and not access.is_approver(sender, table):
+    if not guard and not access.is_approver(sender):
         return None
     if limits.too_many("lookup", gate.LOOKUPS_PER_MINUTE, 60, who=whatsapp.digits(sender)):
         return "Too many lookups. Wait a minute."
@@ -215,7 +215,7 @@ def handle_message(message_id, sender, text, photo):
     """One message: only a known number gets an answer, and each message id acts once."""
     table = people.approver_table()
     guard = access.guard_at(sender)
-    if not (access.is_approver(sender, table) or guard or access.is_admin_phone(sender)):
+    if not (access.is_approver(sender) or guard or access.is_admin_phone(sender)):
         return
     if not db.is_new_message(message_id):
         return
@@ -237,7 +237,7 @@ def answer_message(sender, text, photo, table, guard):
         return handle_photo(guard, sender, photo)
 
     # The help names only this sender's jobs: approver, guard, admin, or any mix.
-    roles = {role for role, has in (("approver", access.is_approver(sender, table)),
+    roles = {role for role, has in (("approver", access.is_approver(sender)),
                                     ("guard", bool(guard)),
                                     ("admin", access.is_admin_phone(sender))) if has}
     help_lines = whatsapp.help_text(roles)

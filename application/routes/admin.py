@@ -195,9 +195,8 @@ def setting_gaps():
 
 
 def approver_gaps():
-    table = people.approver_table()
     guards = [config.GUARD] + [guard["phone"] for guard in people.holders(people.GUARDS)]
-    both = sorted({phone for phone in guards if access.is_approver(phone, table)})
+    both = sorted({phone for phone in guards if access.is_approver(phone)})
     if not both:
         return []
     return [f"{', '.join(both)} can approve a visit and also let the visitor in. If the"

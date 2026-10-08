@@ -981,6 +981,7 @@ starts, goes to the database.
 | Gate board, every 30 s              | O(k)          | From memory, after the first query         |
 | Blacklist check, for each row       | O(1)          | One shared set of numbers, not copied      |
 | Allow list code, guard or admin key | O(1)          | One shared index, not copied               |
+| Is this WhatsApp sender an approver | O(1)          | One shared set of numbers, not copied      |
 | One admin page, first or fiftieth   | O(log n + 50) | Starts after the last row of the last page |
 | Admin counts by status              | O(n)          | One pass over an index                     |
 | Admin search                        | O(n) at worst | Reads rows until the page is full          |

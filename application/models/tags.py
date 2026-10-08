@@ -8,10 +8,16 @@ TAG_LENGTH = 40
 LISTS = {"offices": "name", "staff": "code"}
 
 
+def _check_list(table):
+    """Refuse a table that is not one of LISTS: the name goes into SQL as text."""
+    if table not in LISTS:
+        raise ValueError(f"Unknown table {table!r}")
+
+
 @db.read
 def existing(table):
     """The tags in use in one list, in A to Z order."""
-    assert table in LISTS
+    _check_list(table)
     with db.connect() as conn:
         rows = conn.execute(
             f"SELECT DISTINCT tag FROM {table} WHERE tag <> '' ORDER BY tag"
@@ -35,7 +41,7 @@ def clean(table, raw):
 @db.writes
 def set_tag(table, key, tag):
     """Give one row a tag. False when no row has that key."""
-    assert table in LISTS
+    _check_list(table)
     with db.connect() as conn:
         return conn.execute(
             f"UPDATE {table} SET tag = %s WHERE {LISTS[table]} = %s", (tag, key)
@@ -45,7 +51,7 @@ def set_tag(table, key, tag):
 @db.writes
 def rename(table, old, new):
     """Give every row with tag old the tag new. Returns how many rows changed."""
-    assert table in LISTS
+    _check_list(table)
     with db.connect() as conn:
         return conn.execute(
             f"UPDATE {table} SET tag = %s WHERE tag = %s", (new, old)

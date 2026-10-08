@@ -94,9 +94,16 @@ def signature_ok():
     return hmac.compare_digest(expected, header[len("sha256="):])
 
 
-def is_approver(phone, table):
-    """True when this number approves a reason or an office. table is people.approver_table()."""
-    return any(whatsapp.same_number(phone, who) for who in people.every_approver(table))
+@db.cached(shared=True)
+def _approver_numbers():
+    """Every approver's number, as digits. Shared, not copied: one lookup is O(1)."""
+    return frozenset(whatsapp.digits(phone)
+                     for phone in people.every_approver(people.approver_table()))
+
+
+def is_approver(phone):
+    """True when this number approves a reason or an office. O(1) for every message."""
+    return whatsapp.digits(phone) in _approver_numbers()
 
 
 def role(phone, visit, table):

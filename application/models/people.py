@@ -157,11 +157,17 @@ ADMINS = "admins"
 KEY_TABLES = (GUARDS, ADMINS)
 
 
+def _check_table(table):
+    """Refuse a table that is not one of KEY_TABLES: the name goes into SQL as text."""
+    if table not in KEY_TABLES:
+        raise ValueError(f"Unknown table {table!r}")
+
+
 @db.cached
 @db.read
 def _key_table(table):
     """Every guard or admin added on the admin page, by name. A short list, so it is read whole."""
-    assert table in KEY_TABLES
+    _check_table(table)
     # Only an admin can be a super admin.
     extra = ", super" if table == ADMINS else ""
     with db.connect() as conn:
@@ -216,7 +222,7 @@ def set_super(phone, flag):
 @db.writes
 def add_holder(table, name, phone):
     """Add a guard or admin. Returns their new key, or None when the number is in the table."""
-    assert table in KEY_TABLES
+    _check_table(table)
     key = new_key()
     with db.connect() as conn:
         added = conn.execute(
@@ -230,7 +236,7 @@ def add_holder(table, name, phone):
 @db.writes
 def renew_key(table, phone):
     """Give a guard or admin a new key. The old one stops at once. None when no such person."""
-    assert table in KEY_TABLES
+    _check_table(table)
     key = new_key()
     with db.connect() as conn:
         changed = conn.execute(
@@ -242,7 +248,7 @@ def renew_key(table, phone):
 @db.writes
 def remove_holder(table, phone):
     """Remove a guard or admin. Their key and their WhatsApp commands stop at once."""
-    assert table in KEY_TABLES
+    _check_table(table)
     with db.connect() as conn:
         conn.execute(f"DELETE FROM {table} WHERE phone = %s", (phone,))
         if table == GUARDS:

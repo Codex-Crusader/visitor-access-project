@@ -220,21 +220,23 @@ class _Chunks:
 def zip_parts():
     """The ZIP, piece by piece: the notes, the page, the CSV files, then one photo at a time.
 
-    Photos are already JPEG, so they are stored, not compressed again."""
+    The text files are compressed, often to a tenth. Photos are already JPEG, so they are
+    stored as they are."""
     stamp = local(datetime.now(timezone.utc).isoformat(timespec="seconds"))
     rows = visit_rows()
     sink = _Chunks()
-    # ZipFile only writes to the sink, so the writable part of a file is enough.
-    # noinspection PyTypeChecker
+    texts = (
+        ("README.txt", README.format(stamp=stamp, zone=ZONE)),
+        ("visits.html", visits_page(rows, stamp)),
+        ("visits.csv", csv_text(ZIP_VISIT_COLUMNS, rows)),
+        ("blocked-attempts.csv", csv_text(BLOCKED_COLUMNS, blacklist.all_attempts())),
+        ("admin-changes.csv", csv_text(CHANGE_COLUMNS, audit.everything())),
+    )
     # ZipFile only writes to the sink, so the writable part of a file is enough.
     # noinspection PyTypeChecker
     with zipfile.ZipFile(sink, "w", zipfile.ZIP_STORED) as archive:
-        archive.writestr("README.txt", README.format(stamp=stamp, zone=ZONE))
-        archive.writestr("visits.html", visits_page(rows, stamp))
-        archive.writestr("visits.csv", csv_text(ZIP_VISIT_COLUMNS, rows))
-        archive.writestr("blocked-attempts.csv",
-                         csv_text(BLOCKED_COLUMNS, blacklist.all_attempts()))
-        archive.writestr("admin-changes.csv", csv_text(CHANGE_COLUMNS, audit.everything()))
+        for name, text in texts:
+            archive.writestr(name, text, compress_type=zipfile.ZIP_DEFLATED)
         yield sink.take()
         for reference, image in entries.stored_photos():
             archive.writestr(photo_file(reference), image)

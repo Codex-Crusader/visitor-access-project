@@ -604,6 +604,10 @@ log_rows = {row["Reference"]: row for row in csv_rows(archive.read("visits.csv")
 photo_name = log_rows[shot["reference"]]["Photo file"]
 assert photo_name == f"photos/{shot['reference']}.jpg", photo_name
 assert is_clean_photo(archive.read(photo_name)), "the stored, cleaned JPEG"
+# The text is compressed for a weak signal. A JPEG is stored as it is: it does not shrink.
+kinds = {info.filename: info.compress_type for info in archive.infolist()}
+assert kinds["visits.html"] == kinds["visits.csv"] == zipfile.ZIP_DEFLATED, kinds
+assert kinds[photo_name] == zipfile.ZIP_STORED, kinds
 assert log_rows[by_phone_photo["reference"]]["Photo file"] == "", "a WhatsApp photo is not stored"
 # The page shows each visit beside its photo, and escapes every value.
 page = archive.read("visits.html").decode()
