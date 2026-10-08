@@ -27,7 +27,8 @@ A visitor who picks See an office then picks an office from a list, and the
 request goes to that office's own approver. Staff and faculty on the allow
 list do not send a request: they say their 7-digit code to the guard,
 the guard sends it on WhatsApp or types it on the gate page, and the entry is
-recorded at once. The person gets a WhatsApp message about the entry. A
+recorded at once. The next scan within 16 hours records the exit. The person
+gets a WhatsApp message about each entry. A
 number on the blacklist cannot request a visit or enter.
 
 ## How it works
@@ -90,9 +91,10 @@ gate sees only its times.
 | `POST /api/pass/<code>/<action>`    | `X-Gate-Key`   | Records an entry or an exit              |
 | `GET /api/gate/board`               | `X-Gate-Key`   | The Inside now and Expected lists        |
 | `GET /api/staff/<code>`             | `X-Gate-Key`   | The name for an allow list code          |
-| `POST /api/staff/<code>/entry`      | `X-Gate-Key`   | Records an allow list entry              |
+| `POST /api/staff/<code>/scan`       | `X-Gate-Key`   | Records an allow list entry or exit      |
+| `POST /api/staff/<code>/<in, out>`  | `X-Gate-Key`   | That one; changes a scan under 10 min    |
 | `GET /api/admin/visits`             | `X-Admin-Key`  | One page of requests, newest first       |
-| `GET /api/admin/summary`            | `X-Admin-Key`  | Counts, approvers and rules              |
+| `GET /api/admin/summary`            | `X-Admin-Key`  | Counts, lists and rules; ETag, 304       |
 | `POST /api/admin/approvers`         | `X-Admin-Key`  | Changes one reason's two approvers       |
 | `POST /api/admin/<list>`            | `X-Admin-Key`  | Adds to one of the lists below           |
 | `POST /api/admin/<list>/remove`     | `X-Admin-Key`  | Deletes one from that list               |
@@ -134,7 +136,7 @@ imports only from the folders before it in that list, and `routes/` imports from
 | `models/visits.py`                        | The queries for requests, codes, decisions and the page lists          |
 | `models/entries.py`                       | The queries for entries, exits and gate photos                         |
 | `models/people.py`                        | The queries for approvers, offices, guards and admins                  |
-| `models/staff.py`                         | The queries for the allow list and its entries                         |
+| `models/staff.py`                         | The queries for the allow list and its entries and exits               |
 | `models/blacklist.py`                     | The queries for the blacklist and the attempts it stopped              |
 | `models/tags.py`                          | The tags that group the offices and the allow list                     |
 | `models/audit.py`                         | The admin change log: who changed what, never a key                    |

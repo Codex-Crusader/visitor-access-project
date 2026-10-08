@@ -102,14 +102,17 @@ See "The free plans" in [maintenance.md](maintenance.md) for the limits, and
    after about 24 hours, and a user token stops after about 60 days.
 4. Two message templates approved by Meta: `visit_request` and
    `staff_entry`. Their text is in [setup.md](setup.md).
-5. Meta charges for some template messages. Check Meta's current WhatsApp
-   prices for India before real use.
+5. Since 1 October 2026, Meta charges for each message that the app sends,
+   also for a reply inside the 24-hour window. In October 2026 a utility
+   message in India cost about ₹0.12. Check Meta's current WhatsApp prices
+   for India before real use.
 
 A plain message reaches a person only if they wrote to the app's number in
 the last 24 hours. That is a Meta rule. The approval requests and the staff
-entry messages use templates, so they always arrive. The messages to guards
-about approvals are plain text, so a guard must write to the app's number
-once a day to get them.
+entry messages use templates, so they always arrive. The message to the gate
+desk about an approval is plain text, so the desk phone must write to the
+app's number once a day to get it. Guards see every approved visitor on the
+gate page anyway.
 
 ## Data the app keeps
 
@@ -258,7 +261,8 @@ for a decision:
    another phone, or who comes as a guest on someone else's request.
 3. People with a visitor are named, but the guard checks only the person
    whose pass it is.
-4. The app records no exit for staff and faculty.
+4. Staff and faculty entries and exits are as good as the guard's scans. A
+   missed scan swaps entry and exit until a guard changes it.
 5. With no signal at the gate, nothing can be checked. See "When the system
    is down".
 6. The app runs as one process. It suits one campus, not many.

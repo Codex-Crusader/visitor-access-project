@@ -1160,25 +1160,27 @@ const PANELS = `
   <button class="btn plain" id="more" hidden>Show more</button>
   </section>
   <section id="staff" hidden>
-  ${head("Allow list", "Staff and faculty who enter with a 7-digit code, without a request.", opener("staff"))}
+  ${head("Allow list", "Staff and faculty who come and go with a 7-digit code, without a request.", opener("staff"))}
   <div id="s-note"></div>
   ${form("staff")}
   ${listBar("staff", "allow list")}
   <div class="wrap" id="s-table"></div>
-  <div class="card-head gap-top"><h3>Recent entries</h3>
+  <div class="card-head gap-top"><h3>Recent entries and exits</h3>
     <button id="s-download" class="small edit" hidden>Download staff entries</button></div>
   <div class="wrap" id="s-entries"></div>
   ${help("How the allow list works",
     `Each person on the allow list gets a 7-digit code. At the gate, they say it to the guard. The
     guard sends the code to the app's WhatsApp number, or types it on the gate page in Staff code
-    mode, and the entry is recorded at once. The person then gets a WhatsApp message about the
-    entry, so a code used by someone else is noticed. The guard's reply names the person, so the
-    guard can check the face. A number on the blacklist cannot be on the allow list.`,
+    mode, and the entry is recorded at once. The next scan within 16 hours records the exit. The
+    person gets a WhatsApp message about each entry, so a code used by someone else is noticed.
+    The guard's reply names the person, so the guard can check the face. A number on the blacklist
+    cannot be on the allow list.`,
     `A tag, such as a department, puts people into groups. Tap a tag in use, or type a new one. Tag
     on a row moves that person to another tag, and their code stays the same. Tap a tag above the
     list to see only that tag, and Rename this tag to rename it for everyone.`,
-    `Recent entries shows the last 100. A super admin can download all of them with Download staff
-    entries: a CSV file with the date in its own column, so a spreadsheet filter shows one day.`)}
+    `Recent entries and exits shows the last 100. A super admin can download all of them with
+    Download staff entries: a CSV file with one row for each visit, and the date in its own column,
+    so a spreadsheet filter shows one day.`)}
   </section>
   <section id="blacklist" hidden>
   ${head("Blacklist", "Numbers that may not request a visit or enter.", opener("blacklist"))}

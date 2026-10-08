@@ -331,7 +331,10 @@ Tell the people who decide about the campus about these limits.
     against the person. The person gets a message about each entry, but only
     when `STAFF_ENTRY_TEMPLATE` is set, or when they wrote to the app's
     number in the last 24 hours.
-13. The app records an allow list entry but no exit.
+13. A staff exit depends on the guard's scan. One scan is an entry, the next
+    scan within 16 hours is an exit. A missed scan swaps entry and exit for
+    that person until a guard changes it, and an entry with no exit reads
+    EXIT NOT RECORDED in the staff log.
 14. Every admin can change the approvers, the offices, the guards, the allow
     list and the blacklist. Only a super admin can add or delete an admin,
     see the gate photos and download the logs.

@@ -206,6 +206,11 @@ does not carry over to the next day.
 The same code again within 2 minutes records nothing new. A person on the
 blacklist cannot enter, but the code always records their exit.
 
+Each gate key records 60 staff codes a minute at most, so a stolen key cannot
+try every code. All desks that use the shared `GATE_KEY` share those 60. At
+a busy shift change, give each guard their own key: each key then has its
+own 60.
+
 The person gets a WhatsApp message about each entry, with the time and your
 name, but not your number. The reply tells you if that message could not be
 sent. An exit sends no message. The admin page shows each entry and exit and
@@ -275,7 +280,8 @@ blacklist". A banned visitor who is inside can still leave.
    they hold every visitor's details and face. Other admins do not see the
    button. The first time, the browser can ask if this site can download
    more than one file. Allow it. If the browser does not save the second
-   file, use Download staff entries in Allow list, above Recent entries.
+   file, use Download staff entries in Allow list, above Recent entries and
+   exits.
 
 Each list has one button at the top right to add to it, such as Add person
 or Add guard. The form opens under the title. Cancel closes it. Under each
@@ -441,12 +447,13 @@ the admin change log.
 3. Tap Add and make a code.
 4. Tell the person the 7-digit code that shows. The list also shows it.
 
-Recent entries shows the last 100 entries and the guard who recorded each
-one. The staff entries are a log of their own, separate from the visit log.
-Download staff entries, above Recent entries, saves all of them as
-`staff-entries-<date>.csv`. Download logs in the menu saves this file and the
-visit log together. Only a super admin sees these buttons. The date and the time are in separate columns, so a
-spreadsheet filter on the date shows one day's entries. Delete takes a person off the list, and
+Recent entries and exits shows the last 100 scans, each marked In or Out,
+and the guard who recorded each one. The staff entries are a log of their
+own, separate from the visit log. Download staff entries, above Recent
+entries and exits, saves all of them as `staff-entries-<date>.csv`, one row
+for each visit. Download logs in the menu saves this file and the visit log
+together. Only a super admin sees these buttons. The date has its own
+column, so a spreadsheet filter on the date shows one day's visits. Delete takes a person off the list, and
 their code stops at once. Their past entries stay until `RETAIN_DAYS` ends.
 A number on the blacklist cannot be on the allow list. While the app uses
 Meta's test number, also add each number to the recipient list in Meta's API
@@ -465,7 +472,7 @@ gate desk." It does not say why.
 
 When you add a number, its waiting requests are declined at once, and
 Visits shows "Declined by the blacklist". No approver or automatic
-approval can approve them later, and the guards get no "Approved visitor"
+approval can approve them later, and the gate desk gets no "Approved visitor"
 message. A pass that was already approved stays approved, but the gate
 refuses it.
 
@@ -495,9 +502,10 @@ Each time the blacklist stops someone, the admin page records it:
 Blocked attempts in Blacklist shows the last 100, with the time, the name,
 the number, what happened and the guard. For 24 hours after an attempt, a
 red alert shows at the top of every part, Blacklist in the menu shows the
-count, and Today lists the attempts. The page does not refresh by itself, so tap Refresh to see
-new attempts. A page that refreshes by itself would keep the database awake
-and use up Neon's free hours.
+count, and Today lists the attempts. The page refreshes itself every minute
+while it is on the screen, so a new attempt shows within a minute. The
+refresh reads from the server's memory and wakes the database only when
+something changed, so it does not use up Neon's free hours.
 
 ### Manage the admins
 
@@ -979,7 +987,7 @@ starts, goes to the database.
 | CSV export                          | O(n)          | It returns every row                       |
 | Allow list or office search         | O(m)          | m people; only 200 rows go on the page     |
 | Staff scan, entry or exit           | O(log s)      | One query on the code and time index       |
-| Staff today, on each admin refresh  | O(t log t)    | t scans in the last 16 hours, sorted once  |
+| Staff today, after a staff scan     | O(t log t)    | t scans in 16 hours; else from memory      |
 | Staff today search and chips        | O(p)          | p people today; 25 rows go on the page     |
 | Staff entry log CSV                 | O(s log s)    | One pass pairs entries and exits, one sort |
 | Admin summary, every 60 s           | O(1) queries  | From memory; unchanged, it is an empty 304 |
