@@ -7,7 +7,7 @@ from flask import Blueprint, Response, jsonify, request, stream_with_context
 
 from core import checks, config, db, limits
 from models import audit, entries, people, staff, visits
-from routes import access, team
+from routes import access, pages, team
 from services import export, notify, timer, whatsapp
 
 # The same logger as app.logger, so every message reaches one place.
@@ -133,7 +133,7 @@ def admin_summary():
     refused = access.admin_refusal()
     if refused:
         return refused
-    return jsonify(
+    response = jsonify(
         counts=visits.status_counts(),
         approvers=approver_rows(people.approver_table()),
         **team.lists(),
@@ -147,6 +147,10 @@ def admin_summary():
         pass_hours=config.PASS_HOURS,
         setup_gaps=setup_gaps(),
     )
+    # The page asks every minute. An unchanged summary costs an empty 304, as the gate board.
+    response.headers["Cache-Control"] = "no-store"
+    response.set_etag(pages.short_hash(response.get_data()))
+    return response.make_conditional(request)
 
 
 # A random key of 20 or more characters has many different ones.

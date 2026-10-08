@@ -8,6 +8,7 @@ log = logging.getLogger("app")
 FIELDS = "at, by_whom, action, detail"
 
 
+@db.writes
 def record(by, action, detail=""):
     """Keep one change. A failure here is logged and never undoes the change."""
     try:
@@ -20,6 +21,7 @@ def record(by, action, detail=""):
         log.error("Could not record an admin change: %s", failure)
 
 
+@db.cached
 @db.read
 def recent(limit=100):
     """The newest changes, newest first."""

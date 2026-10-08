@@ -137,11 +137,13 @@ def record_attempt(phone, name, what, detail, by):
             )
     except Exception as failure:  # the person is still refused
         log.error("Could not record a blocked attempt: %s", failure)
+    db.forget(recent_attempts)
 
 
 ATTEMPT_FIELDS = "phone, name, what, detail, by_whom, at"
 
 
+@db.cached
 @db.read
 def recent_attempts(limit=100):
     """The newest blocked attempts, newest first."""

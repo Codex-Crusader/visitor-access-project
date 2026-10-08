@@ -29,6 +29,7 @@ os.environ.update(
 from PIL import Image
 
 import app as application
+from core import config
 from core import db
 from core import checks
 from models import entries
@@ -259,7 +260,10 @@ assert not on_board & set(refs), "a closed visit is still on the cached board"
 print("  20 guards, 20 visitors in and out at once -> each visit names its own guard")
 print("  5 pages polling the 20 passes during the race -> no cached pass or board row is stale")
 
-# --- Ten approvals at once, each told to every guard ---
+# --- Ten approvals at once, each told to the gate desk only ---
+# The desk has its own number here. In the kit it is the approver's, who is not told twice.
+DESK = "+919811100099"
+config.GUARD = DESK
 sent.clear()
 pending = [client.post("/api/requests", json=payload).get_json()["reference"] for _ in range(10)]
 sent.clear()
@@ -271,11 +275,12 @@ for t in threads:
 for t in threads:
     t.join()
 assert all(visits.get(ref)["status"] == "approved" for ref in pending)
-for guard_phone in guard_phones:
-    told = [body for to, body in sent if to == guard_phone]
-    assert len(told) == 10, (guard_phone, len(told))
-    assert {ref for ref in pending if any(ref in body for body in told)} == set(pending)
-print("  10 approvals at once -> each of 20 guards told about each one exactly once")
+told = [body for to, body in sent if to == DESK]
+assert len(told) == 10, len(told)
+assert {ref for ref in pending if any(ref in body for body in told)} == set(pending)
+assert not any(to in guard_phones for to, _ in sent), "one message for the desk, none a guard"
+config.GUARD = os.environ["GUARD"]
+print("  10 approvals at once -> the gate desk told about each one exactly once, no guard")
 
 # --- Twenty guards send one allow list code at the same moment ---
 code = client.post("/api/admin/staff", headers=ADMIN,

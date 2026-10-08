@@ -121,9 +121,10 @@ const banner = (tone, title, line) =>
 
 const fact = (k, v) => `<div><span>${k}</span><b>${x(v || "—")}</b></div>`;
 
-// The entry needs a photo of the visitor, taken here, before Record entry works.
+// The entry needs a photo of the visitor, taken here, before Record entry works. The next tap
+// is always the main button: the photo first, then Record entry.
 function entryStep() {
-  return `<label class="btn plain" for="cam">${photo ? "Take the photo again" : "Take a photo of the visitor"}</label>
+  return `<label class="btn${photo ? " plain" : ""}" for="cam">${photo ? "Take the photo again" : "Take a photo of the visitor"}</label>
     <input id="cam" type="file" accept="image/*" capture="environment" hidden>
     ${photo ? `<img class="shot" src="${x(photo)}" alt="The photo of the visitor">` : ""}
     ${photo ? `<button class="btn go" id="enter" onclick="act('entry')">Record entry</button>`
@@ -301,9 +302,12 @@ function visitView(v) {
   // A blacklisted number never enters, whatever its pass says.
   const [tone, title, line] = v.blacklisted ? BLACKLISTED
     : BANNER[v.status] || ["wait", v.status, ""];
+  // The name large for the face check, then the next tap, then the details: no scrolling first.
   return `
     ${notice ? problem(notice) : ""}
     ${banner(tone, title, line)}
+    ${v.name ? `<div class="who"><b>${x(v.name)}</b><span>${x(v.visiting)}</span></div>` : ""}
+    ${v.blacklisted ? "" : nextStep(v)}
     <div class="facts">
       ${v.code ? fact(v.code_kind === "entry" ? "Entry code" : "Exit code", v.code) : ""}
       ${fact("Reference", v.reference)}
@@ -311,7 +315,6 @@ function visitView(v) {
       ${v.entered_at ? fact("Entered", hm(v.entered_at)) : ""}
       ${v.exited_at ? fact("Exited", hm(v.exited_at)) : ""}
     </div>
-    ${v.blacklisted ? "" : nextStep(v)}
     <button class="btn plain" onclick="clear_()">Next visitor</button>`;
 }
 
@@ -543,6 +546,9 @@ async function act(action) {
     if (mine !== latest) return void loadBoard();
     visit = done;
     photo = "";
+    // Done: the box is empty and ready for the next code, as after a staff scan. A code the
+    // guard started to type meanwhile stays.
+    if (tidy(codeBox.value) === code) codeBox.value = "";
   } catch (err) {
     if (mine !== latest) return;
     busy = "";
@@ -553,6 +559,7 @@ async function act(action) {
   }
   busy = "";
   render();
+  if (!codeBox.value) codeBox.focus();
   // The visitor just moved from one list to the other, or off the board.
   void loadBoard();
 }

@@ -124,9 +124,9 @@ on the gate page and on WhatsApp.
 2. The app ignores every number that is not an approver, a guard or
    `ADMIN_PHONE`. The app refuses `ADMIN_PHONE` as a guard, so `KEY` never
    sends the admin key to a guard.
-3. When a request is approved, each guard gets a message with the reference,
-   the visitor's name, the guests, the reason and the person visited. It has
-   no gate code, no phone number and no address.
+3. When a request is approved, the gate desk number gets a message with the
+   reference, the visitor's name, the guests, the reason and the person
+   visited. It has no gate code, no phone number and no address.
 4. The app records each message id, so a message that Meta delivers twice
    runs once.
 5. Each reason has its own two approvers. An approver cannot decide the
@@ -203,7 +203,7 @@ headers, and trust in them lets anyone invent an address. Set
    reach the database. Only the admin page shows it, one photo at a time.
    The pass, the gate lists, the visitor's page and the CSV log never hold
    it.
-3. The approval message to each guard stays in that guard's WhatsApp chat.
+3. The approval message to the gate desk stays in the desk phone's WhatsApp chat.
    The app cannot delete it after `RETAIN_DAYS`. The visitor's privacy screen
    says so.
 4. The app deletes each visit `RETAIN_DAYS` after the request, 90 days by
@@ -324,8 +324,8 @@ Tell the people who decide about the campus about these limits.
 10. On the free Neon plan, the database can be restored only to a time in the
     last 6 hours. The weekly Download logs is the longer backup, see
     [maintenance.md](maintenance.md).
-11. The approval message to the guards is plain text. WhatsApp delivers it
-    only to a guard who wrote to the app's number in the last 24 hours.
+11. The approval message to the gate desk is plain text. WhatsApp delivers it
+    only if the desk phone wrote to the app's number in the last 24 hours.
 12. A person on the allow list says their code aloud at the gate, so anyone
     who hears it can use it. The guard must check the name in the reply
     against the person. The person gets a message about each entry, but only

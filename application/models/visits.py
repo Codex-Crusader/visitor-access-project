@@ -265,6 +265,7 @@ def admin_page(statuses=None, search="", after=None, limit=50):
     return visits, cursor
 
 
+@db.cached
 @db.read
 def status_counts() -> dict[str, int]:
     """How many stored visits have each status. One pass over the status index."""

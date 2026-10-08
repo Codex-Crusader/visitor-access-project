@@ -331,8 +331,9 @@ Reply YES or NO followed by the reference to decide this request.
 `{{1}}` is the reference. `{{2}}` says if this is a new request, a request for
 the backup approver, or a reminder to an approver who has no backup. The rest are the visitor's details. Replies to the
 approvers' and the guards' own commands stay plain text, because that person
-just wrote to the number. The message to the guards about an approval is
-plain text too, so it reaches only a guard who wrote in the last 24 hours.
+just wrote to the number. The message to the gate desk about an approval is
+plain text too, so it reaches the desk phone only if it wrote in the last 24
+hours.
 
 `TEMPLATE_FALLBACK` controls what happens when Meta refuses the template:
 

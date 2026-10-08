@@ -404,6 +404,10 @@ async function boardChecks() {
   ok("the typed code is sent in one form", calls.includes("/api/pass/KT-4821"));
   ok("the entry code offers Record entry", byId("out").innerHTML.includes("Record entry"));
   ok("Record entry waits for a photo", byId("enter").disabled && !byId("out").querySelector(".shot"));
+  const out = byId("out").innerHTML;
+  ok("the name, then the photo button, then the details: no scroll before the next tap",
+     out.indexOf('class="who"') < out.indexOf('for="cam"') && out.indexOf('for="cam"') < out.indexOf('class="facts"'));
+  ok("before the photo, the photo is the main button", !byId("out").querySelector('label[for="cam"]').classList.contains("plain"));
   ok("the photo opens the back camera", byId("cam").getAttribute("capture") === "environment"
      && byId("cam").accept === "image/*");
   desk.eval('shrink = () => Promise.resolve("data:image/jpeg;base64,/9j/AA==")');
@@ -417,6 +421,8 @@ async function boardChecks() {
   ok("the entry carries the photo as JSON", sent.headers["Content-Type"] === "application/json"
      && JSON.parse(sent.body).photo === "data:image/jpeg;base64,/9j/AA==" && sent.headers["X-Gate-Key"] === "k");
   ok("the photo is gone after the entry", desk.eval("photo") === "");
+  ok("after the entry, the code box is empty and ready for the next code",
+     byId("code").value === "" && desk.document.activeElement === byId("code"));
   desk.eval('shrink = () => { visit = {...visit, code: "KT-0000"}; return Promise.reject(new Error("late")); }');
   await desk.eval('takePhoto(new File(["x"], "visitor.jpg", {type: "image/jpeg"}))');
   ok("a late photo failure stays off another pass", desk.eval("notice") !== "late");
@@ -1224,6 +1230,8 @@ async function staffGateChecks() {
 async function teamChecks() {
   console.log("admin page: staff, offices and admins, each deleted only after Are you sure?");
   const posts = [];
+  const gets = [];
+  let countsNow = {};
   let lists = {gate_desk: "+911", guards: [], main_admin: "+919", you: "Meera +918", offices: [], super: true,
     admins: [{name: "Meera", phone: "+918", added_at: "2026-10-05T05:00:00+00:00"}],
     staff: [], staff_entries: [{code: "1234567", name: "Dr Dev", entered_at: "2026-10-06T04:00:00+00:00",
@@ -1260,8 +1268,9 @@ async function teamChecks() {
         }
         return answer(404, {error: "unknown"});
       }
+      gets.push(url);
       return answer(200, url.includes("/summary")
-        ? {counts: {}, escalate_minutes: 15, retain_days: 90, approvers: [], ...lists}
+        ? {counts: countsNow, escalate_minutes: 15, retain_days: 90, approvers: [], ...lists}
         : {visits: [], next: null});
     },
   });
@@ -1271,6 +1280,37 @@ async function teamChecks() {
   admin.eval("render(); refresh()");
   await tick(); await tick();
   ok("the header names who is signed in", byId("you").textContent === "Signed in as Meera +918 (super admin)");
+  // The page refreshes itself. The waiting list loads again only when a count changed.
+  // jsdom counts the page as hidden. The refresh runs only while it is in view.
+  Object.defineProperty(admin.document, "hidden", {value: false, configurable: true});
+  const waitingLoads = () => gets.filter(u => u.includes("status=waiting")).length;
+  await admin.eval("autoRefresh()"); await tick(); await tick();
+  const before = waitingLoads();
+  await admin.eval("autoRefresh()"); await tick(); await tick();
+  ok("an unchanged refresh loads no waiting list", waitingLoads() === before
+     && gets.filter(u => u.includes("/summary")).length >= 3);
+  countsNow = {pending: 2};
+  await admin.eval("autoRefresh()"); await tick(); await tick();
+  ok("a new request loads the waiting list again", waitingLoads() === before + 1);
+  ok("the tab title shows how many wait", admin.document.title === "(2) Visitor Admin");
+  // An unchanged summary is a 304 with an empty body: the page keeps what it shows.
+  const realFetch = admin.fetch;
+  admin.fetch = (url, options = {}) => url.includes("/summary")
+    ? Promise.resolve({status: 304, ok: false, json: () => Promise.reject(new Error("no body"))})
+    : realFetch(url, options);
+  await admin.eval("autoRefresh()"); await tick(); await tick();
+  ok("a 304 keeps the counts and the title", admin.document.title === "(2) Visitor Admin"
+     && admin.eval("count('waiting')") === 2);
+  admin.fetch = realFetch;
+  // A redraw keeps an open visit open.
+  admin.eval(`waiting = [{reference: "VR-7", name: "A", phone: "1", address: "x", reason: "Delivery",
+    visiting: "y", guests: [], status: "pending", created_at: "2026-10-06T04:00:00+00:00", approvers: []}];
+    renderToday()`);
+  admin.document.querySelector('#t-list details[data-ref="VR-7"]').open = true;
+  admin.eval("renderToday()");
+  ok("a refresh keeps an open visit open", admin.document.querySelector('#t-list details[data-ref="VR-7"]').open);
+  countsNow = {};
+  admin.eval("waiting = []; counts = {}; renderToday()");
   const staffRows = () => byId("t-staff").querySelectorAll("li").length;
   ok("Today counts the staff on campus now", byId("stats").textContent.includes("30 Staff on campus now"));
   ok("Today shows the staff on campus, 25 at a time", staffRows() === 25

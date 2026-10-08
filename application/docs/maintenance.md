@@ -80,10 +80,14 @@ A request that nobody approves in 48 hours expires. A reply after that gets
 You can work from the gate page or from WhatsApp. Both record the same thing,
 and the admin page shows which guard recorded each entry and exit.
 
-When a request is approved, every guard gets a WhatsApp message with the
-reference, the name, the reason and the person visited. The message has no gate code.
-WhatsApp delivers it only if the guard wrote to the app's number in the last
-24 hours. The approver who decided gets no copy.
+When a request is approved, the gate desk number (`GUARD`) gets a WhatsApp
+message with the reference, the name, the reason and the person visited. The
+message has no gate code. Only the desk gets it: it is the phone at the gate,
+whoever is on duty, and one message costs less than one for each guard. Every
+guard sees the approved visitors in Expected on the gate page. WhatsApp
+delivers the message only if the desk phone wrote to the app's number in the
+last 24 hours, so send any message from it at the start of each day. If the
+desk number approved the request itself, it gets no copy.
 
 ### On the gate page
 
@@ -106,14 +110,18 @@ WhatsApp delivers it only if the guard wrote to the app's number in the last
 3. Type the code on the visitor's pass, and tap "Check the pass". Small
    letters and spaces are correct, for example `kt 4821`. For a staff
    member, see "The allow list" below.
-4. If the pass is approved, tap "Take a photo of the visitor". The phone
-   camera opens. Take the photo of the visitor's face.
+4. If the pass is approved, the visitor's name shows in large letters under
+   the banner. Compare it with the person. Then tap "Take a photo of the
+   visitor", the large button under the name. The phone camera opens. Take
+   the photo of the visitor's face.
 5. Make sure that the photo on the screen shows the visitor, then tap Record
    entry. Record entry does not work without a photo. To take the photo
-   again, tap "Take the photo again".
+   again, tap "Take the photo again". The details of the pass are under the
+   buttons.
 6. When the visitor leaves, type the exit code, tap "Check the pass", then
    tap Record exit.
-7. Tap Next visitor to clear the screen.
+7. After an entry or an exit, the code box is empty and ready. Type the next
+   code. Next visitor also clears the screen.
 
 The page shows two lists:
 
@@ -239,7 +247,10 @@ blacklist". A banned visitor who is inside can still leave.
    since midnight, and each person still in from a night shift. The "On
    campus" chip lists the people inside now. The "Left" chip lists the people
    who went out. The search box finds a name, code or tag. Tap a number to
-   open that list. On a phone, tap Menu
+   open that list. The page refreshes itself every minute while it is on the
+   screen, and the browser tab shows the number of requests that wait, for
+   example "(2) Visitor Admin". A visit that you opened stays open. On a
+   phone, tap Menu
    at the top to open the menu. Under the title, you see who is signed
    in. The address keeps the part that is open, so Refresh and Back
    keep your place.
@@ -319,8 +330,8 @@ one, in Admins.
 Each request is checked on its own, the same way as a `YES` on WhatsApp. The
 app skips a request that someone decided meanwhile, one that expired, or one
 whose number is on the blacklist. The note then names each skipped request
-and why. Each guard gets one WhatsApp message that lists all the approved
-visitors, not one message for each. Visits shows "Approved by" and
+and why. The gate desk number gets one WhatsApp message that lists all the
+approved visitors, not one message for each. Visits shows "Approved by" and
 the admin's name, and the change log keeps a line with every reference.
 
 ### Delete something
@@ -710,9 +721,10 @@ both linters, and ends with a list of what passed. Each line must say
    share.
 2. `tests/test_concurrency.py` makes many requests and many guards at the same
    moment, and checks that each code is unique and each entry happens once.
-   It also adds 20 guards at once, and checks that each guard gets a
-   different key, each visit names the guard who let the visitor in, and
-   each guard gets one message for each approval.
+   It also adds 20 guards at once. It checks that each guard gets a
+   different key, and that each visit names the guard who let the visitor
+   in. The gate desk gets one message for each approval, and no guard gets
+   one.
 3. `tests/test_form.js` loads the three pages in a real DOM with jsdom.
 4. `ruff` and `eslint` are the linters. Their settings files give the reason
    for each rule that they turn off. The important one is `no-implicit-globals`. The
@@ -970,6 +982,8 @@ starts, goes to the database.
 | Staff today, on each admin refresh  | O(t log t)    | t scans in the last 16 hours, sorted once  |
 | Staff today search and chips        | O(p)          | p people today; 25 rows go on the page     |
 | Staff entry log CSV                 | O(s log s)    | One pass pairs entries and exits, one sort |
+| Admin summary, every 60 s           | O(1) queries  | From memory; unchanged, it is an empty 304 |
+| Approval notice on WhatsApp         | O(1)          | One message, to the gate desk only         |
 
 A reference has five digits, so there are 90,000 references. A new request
 picks one at random and tries again if it is taken. The free storage fills

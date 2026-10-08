@@ -99,6 +99,14 @@ def scanned_within(last, minutes):
 
 
 def record_move(person, by, kind=None, may_enter=True):
+    """See _record_move(). A new move clears only the two reads it changes."""
+    kind, stamp, new = _record_move(person, by, kind, may_enter)
+    if new:
+        db.forget(today, recent_entries)
+    return kind, stamp, new
+
+
+def _record_move(person, by, kind=None, may_enter=True):
     """Record an entry or an exit. With no kind, a toggle: see next_kind(). Returns
     (kind, time, new). new is False for a repeat within REPEAT_MINUTES, and then the time is
     the earlier scan's. A kind opposite to a scan of the last CORRECT_MINUTES corrects that
@@ -179,6 +187,7 @@ def pair_visits(moves):
     return sorted(rows, key=lambda row: row["in"] or row["out"])
 
 
+@db.cached
 @db.read
 def recent_entries(limit=100):
     """The newest staff entries and exits, newest first."""
@@ -196,7 +205,8 @@ def day_start():
     return midnight.astimezone(timezone.utc).isoformat(timespec="seconds")
 
 
-# Not cached: a gate scan writes with no @db.writes, so a cached copy would go stale.
+# Cached: a new scan clears it. A row that ages out of the window waits for the hourly clear.
+@db.cached
 @db.read
 def today():
     """Each person who moved since midnight, or is still in from a night shift, once, with

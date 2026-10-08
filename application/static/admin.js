@@ -93,6 +93,8 @@ let autoDefault = 30;
 // The waiting requests for the Today page: the first page of them.
 let waiting = [];
 let waitingMore = false;
+// The ETag of the last summary, so an unchanged one costs an empty answer.
+const summaryTag = {tag: ""};
 // What the server's lists hold. Every change answers with all of them.
 const EMPTY_TEAM = {gate_desk: "", guards: [], main_admin: "", admins: [], you: "",
                     offices: [], staff: [], staff_entries: [], staff_today: [], blacklist: [], blocked: [],
@@ -144,25 +146,42 @@ function forgetKey(why = "", note = "") {
   try { localStorage.removeItem("adminkey"); localStorage.removeItem(SEEN); } catch { /* never stored */ }
   seenWritten = 0;
   rows = []; next = null; counts = {}; approvers = []; notes = {}; notice = why; info = note;
-  waiting = []; waitingMore = false;
+  waiting = []; waitingMore = false; summaryTag.tag = "";
   team = {...EMPTY_TEAM};
   for (const reference in photos) delete photos[reference];
   el("over").innerHTML = "";
   render();
 }
 
-async function call(url, body = null) {
+// The admin key, the JSON body for a POST, and the last ETag when there is one.
+function callOptions(body, cond, signal) {
+  const headers = {"X-Admin-Key": key()};
+  if (cond?.tag) headers["If-None-Match"] = cond.tag;
+  if (!body) return {headers, signal};
+  headers["Content-Type"] = "application/json";
+  return {headers, signal, method: "POST", body: JSON.stringify(body)};
+}
+
+// The answer's JSON, or null when it did not change since cond's ETag. A refusal is raised.
+function callResult(r, data, cond) {
+  if (r.status === 403) throw new WrongKey("That admin key is not right. Type it again.");
+  if (r.status === 304) return null;
+  if (cond) cond.tag = r.headers?.get?.("ETag") || "";
+  if (!r.ok) throw refusal(r, data);
+  return data;
+}
+
+// The server's reason, with the form fields it names, as an error.
+const refusal = (r, data) => Object.assign(new Error(data.error || `Something went wrong (${r.status})`),
+  {fields: data.fields || {}, status: r.status});
+
+// cond, when given, holds the ETag of the last answer: an unchanged one comes back as null.
+async function call(url, body = null, cond = null) {
   const stop = new AbortController();
   const timer = setTimeout(() => stop.abort(), CALL_TIMEOUT);
   let r, data;
-  const headers = {"X-Admin-Key": key()};
-  const options = {headers, signal: stop.signal};
-  if (body) {
-    headers["Content-Type"] = "application/json";
-    Object.assign(options, {method: "POST", body: JSON.stringify(body)});
-  }
   try {
-    r = await fetch(url, options);
+    r = await fetch(url, callOptions(body, cond, stop.signal));
     data = await r.json().catch(() => ({}));
   } catch (err) {
     throw err.name === "AbortError"
@@ -171,10 +190,7 @@ async function call(url, body = null) {
   } finally {
     clearTimeout(timer);
   }
-  if (r.status === 403) throw new WrongKey("That admin key is not right. Type it again.");
-  if (!r.ok) throw Object.assign(new Error(data.error || `Something went wrong (${r.status})`),
-    {fields: data.fields || {}, status: r.status});
-  return data;
+  return callResult(r, data, cond);
 }
 
 // A box keeps the keyboard inside it while open, and hands the focus back when it closes.
@@ -262,7 +278,7 @@ function visitMore(v, byLine) {
 function item(v) {
   const [tone, word] = STATUS[v.status] || ["", v.status];
   const [byTone, byLine] = decision(v);
-  const body = `<details class="visit"><summary>
+  const body = `<details class="visit" data-ref="${x(v.reference)}"><summary>
       <span><b>${x(v.name)}${plus(v)}</b><small>${x(v.phone)}</small>
         ${byLine ? `<small class="by" data-tone="${byTone}">${x(byLine)}</small>` : ""}</span>
       <span class="mid"><b>${x(v.reason)}</b><small>Visiting ${x(v.visiting)}</small></span>
@@ -380,11 +396,19 @@ async function bulkDecide(choice) {
   }
 }
 
+// Draws a list of visits again and opens the ones that were open, so a refresh never closes one.
+function keepOpen(box, html) {
+  const open = new Set([...box.querySelectorAll("details.visit[open]")].map(d => d.dataset.ref));
+  box.innerHTML = html;
+  if (!open.size) return;
+  for (const d of box.querySelectorAll("details.visit")) if (open.has(d.dataset.ref)) d.open = true;
+}
+
 function renderList() {
   if (!el("list")) return;
-  el("list").innerHTML = rows.length
+  keepOpen(el("list"), rows.length
     ? rows.map(item).join("")
-    : `<div class="empty">${loading ? "Loading…" : query ? "No request matches that search." : "No requests here."}</div>`;
+    : `<div class="empty">${loading ? "Loading…" : query ? "No request matches that search." : "No requests here."}</div>`);
   tickPicked(el("list"));
   el("found").textContent = rows.length
     ? `Showing ${rows.length} ${rows.length === 1 ? "request" : "requests"}${next ? ". Show more loads the next ones." : "."}`
@@ -458,8 +482,8 @@ function renderToday() {
     + stat("blacklist", blocks.length, "Blocked in 24 hours", "stop");
   el("t-count").textContent = waiting.length ? `${waiting.length}${waitingMore ? "+" : ""}` : "";
   el("t-count").hidden = !waiting.length;
-  el("t-list").innerHTML = waiting.length ? waiting.map(item).join("")
-    : `<div class="empty">Nothing is waiting. New requests show here.</div>`;
+  keepOpen(el("t-list"), waiting.length ? waiting.map(item).join("")
+    : `<div class="empty">Nothing is waiting. New requests show here.</div>`);
   tickPicked(el("t-list"));
   renderStaffToday();
   el("t-blocked").innerHTML = blocks.length
@@ -1337,6 +1361,7 @@ function bindPanels() {
 
 function render() {
   const haveKey = !!key();
+  showWaitingInTitle();
   el("nav").hidden = el("side").hidden = el("menu").hidden = !haveKey;
   el("shell").classList.toggle("out", !haveKey);
   if (!haveKey) {
@@ -1418,7 +1443,9 @@ function renderRules(s) {
 
 async function loadSummary() {
   try {
-    const s = await call("/api/admin/summary");
+    const s = await call("/api/admin/summary", null, summaryTag);
+    // Unchanged since the last answer: nothing to draw again.
+    if (!s) return;
     counts = s.counts;
     approvers = s.approvers;
     autoDefault = s.auto_approve_minutes ?? autoDefault;
@@ -1494,6 +1521,30 @@ el("rekey").onclick = () => forgetKey();
 window.addEventListener("hashchange", () => {
   const name = fromHash();
   if (name && name !== section) { section = name; renderTabs(); }
+});
+// The page refreshes itself while it is in view. An unchanged summary comes from the server's
+// memory, and the waiting list loads again only when a count changed, so a quiet minute costs no
+// database query.
+const REFRESH_EVERY = 60000;
+let refreshedAt = Date.now();
+
+async function autoRefresh() {
+  if (document.hidden || !key() || !el("list")) return;
+  refreshedAt = Date.now();
+  const before = JSON.stringify(counts);
+  await loadSummary();
+  if (JSON.stringify(counts) !== before) void loadWaiting();
+}
+
+// The waiting count shows in the browser tab, so a new request is seen from another tab.
+function showWaitingInTitle() {
+  const n = count("waiting");
+  document.title = n ? `(${n}) Visitor Admin` : "Visitor Admin";
+}
+
+setInterval(() => void autoRefresh(), REFRESH_EVERY);
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden && Date.now() - refreshedAt > REFRESH_EVERY) void autoRefresh();
 });
 // Clicks and key presses count as use. Background reloads do not.
 document.addEventListener("click", () => touch(), true);

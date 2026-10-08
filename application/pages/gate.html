@@ -69,7 +69,7 @@ input.key{text-transform:none;letter-spacing:normal;font-size:1rem;text-align:le
 .btn.plain{background:var(--paper);color:var(--ink);border-color:var(--line);font-weight:600}
 .btn.plain:active{background:var(--mute)}
 /* Green lets in, blue records the exit, amber is the key. The words stay as well. */
-label.btn{text-align:center;cursor:pointer;margin-top:12px}
+label.btn{text-align:center;cursor:pointer;margin-top:12px;font-size:1rem;letter-spacing:normal}
 .shot{display:block;width:100%;max-height:340px;object-fit:contain;margin:12px 0 0;
  border-radius:var(--r);background:var(--mute);border:1px solid var(--line)}
 
@@ -90,6 +90,7 @@ label.btn{text-align:center;cursor:pointer;margin-top:12px}
  background:var(--paper);box-shadow:var(--sh)}
 .facts div{display:flex;justify-content:space-between;gap:14px;padding:13px 0;font-size:.93rem;border-bottom:1px solid var(--line)}
 .facts div:last-child{border:0}
+.btn + .facts,.sub + .facts,.shot + .facts{margin-top:18px}
 .facts span{color:var(--soft)}
 .facts b{text-align:right;font-weight:650;overflow-wrap:anywhere}
 

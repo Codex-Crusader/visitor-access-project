@@ -88,7 +88,7 @@ screens, with fixed codes and no server, so some details are different.
 
 | Approved, with the pass | The gate desk | A staff code at the gate |
 |:---:|:---:|:---:|
-| <img src="images/app-04-pass.png" alt="An entry pass with its entry code" width="250"> | <img src="images/app-05-gate.png" alt="The guard types the entry code and sees Let them in, and must take a photo before Record entry" width="250"> | <img src="images/app-07-gate-staff.png" alt="In Staff code mode one scan of a 7-digit code records an entry, or an exit on red, with the name and tag large and a button to change a wrong scan" width="250"> |
+| <img src="images/app-04-pass.png" alt="An entry pass with its entry code" width="250"> | <img src="images/app-05-gate.png" alt="The guard types the entry code and sees Let them in, the visitor's name large, and the photo button before Record entry" width="250"> | <img src="images/app-07-gate-staff.png" alt="In Staff code mode one scan of a 7-digit code records an entry, or an exit on red, with the name and tag large and a button to change a wrong scan" width="250"> |
 
 | The admin page: Today |
 |:---:|

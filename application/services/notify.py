@@ -11,8 +11,8 @@ from services import whatsapp
 log = logging.getLogger("app")
 
 
-# How many approval messages to guards go to Meta at the same time.
-GUARD_SENDS_AT_ONCE = 8
+# How many resent requests go to Meta at the same time.
+SENDS_AT_ONCE = 8
 
 
 def resend_after_change(before, after):
@@ -37,35 +37,29 @@ def resend_after_change(before, after):
             log.error("Could not send %s to its new approver: %s", request["reference"], failure)
             return False
 
-    # Together, as the guard messages go: one slow answer from Meta does not add up per request.
-    with ThreadPoolExecutor(max_workers=GUARD_SENDS_AT_ONCE) as pool:
+    # Together: one slow answer from Meta does not add up per request.
+    with ThreadPoolExecutor(max_workers=SENDS_AT_ONCE) as pool:
         return sum(pool.map(send, to_send))
 
 
 def tell_guards(visit, skip=()):
-    """Tell every guard, except skip, that a visitor is approved. Plain text: a best effort."""
-    _send_to_guards([whatsapp.guard_update_body(visit)], skip, visit["reference"])
+    """Tell the gate desk, unless it is in skip, that a visitor is approved. Plain text."""
+    _send_to_desk([whatsapp.guard_update_body(visit)], skip)
 
 
 def tell_guards_many(approved):
-    """Tell every guard about many approvals at once: one list, not one message per visitor."""
+    """Tell the gate desk about many approvals at once: one list, not one message per visitor."""
     if approved:
-        _send_to_guards(whatsapp.guard_list_bodies(approved), (), f"{len(approved)} approvals")
+        _send_to_desk(whatsapp.guard_list_bodies(approved), ())
 
 
-def _send_to_guards(bodies, skip, about):
-    try:
-        phones = [config.GUARD] + [guard["phone"] for guard in people.holders(people.GUARDS)]
-    except Exception as failure:
-        log.error("Could not read the guards to tell them about %s: %s", about, failure)
+def _send_to_desk(bodies, skip):
+    """The gate desk number only: it is the phone at the gate, whoever is on duty. One message
+    costs less than one per guard, and the gate board lists every approved visitor anyway."""
+    if any(whatsapp.same_number(config.GUARD, phone) for phone in skip):
         return
-    skipped = {whatsapp.digits(phone) for phone in skip}
-    to_tell = {whatsapp.digits(p): p for p in phones if whatsapp.digits(p) not in skipped}
-    # Sent together, so the approver waits for one call to Meta, not one per guard.
-    with ThreadPoolExecutor(max_workers=GUARD_SENDS_AT_ONCE) as pool:
-        for phone in to_tell.values():
-            for body in bodies:
-                pool.submit(reply_to, phone, body)
+    for body in bodies:
+        reply_to(config.GUARD, body)
 
 
 def log_template_problem(problem):

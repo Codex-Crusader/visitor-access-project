@@ -151,28 +151,39 @@ assert "Closed" in say(RAVI, f"OUT {exit_of(by_phone)}")
 assert visits.get(by_phone["reference"])["exited_by"] == RAVI_LABEL
 print("  own key works, only its hash kept, entry and exit name the guard, visitor sees nothing")
 
-print("every guard hears about an approval, never with a gate code")
+print("the gate desk hears about an approval, never with a gate code; added guards do not")
+# Here the desk has its own number. In the kit it is the approver's, who is never told twice.
+DESK = "+919811100099"
+real_desk, config.GUARD = config.GUARD, DESK
+try:
+    sent.clear()
+    told = new_request()
+    assert "is now approved" in say(APPROVER, f"YES {told['reference']}"), "the reply stays last"
+    to_desk = [body for to, body in sent if whatsapp.same_number(to, DESK)]
+    assert len(to_desk) == 1 and told["reference"] in to_desk[0], to_desk
+    assert not any(code in to_desk[0] for code in visits.codes_of(told["reference"]).values())
+    assert not any(whatsapp.same_number(to, RAVI) for to, _ in sent), "one message, not one a guard"
+    to_approver = [body for to, body in sent if whatsapp.same_number(to, APPROVER)]
+    assert not any("Approved visitor" in body for body in to_approver), "the approver is not told"
+    sent.clear()
+    say(APPROVER, f"NO {new_request()['reference']}")
+    assert not any(whatsapp.same_number(to, DESK) for to, _ in sent), "a decline tells no one"
+    sent.clear()
+    auto = new_request()
+    with db.connect() as conn:
+        conn.execute("UPDATE visits SET auto_approve_at = %s WHERE reference = %s",
+                     ("2020-01-01T00:00:00+00:00", auto["reference"]))
+    db.forget_cache()
+    timer.auto_approve_due()
+    assert [to for to, body in sent if auto["reference"] in body and "Approved visitor" in body] \
+        == [DESK], sent
+finally:
+    config.GUARD = real_desk
+# The desk that approves a request is not told again: it decided it.
 sent.clear()
-told = new_request()
-assert "is now approved" in say(APPROVER, f"YES {told['reference']}"), "the reply stays last"
-to_ravi = [body for to, body in sent if whatsapp.same_number(to, RAVI)]
-assert len(to_ravi) == 1 and told["reference"] in to_ravi[0], to_ravi
-assert not any(code in to_ravi[0] for code in visits.codes_of(told["reference"]).values())
-to_approver = [body for to, body in sent if whatsapp.same_number(to, APPROVER)]
-assert not any("Approved visitor" in body for body in to_approver), "the approver is not told again"
-sent.clear()
-say(APPROVER, f"NO {new_request()['reference']}")
-assert not any(whatsapp.same_number(to, RAVI) for to, _ in sent), "a decline tells no guard"
-sent.clear()
-auto = new_request()
-with db.connect() as conn:
-    conn.execute("UPDATE visits SET auto_approve_at = %s WHERE reference = %s",
-                 ("2020-01-01T00:00:00+00:00", auto["reference"]))
-db.forget_cache()
-timer.auto_approve_due()
-assert [to for to, body in sent if auto["reference"] in body and "Approved visitor" in body] \
-    == [RAVI_PHONE], sent
-print("  told once on approval and automatic approval, not on a decline, no code")
+say(APPROVER, f"YES {new_request()['reference']}")
+assert not any("Approved visitor" in body for _, body in sent), "the desk approved it itself"
+print("  the desk told once on approval and automatic approval, no guard, no decline, no code")
 
 print("a guard's key is renewed by KEY or by the admin, and removal stops everything")
 fresh_reply = say(RAVI, "KEY")
@@ -340,6 +351,7 @@ def later():
     """Moves every allow list entry 3 minutes back, past the repeat window."""
     with db.connect() as writer:
         writer.execute("UPDATE staff_entries SET entered_at = %s", (db.ago(3 / 1440),))
+    db.forget_cache()
 
 
 later()
@@ -406,7 +418,17 @@ def eve_today():
 
 assert eve_today() == {}
 sent.clear()
+# A scan clears only the reads it changes: the next scan still finds the allow list in memory.
+def cached_lists():
+    # noinspection PyProtectedMember
+    return {key[:2] for key in db._cache}
+
+
+staff.by_code(eve_code)
+assert {("models.staff", "_by_code"), ("models.staff", "today")} <= cached_lists()
 assert say(APPROVER, eve_code).startswith("Entry recorded: Eve")
+assert ("models.staff", "_by_code") in cached_lists(), "the allow list stays in memory"
+assert ("models.staff", "today") not in cached_lists(), "today's list is read again"
 assert say(APPROVER, eve_code).startswith("Already recorded: Eve entered"), "a double tap"
 assert eve_moves() == ["entry"] and eve_today()["last_kind"] == "entry"
 later()
@@ -437,6 +459,7 @@ with db.connect() as conn:
     conn.execute("DELETE FROM staff_entries WHERE code = %s", (eve_code,))
     conn.execute("INSERT INTO staff_entries (code, name, phone, entered_at, entered_by)"
                  " VALUES (%s, 'Eve', %s, %s, 'test')", (eve_code, EVE_PHONE, db.ago(1)))
+db.forget_cache()
 assert staff.recent_entries()[0]["kind"] == "entry", "a row with no kind is an entry"
 assert eve_today() == {}
 assert say(APPROVER, eve_code).startswith("Entry recorded: Eve"), "a new day starts with an entry"
@@ -445,11 +468,13 @@ with db.connect() as conn:
     conn.execute("DELETE FROM staff_entries WHERE code = %s", (eve_code,))
     conn.execute("INSERT INTO staff_entries (code, name, phone, entered_at, entered_by)"
                  " VALUES (%s, 'Eve', %s, %s, 'test')", (eve_code, EVE_PHONE, db.ago(8 / 24)))
+db.forget_cache()
 assert eve_today()["last_kind"] == "entry", "still in from the night shift: on campus"
 assert say(APPROVER, eve_code).startswith("Exit recorded: Eve"), "the night shift ends"
 # A wrong scan changed within 10 minutes: the same row, the other kind, nothing added.
 with db.connect() as conn:
     conn.execute("DELETE FROM staff_entries WHERE code = %s", (eve_code,))
+db.forget_cache()
 assert client.post(f"/api/staff/{eve_code}/scan", headers=KEY).get_json()["kind"] == "entry"
 changed = client.post(f"/api/staff/{eve_code}/out", headers=KEY).get_json()
 assert changed["kind"] == "exit" and changed["new"] is True and eve_moves() == ["exit"], changed
@@ -495,7 +520,17 @@ assert cells["A", yesterday][6] == export.NO_EXIT, "yesterday's entry with no ex
 assert cells["B", yesterday][4] == export.NO_ENTRY, "an exit with no entry"
 assert cells["A", today_date][6] == export.STILL_INSIDE, "today, still inside"
 later()
-summary = client.get("/api/admin/summary", headers=ADMIN).get_json()
+summary_answer = client.get("/api/admin/summary", headers=ADMIN)
+summary = summary_answer.get_json()
+# The page asks every minute: an unchanged summary is an empty 304, a scan changes it.
+tag = summary_answer.headers["ETag"]
+again = client.get("/api/admin/summary", headers={**ADMIN, "If-None-Match": tag})
+assert again.status_code == 304 and not again.get_data(), again.status_code
+assert summary_answer.headers["Cache-Control"] == "no-store"
+client.post(f"/api/staff/{dev_code}/scan", headers=KEY)
+assert client.get("/api/admin/summary",
+                  headers={**ADMIN, "If-None-Match": tag}).status_code == 200, "a scan is news"
+later()
 assert access.DESK_KEY in [e["entered_by"] for e in summary["staff_entries"]]
 # The staff entry log is its own file, for the admin only. It holds every entry with its
 # guard, the date in its own column, and disarms a name that looks like a formula.
@@ -542,6 +577,7 @@ assert "No one on the allow list" in say(APPROVER, dev_code)
 assert staff.recent_entries(), "the log keeps the entries"
 with db.connect() as conn:
     conn.execute("UPDATE staff_entries SET entered_at = %s", (db.ago(2),))
+db.forget_cache()
 visits.purge_old()
 assert not staff.recent_entries(), "old staff entries are deleted"
 print("  a guard's code records at once, staff told, the page sees no number, delete stops it")
@@ -635,6 +671,7 @@ client.post("/api/admin/offices/remove", json={"name": "Library"}, headers=ADMIN
 # Every admin change is logged under the admin who made it, and never holds a key.
 with db.connect() as conn:
     conn.execute("DELETE FROM admin_changes")
+db.forget_cache()
 made_admin = add_admin("Asha", "+919600000009").get_json()
 ASHA = {"X-Admin-Key": made_admin["key"]}
 client.post("/api/admin/guards", json={"name": "Mohan", "phone": "+919600000010"}, headers=ASHA)

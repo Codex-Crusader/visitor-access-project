@@ -139,7 +139,7 @@ imports only from the folders before it in that list, and `routes/` imports from
 | `models/tags.py`                          | The tags that group the offices and the allow list                     |
 | `models/audit.py`                         | The admin change log: who changed what, never a key                    |
 | `services/whatsapp.py`                    | Meta API calls, message text, and command reading                      |
-| `services/notify.py`                      | Messages the app sends by itself, such as approvals to the guards      |
+| `services/notify.py`                      | Messages the app sends by itself, such as approvals to the gate desk   |
 | `services/timer.py`                       | Escalation, automatic approval, expiry and the purge                   |
 | `services/export.py`                      | The log as CSV, and the ZIP with the photos                            |
 | `routes/pages.py`                         | Serves the three pages, the script versions and the header values      |

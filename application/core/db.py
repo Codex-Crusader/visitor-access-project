@@ -168,6 +168,16 @@ def forget_cache():
         _cache.clear()
 
 
+def forget(*queries):
+    """Drop the cached reads of these queries only, for a frequent write that changes nothing else:
+    a staff scan must not make the next scan read the whole allow list again."""
+    names = {(query.__module__, query.__name__) for query in queries}
+    with _cache_lock:
+        _changes[0] += 1
+        for key in [key for key in _cache if key[:2] in names]:
+            del _cache[key]
+
+
 def writes(change):
     """A change to the data. Once it ends, after its commit, the cached reads are stale."""
     @functools.wraps(change)
