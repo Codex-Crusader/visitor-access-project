@@ -325,6 +325,40 @@ assert visits.purge_old() == 0, "nothing old, nothing deleted"
 assert visits.next_due() is not None
 print("  CHECK on status and decider, purge by reference, next_due on the status index")
 
+print("odd bodies, NUL bytes and SQL text are refused, never a crash")
+both_keys = {**ADMIN, **KEY}
+for rule in application.app.url_map.iter_rules():
+    if "POST" not in rule.methods:
+        continue
+    url = rule.rule
+    for part in rule.arguments:
+        url = url.replace(f"<{part}>", {"which": "gate", "action": "entry"}.get(part, "AB-1234"))
+    for body in (b"[1]", b'"text"', b"5", b"true"):
+        answer = client.post(url, data=body, headers={**both_keys,
+                                                      "Content-Type": "application/json"})
+        assert answer.status_code < 500, (url, body, answer.status_code)
+    limits.forget_hits()
+for url in ("/api/visit/%00", "/api/pass/A%00", "/api/admin/visits?q=%00",
+            "/api/admin/visits?after=%00|x", "/api/admin/photo/%00"):
+    assert client.get(url, headers=both_keys).status_code == 400, url
+for url, body in (("/api/admin/staff/remove", {"code": "\x00"}),
+                  ("/api/admin/offices/remove", {"name": "\x00"}),
+                  ("/api/admin/decide", {"decision": "approve", "references": ["\x00"]})):
+    assert client.post(url, json=body, headers=ADMIN).status_code == 400, url
+limits.forget_hits()
+# Every value reaches SQL as a parameter, so SQL text is only text.
+db.forget_cache()
+stored = sum(visits.status_counts().values())
+for text in ("YES VR-1' OR '1'='1", "IN KT-1234'; DELETE FROM visits;--",
+             "'; DROP TABLE visits;--"):
+    say(APPROVER, text)
+injected = client.get("/api/admin/visits?q=' OR 1=1--", headers=ADMIN).get_json()
+assert injected["visits"] == [], "the search matches the text, not every row"
+db.forget_cache()
+assert sum(visits.status_counts().values()) == stored
+limits.forget_hits()
+print("  a list, text or number body, NUL in a path, query or field, SQL in WhatsApp and search")
+
 # Last, because it closes the database for the rest of this process.
 
 finish()

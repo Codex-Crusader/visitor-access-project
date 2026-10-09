@@ -26,6 +26,11 @@ NOT_TEXT = ("Cc", "Cf", "Cs", "Co", "Cn", "Zl", "Zp")
 MAX_LENGTH = 200
 
 
+def json_object(value):
+    """A call's JSON body as a dict. A list, text or number reads as an empty form."""
+    return value if isinstance(value, dict) else {}
+
+
 def clean_text(value):
     """One line of plain text, or None when the value is not plain text."""
     if any(unicodedata.category(letter) in NOT_TEXT for letter in value):

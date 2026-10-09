@@ -1,6 +1,7 @@
 {
   "name": "visitor-access-project",
   "private": true,
+  "license": "UNLICENSED",
   "description": "Tooling for the two web pages. The app itself uses no npm package.",
   "scripts": {
     "test": "node tests/test_form.js",

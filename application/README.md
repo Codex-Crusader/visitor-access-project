@@ -166,3 +166,8 @@ imports only from the folders before it in that list, and `routes/` imports from
 | `tools/check_setup.py`                    | Checks your settings and sends one test message                        |
 | `tools/whatsapp_messages.py`              | Writes docs/whatsapp-messages.md by running the app                    |
 | `ruff.toml`, `eslint.config.mjs`          | Linter settings, and why some rules are off                            |
+
+## License
+
+Copyright © 2026 Bhargavaram Krishnapur. All rights reserved. See the LICENSE file at the
+repository root. You need written permission to use, copy or change this code.

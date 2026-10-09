@@ -65,7 +65,7 @@ def bulk_decide():
     refused = access.admin_refusal() or access.super_refusal()
     if refused:
         return refused
-    status, references, problem = read_bulk(request.get_json(silent=True) or {})
+    status, references, problem = read_bulk(checks.json_object(request.get_json(silent=True)))
     if problem:
         return jsonify(error=problem), 400
 
@@ -216,7 +216,7 @@ def set_approvers():
     refused = access.admin_refusal()
     if refused:
         return refused
-    payload = request.get_json(silent=True) or {}
+    payload = checks.json_object(request.get_json(silent=True))
     reason = payload.get("reason")
     # Each office has its own pair, under the reasons on the Approvers tab.
     if reason not in config.REASONS or reason == config.OFFICE_REASON:

@@ -279,6 +279,8 @@ Never put a secret in git, in a chat or in a screenshot. `.gitignore` keeps
 | Any admin copies every face            | Only a super admin can download the logs and the photos                                                |
 | A send that may have reached Meta      | The request stays, is never approved by itself, and the reminder asks again                            |
 | Open requests after an approver change | They go to the new approver at once, and the change log counts them                                    |
+| SQL in a form, a message or a search   | Every value goes to the database as a parameter, never as SQL text                                     |
+| A NUL byte, or a list as the body      | The server answers 400 with a plain error, never a crash                                               |
 
 ## What lives only in the server's memory
 

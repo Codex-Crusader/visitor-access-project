@@ -46,7 +46,7 @@ def sent_line(count):
 
 
 def payload():
-    return request.get_json(silent=True) or {}
+    return checks.json_object(request.get_json(silent=True))
 
 
 def read_pair(given):

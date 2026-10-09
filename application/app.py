@@ -5,6 +5,7 @@ import threading
 import time
 
 from flask import Flask, jsonify, request
+from psycopg import DataError
 
 from core import config, db, limits
 from routes import admin, gate, pages, team, visitor, webhook
@@ -27,6 +28,13 @@ META_RETRY_SECONDS = 300
 @app.errorhandler(413)
 def too_big(_error):
     return jsonify(error="That is too big. Take the photo again."), 413
+
+
+@app.errorhandler(DataError)
+def bad_value(error):
+    """Text Postgres cannot store, such as a NUL byte in an address or a field. Not a crash."""
+    app.logger.warning("Refused a value the database cannot take: %s", error)
+    return jsonify(error="That has a character that is not allowed."), 400
 
 
 @app.errorhandler(500)

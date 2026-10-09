@@ -163,3 +163,9 @@ set Source to **GitHub Actions** under Settings, then Pages, before the first pu
 > If Pages was never enabled, the first workflow run fails, because the default token cannot
 > create the Pages site. Pages is also case sensitive while your laptop is probably not:
 > `Journey-Map.png` and `journey-map.png` are two different files on the server.
+
+## License
+
+Copyright © 2026 Bhargavaram Krishnapur. All rights reserved. See [`LICENSE`](LICENSE). You need
+written permission to use, copy or change any part of this repository. The university name and
+logo, and the screenshots of other products, belong to their owners.

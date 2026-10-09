@@ -299,8 +299,9 @@ answer them, and it is not legal advice.
 
 1. Who owns the code: the developer, the university, or both?
 2. What may the university do with it: use it, change it, give it to others?
-3. Under which license is the code shared? The repository has no license
-   file yet.
+3. Under which terms may the university use the code? The LICENSE file at
+   the repository root reserves all rights to the developer. The university
+   needs the developer's written permission to use, copy or change the code.
 4. Who maintains the code after handover, for how long, and on what terms?
 5. Which data and accounts belong to the university, and which to the
    developer, during the pilot?

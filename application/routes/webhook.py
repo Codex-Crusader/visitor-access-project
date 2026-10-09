@@ -5,7 +5,7 @@ import logging
 
 from flask import Blueprint, request
 
-from core import config, db, limits
+from core import checks, config, db, limits
 from models import audit, blacklist, entries, people, staff, visits
 from routes import access, gate
 from services import notify, whatsapp
@@ -200,7 +200,7 @@ def whatsapp_reply():
     if not access.signature_ok():
         return "", 403
 
-    payload = request.get_json(silent=True) or {}
+    payload = checks.json_object(request.get_json(silent=True))
     # Meta reports failed deliveries only here, so log them.
     for recipient, code, reason in whatsapp.read_failures(payload):
         log.error("WhatsApp could not deliver to %s: error %s, %s",

@@ -57,7 +57,7 @@ def create_request():
     if limits.too_many("request", config.REQUESTS_PER_HOUR, 3600):
         return jsonify(error="Too many requests from here. Try again later."), 429
 
-    payload = request.get_json(silent=True) or {}
+    payload = checks.json_object(request.get_json(silent=True))
     form, refused = read_form(payload)
     if refused:
         return refused
