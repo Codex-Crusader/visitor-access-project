@@ -1458,7 +1458,8 @@ function renderRules(s) {
       + " with no answer, is approved automatically after the time in its row."
     : "";
   el("rules").textContent = `A request is sent again, to the backup or as a reminder, after ${s.escalate_minutes} minutes`
-    + ` with no answer.${auto} A pass works for ${s.pass_hours} hours after the request.`
+    + " with no answer, or halfway to its automatic approval if that is sooner."
+    + `${auto} A pass works for ${s.pass_hours} hours after the request.`
     + ` Records are deleted after ${s.retain_days} days.`;
 }
 

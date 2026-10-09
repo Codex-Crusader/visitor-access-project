@@ -138,7 +138,7 @@ def main():
     scenario("A visitor sends a request", lambda: first.update(request()))
     late = request()
     older(late, 0.5)
-    scenario("Nobody answers in 15 minutes: the backup approver is asked", timer.escalate_due)
+    scenario("Nobody answers in time: the backup approver is asked", timer.escalate_due)
     office = request(reason="See an office", visiting="x", office="Accounts")
     older(office, 0.5)
     scenario("An office with no backup: its approver gets a reminder", timer.escalate_due)

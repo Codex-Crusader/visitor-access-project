@@ -4,7 +4,7 @@ import json
 import random
 import secrets
 import string
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from psycopg import errors
 
@@ -304,25 +304,38 @@ def status_counts() -> dict[str, int]:
     return {row["status"]: row["count"] for row in rows}
 
 
+# Halfway from a request to its automatic approval: the backup then has the other half.
+# NULL with no automatic approval. One rule for the timer's sleep and for the escalation.
+HALFWAY = ("(created_at::timestamptz"
+           " + (auto_approve_at::timestamptz - created_at::timestamptz) / 2)")
+
+
 @db.read
 def next_due():
     """The earliest time the timer has work, or None. One query on the status indexes.
 
     Each MIN takes one status, so it reads the first row of that status on the (status,
     created_at) index: O(log n). One MIN over three statuses walked the created_at index from
-    the oldest visit instead, O(n): 200,000 rows read for one."""
+    the oldest visit instead, O(n): 200,000 rows read for one. The halfway MIN reads the
+    waiting requests: O(p), see due_for_escalation()."""
     oldest = " (SELECT MIN(created_at) FROM visits WHERE status = %s)"
+    auto = " (SELECT MIN(auto_approve_at) FROM visits WHERE status = %s)"
     with db.connect() as conn:
         row = conn.execute(
             f"SELECT{oldest} AS pending,"
-            " (SELECT MIN(auto_approve_at) FROM visits WHERE status IN (%s, %s)) AS auto,"
+            # O(p) for the p waiting requests, see due_for_escalation().
+            f" (SELECT MIN({HALFWAY}) FROM visits WHERE status = %s) AS halfway,"
+            # One MIN per status, as for expiring: an IN list read every open row.
+            f" LEAST({','.join([auto] * len(db.OPEN_STATUSES))}) AS auto,"
             f" LEAST({','.join([oldest] * len(db.EXPIRING))}) AS expiring",
-            (db.PENDING, *db.OPEN_STATUSES, *db.EXPIRING),
+            (db.PENDING, db.PENDING, *db.OPEN_STATUSES, *db.EXPIRING),
         ).fetchone()
     times = []
     if row["pending"]:
         times.append(datetime.fromisoformat(row["pending"])
                      + timedelta(minutes=config.ESCALATE_MINUTES))
+    if row["halfway"]:
+        times.append(row["halfway"])
     if row["auto"]:
         times.append(datetime.fromisoformat(row["auto"]))
     if row["expiring"]:
@@ -342,10 +355,13 @@ def open_requests():
 
 @db.read
 def due_for_escalation():
+    """The waiting requests whose time to ask the backup has come: ESCALATE_MINUTES after the
+    request, or HALFWAY to its automatic approval when that is sooner. O(p) for the p waiting
+    requests, which are asked again within ESCALATE_MINUTES: about 75 at most."""
     with db.connect() as conn:
         rows = conn.execute(
-            "SELECT * FROM visits WHERE status = %s AND created_at <= %s",
-            (db.PENDING, db.ago(config.ESCALATE_MINUTES / 1440)),
+            f"SELECT * FROM visits WHERE status = %s AND (created_at <= %s OR {HALFWAY} <= %s)",
+            (db.PENDING, db.ago(config.ESCALATE_MINUTES / 1440), datetime.now(timezone.utc)),
         ).fetchall()
     return [to_dict(row) for row in rows]
 

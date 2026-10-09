@@ -65,7 +65,9 @@ the app answers "No request has reference" and decides nothing. Send any other m
 for you.
 
 If you do not answer in 15 minutes, the backup approver gets the same
-request. If you have no backup, you get a reminder instead. The first reply
+request. If the request approves by itself in less than 30 minutes, the
+backup gets it sooner: halfway to that time. If you have no backup, you get
+a reminder instead. The first reply
 decides. A reply after that changes nothing.
 
 If the request was made between 10:00 and 17:00, Monday to Saturday, and no
@@ -362,6 +364,13 @@ Cancel to keep it.
 
 For an office, tap Time on its row to set the same time. A change of time
 also moves the open requests that wait for automatic approval.
+
+The backup approver always gets half of that time. The app asks the backup
+after `ESCALATE_MINUTES`, or halfway to the automatic approval if that is
+sooner. For example, with 3 minutes, the approver has 1.5 minutes, then the
+backup has 1.5 minutes, then the request approves by itself. With twice
+`ESCALATE_MINUTES` or more, 30 minutes by default, the backup is asked after
+`ESCALATE_MINUTES`, as before.
 
 The change works at once. New requests go to the new numbers. The old numbers
 can no longer decide that reason's requests, also the requests already sent
@@ -1049,6 +1058,9 @@ the reply is lost.
 
 In this table, n is the number of stored visits. k is the number of rows
 that an operation returns or changes. s is the number of stored staff scans.
+p is the number of requests that wait for their first answer. Each one is
+asked again within `ESCALATE_MINUTES`, so p stays near the requests of the
+last 15 minutes: 75 at most with `REQUESTS_PER_HOUR_ALL=300`.
 "From memory" means that a repeated read costs no database query until the
 app changes the data. The first
 read after a change, and every read in the first 2 minutes after the server
@@ -1059,7 +1071,7 @@ starts, goes to the database.
 | Visitor status check, 5 to 30 s     | O(1)          | From memory, after the first query         |
 | Look up a pass by its code          | O(log n)      | One query on the code key                  |
 | Decide, enter, exit                 | O(log n)      | One UPDATE that returns the new row        |
-| Background round, when work is due  | O(log n + k)  | Indexes on status and time                 |
+| Background round, when work is due  | O(log n + p)  | p waiting requests, about 75 at most       |
 | Gate board, every 30 s              | O(k)          | From memory, after the first query         |
 | Blacklist check, for each row       | O(1)          | One shared set of numbers, not copied      |
 | Allow list code, guard or admin key | O(1)          | One shared index, not copied               |

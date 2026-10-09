@@ -84,7 +84,7 @@ screens, with fixed codes and no server, so some details are different.
 
 |                                    Home                                    |                                                Request a visit                                                 |                                                   Waiting on the approver                                                   |
 |:--------------------------------------------------------------------------:|:--------------------------------------------------------------------------------------------------------------:|:---------------------------------------------------------------------------------------------------------------------------:|
-| <img src="images/app-01-home.png" alt="The five section menu" width="250"> | <img src="images/app-02-form.png" alt="Reason chips, the office picked from a list, and one guest" width="250"> | <img src="images/app-03-waiting.png" alt="Not approved yet, with a tracker and the time the request is asked again" width="250"> |
+| <img src="images/app-01-home.png" alt="The five section menu" width="250"> | <img src="images/app-02-form.png" alt="Reason chips, the office picked from a list, and one guest" width="250"> | <img src="images/app-03-waiting.png" alt="Not approved yet, with a tracker and the latest time the request is asked again" width="250"> |
 
 | Approved, with the pass | The gate desk | A staff code at the gate |
 |:---:|:---:|:---:|
@@ -98,11 +98,15 @@ screens, with fixed codes and no server, so some details are different.
 |:---:|
 | <img src="images/app-08-admin-allow.png" alt="The allow list grouped by tag, each person's 7-digit code, and the recent staff entries and exits with a download button" width="760"> |
 
+| A new approver, and what became of the open requests |
+|:---:|
+| <img src="images/app-09-admin-approvers.png" alt="After a change of approver, an amber note says one open request went to the new approver and one was not sent, and tells the admin what to do. Below it, each reason's approver, backup and time to approve by itself, and the rule that the backup gets half of that time" width="760"> |
+
 </div>
 
 The waiting screen is the whole recommendation in one picture. It names who holds the request and
-states the minute the request is asked again: of the backup approver, or as a reminder to the
-approver when there is no backup.
+states the latest minute the request is asked again: of the backup approver, or as a reminder to
+the approver when there is no backup.
 [`application/docs/setup.md`](application/docs/setup.md) covers the settings and the setup.
 [`application/docs/maintenance.md`](application/docs/maintenance.md) covers the WhatsApp commands
 and daily use.

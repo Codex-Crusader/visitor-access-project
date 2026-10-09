@@ -166,7 +166,7 @@ function reviewView(){
       ${fact("Name",S.f.name)}${fact("Phone",S.f.phone)}${fact("Address",S.f.address)}
       ${fact("Reason",reasonText())}${fact(S.f.reason===OFFICE?"Office":"Visiting",visitingText())}${S.g.length?fact("With you",S.g.join(", ")):""}
     </div>
-    <p class="sm">No answer in ${S.cfg.escalate_minutes} minutes, and it is sent again, to a backup approver if there is one. You do not fill this in again.</p>
+    <p class="sm">If no one answers within ${S.cfg.escalate_minutes} minutes, it is sent again, to a backup approver if there is one. You do not fill this in again.</p>
     <button class="btn" onclick="send()">Send request</button>
     <button class="btn plain" onclick="back()">Edit</button>`;
 }
@@ -199,7 +199,7 @@ function waitingView(v){
       ${tracker()}
       <div class="facts">${fact("Reference",v.reference)}
         ${fact("With",asked?"Approver, asked again":"Approver")}
-        ${asked?"":fact("Asked again at",plus(v.created_at,S.cfg.escalate_minutes))}
+        ${asked?"":fact("Asked again by",plus(v.created_at,S.cfg.escalate_minutes))}
         ${v.guests.length?fact("With you",v.guests.join(", ")):""}</div>
       ${gate()}`;
 }

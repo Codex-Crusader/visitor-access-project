@@ -227,7 +227,7 @@ These have a default. Set the ones that apply to you.
 | `ADMIN_KEY`              | The admin page password, 20 characters or more               |
 | `BEHIND_PROXY`           | `true` on Render. Leave it unset on your own machine         |
 | `CLIENT_IP_HEADER`       | The visitor's address header. Empty on Render. See below     |
-| `ESCALATE_MINUTES`       | Minutes before the backup approver is asked. Default 15      |
+| `ESCALATE_MINUTES`       | Most minutes before the backup is asked. Default 15          |
 | `AUTO_APPROVE_MINUTES`   | Default minutes before automatic approval. 0 is off. 30      |
 | `WORK_HOURS`             | Working hours, in whole hours. Default `10-17`               |
 | `WORK_DAYS`              | Working days. Default `Mon,Tue,Wed,Thu,Fri,Sat`              |

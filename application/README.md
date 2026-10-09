@@ -52,7 +52,9 @@ number on the blacklist cannot request a visit or enter.
 If nobody answers in `ESCALATE_MINUTES`, the server sends the same details to
 the backup approver, or, when there is no backup, a reminder to the approver. In working hours, the server approves a request that
 nobody answers in time: 30 minutes by default, or the time an admin set for
-that reason or office. A pass works for `PASS_HOURS` after
+that reason or office. When that time is shorter than twice
+`ESCALATE_MINUTES`, the backup is asked halfway to it, so the backup always
+has half of the time. A pass works for `PASS_HOURS` after
 the request.
 
 ## The life of a pass

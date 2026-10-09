@@ -36,7 +36,9 @@ If nobody answers in 15 minutes, the request goes to a backup approver, or
 the approver gets a reminder. In working hours, a request that nobody answers
 in 30 minutes is approved automatically. An admin can change that time for
 each reason and each office on the admin page, or set it to 0, so that a
-person must always decide.
+person must always decide. With a time under 30 minutes, the backup is
+asked halfway to it, so each approver has half of the time. For example,
+with 3 minutes, each one has 1.5 minutes.
 
 Automatic approval is a convenience, not a security check. No person looks
 at a request that is approved this way. The blacklist still applies, and the

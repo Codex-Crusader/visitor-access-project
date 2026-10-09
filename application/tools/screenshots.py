@@ -243,6 +243,30 @@ def take_pictures(browser, folder, codes):
     board.wait_for_selector("#s-table >> text=Dr Anita Rao")
     board.screenshot(path=os.path.join(folder, "app-08-admin-allow.png"), full_page=True)
     print("saved app-08-admin-allow.png")
+    approver_note(board, folder)
+
+
+def approver_note(board, folder):
+    """A new approver for See a student. One open request goes to them, one send fails."""
+    lost = client.post("/api/requests", json={
+        "name": "Sameer Kulkarni", "phone": "9820066778", "address": "Neral, Raigad",
+        "reason": "See a student", "visiting": "2025SEPVUGP0008", "guests": []}).get_json()
+
+    def refused(_to, values, _name=None):
+        if values[0] == lost["reference"]:
+            raise RuntimeError("WhatsApp send failed (400): made up for the picture")
+
+    whatsapp.send_template = refused
+    try:
+        board.goto(BASE + "/admin#numbers")
+        board.click("[data-edit='See a student']")
+        board.fill("#ap-main", "+919000000031")
+        board.click("#ap-save")
+        board.wait_for_selector("#approver-note .note")
+        board.screenshot(path=os.path.join(folder, "app-09-admin-approvers.png"), full_page=True)
+    finally:
+        whatsapp.send_template = no_network
+    print("saved app-09-admin-approvers.png")
 
 
 def main():

@@ -30,7 +30,7 @@ Reply YES or NO followed by the reference to decide this request.
 (template visit_request)
 ```
 
-## Nobody answers in 15 minutes: the backup approver is asked
+## Nobody answers in time: the backup approver is asked
 
 To the backup approver:
 

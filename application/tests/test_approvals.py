@@ -4,7 +4,7 @@ Run: .venv\\Scripts\\python.exe tests\\test_approvals.py"""
 
 import contextlib
 import io
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 # The kit comes first: it sets the settings and a clean database before the app loads.
 from kit import (
@@ -168,6 +168,46 @@ assert in_hours.status_code == 201
 assert visits.get(in_hours.get_json()["reference"])["auto_approve_at"], "the server keeps the time"
 assert not private & in_hours.get_json().keys(), "the new request must not tell the visitor"
 print("  10:00 to 16:59 Monday to Saturday only, a NO first wins, approvers told once")
+
+print("the backup always gets half the time before an automatic approval")
+
+
+def made_with_auto(minutes_ago: float, auto_minutes: float) -> str:
+    """A waiting request made minutes_ago, approved by itself auto_minutes after it, or never."""
+    ticket = new_request()
+    made = datetime.now(timezone.utc) - timedelta(minutes=minutes_ago)
+    auto = (made + timedelta(minutes=auto_minutes)).isoformat(timespec="seconds") \
+        if auto_minutes else None
+    with db.connect() as writer:
+        writer.execute("UPDATE visits SET created_at = %s, auto_approve_at = %s"
+                       " WHERE reference = %s",
+                       (made.isoformat(timespec="seconds"), auto, ticket["reference"]))
+    db.forget_cache()
+    return ticket["reference"]
+
+
+# 3 minutes: the backup is asked after 1.5. Before, it waited 15, after the approval.
+short = made_with_auto(2, 3)
+too_soon = made_with_auto(1, 3)
+# A long time, or none out of hours: the backup is asked after ESCALATE_MINUTES, as before.
+wait = config.ESCALATE_MINUTES
+long_one = made_with_auto(wait + 5, 4 * wait)
+long_young = made_with_auto(wait - 5, 4 * wait)
+out_of_hours = made_with_auto(wait - 5, 0)
+due_now = {visit["reference"] for visit in visits.due_for_escalation()}
+assert {short, long_one} <= due_now, due_now
+assert not {too_soon, long_young, out_of_hours} & due_now, due_now
+timer.escalate_due()
+assert visits.get(short)["status"] == db.ESCALATED, "asked again before it approves by itself"
+assert visits.get(too_soon)["status"] == db.PENDING
+# The timer wakes at the halfway point, not 15 minutes after the request.
+with db.connect() as conn:
+    conn.execute("UPDATE visits SET status = %s WHERE status = %s AND reference <> %s",
+                 (db.DECLINED, db.PENDING, too_soon))
+db.forget_cache()
+halfway = datetime.fromisoformat(visits.get(too_soon)["created_at"]) + timedelta(seconds=90)
+assert visits.next_due() == halfway, (visits.next_due(), halfway)
+print("  3 minutes: the backup after 1.5. A long time or none: after ESCALATE_MINUTES")
 
 print("each reason and each office has its own time to approve by itself")
 student = {"reason": "See a student", "office": None}

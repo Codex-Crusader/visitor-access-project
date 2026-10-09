@@ -153,7 +153,7 @@ form_keys = itertools.count()
 
 def new_visitor():
     answer = call("new request", client.post, "/api/requests",
-                  json={**FORM, "request_key": f"load-{next(form_keys):012d}xxxx"})
+                  json={**FORM, "request_key": f"load-{next(form_keys):016d}"})
     if answer.status_code != 201:
         return
     visit = answer.get_json()
