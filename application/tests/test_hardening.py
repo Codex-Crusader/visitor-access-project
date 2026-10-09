@@ -2,8 +2,11 @@
 
 Run: .venv\\Scripts\\python.exe tests\\test_hardening.py"""
 
+import json
 import psycopg
 import runpy
+from urllib3 import HTTPConnectionPool
+from urllib3.exceptions import MaxRetryError, ProtocolError
 
 # The kit comes first: it sets the settings and a clean database before the app loads.
 from kit import (
@@ -107,9 +110,34 @@ def timed_out(*_args, **_kwargs):
     raise whatsapp.requests.ReadTimeout()
 
 
+def dropped(*_args, **_kwargs):
+    """The POST went out, then the connection broke before Meta answered."""
+    raise whatsapp.requests.ConnectionError(ProtocolError("Connection aborted."))
+
+
+def never_opened(*_args, **_kwargs):
+    """No connection at all, as requests reports it: Meta cannot have the message."""
+    raise whatsapp.requests.ConnectionError(MaxRetryError(HTTPConnectionPool("meta.invalid"), "/"))
+
+
+def broke_off(*_args, **_kwargs):
+    """Meta's answer stopped halfway: the message went."""
+    raise whatsapp.requests.exceptions.ChunkedEncodingError("Connection broken")
+
+
+def not_json(*_args, **_kwargs):
+    """Meta took the message, but its answer is not JSON."""
+    page = MetaAnswer(200)
+    page.json = lambda: json.loads("<html>")
+    return page
+
+
 real_post = whatsapp.requests.post
 try:
     for answer, expected in ((timed_out, whatsapp.Uncertain),
+                             (dropped, whatsapp.Uncertain),
+                             (broke_off, whatsapp.Uncertain),
+                             (never_opened, whatsapp.requests.ConnectionError),
                              (lambda *_a, **_k: MetaAnswer(503), whatsapp.Uncertain),
                              (lambda *_a, **_k: MetaAnswer(400), RuntimeError)):
         whatsapp.requests.post = answer
@@ -117,8 +145,11 @@ try:
             # noinspection PyProtectedMember
             whatsapp._post(APPROVER, {})
             raise AssertionError("a failed send must raise")
-        except RuntimeError as failure:
-            assert isinstance(failure, whatsapp.Uncertain) == (expected is whatsapp.Uncertain)
+        except (RuntimeError, OSError) as failure:
+            assert type(failure) is expected, (answer.__name__, failure)
+    whatsapp.requests.post = not_json
+    # noinspection PyProtectedMember
+    assert whatsapp._post(APPROVER, {}) == {}
 finally:
     whatsapp.requests.post = real_post
 # The reminder too: an uncertain send counts as asked, so the next round does not ask again.

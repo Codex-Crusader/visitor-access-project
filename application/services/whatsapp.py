@@ -4,6 +4,7 @@ import re
 from datetime import datetime
 
 import requests
+from urllib3.exceptions import MaxRetryError
 
 from core import config, db
 from models import staff
@@ -89,13 +90,30 @@ def _post(to_phone, message):
         )
     except requests.ReadTimeout as lost:
         raise Uncertain(f"No answer from WhatsApp in {TIMEOUT_SECONDS} s") from lost
+    except requests.ConnectionError as lost:
+        if never_sent(lost):
+            raise
+        raise Uncertain(f"The connection to WhatsApp broke after the message went: {lost}"
+                        ) from lost
+    except requests.exceptions.ChunkedEncodingError as lost:
+        raise Uncertain(f"WhatsApp's answer broke off: {lost}") from lost
     if response.status_code >= 500:
         raise Uncertain(f"WhatsApp fault ({response.status_code}): {response.text}")
     if not response.ok:
         raise RuntimeError(
             f"WhatsApp send failed ({response.status_code}): {response.text}"
         )
-    return response.json()
+    try:
+        return response.json()
+    except ValueError:
+        # Meta took the message. An answer that is not JSON does not undo that.
+        return {}
+
+
+def never_sent(lost):
+    """True when the connection never opened, so Meta cannot have the message. A drop after
+    the message went comes as a ProtocolError or OSError instead."""
+    return bool(lost.args) and isinstance(lost.args[0], MaxRetryError)
 
 
 def token_works():

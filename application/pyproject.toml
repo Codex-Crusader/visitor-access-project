@@ -5,6 +5,8 @@ requires-python = ">=3.11"
 dependencies = [
     "flask",
     "requests",
+    # Comes with requests. whatsapp.py reads its errors to tell a lost send from a failed one.
+    "urllib3",
     "python-dotenv",
     # The host runs the app under gunicorn. requirements.txt lists it too,
     # and the two files have to agree.

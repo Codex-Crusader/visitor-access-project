@@ -347,8 +347,8 @@ hours.
    setting when the template shows Approved in WhatsApp Manager.
 
 A refusal is different from no clear answer. If Meta does not answer in 15
-seconds, or answers with a fault on its own side, the message can still
-arrive. The app then keeps the request, and the visitor sees it as waiting.
+seconds, if the connection breaks after the app sent the message, or if Meta
+answers with a fault on its own side, the message can still arrive. The app then keeps the request, and the visitor sees it as waiting.
 The reminder after `ESCALATE_MINUTES` asks again, and the request is never
 approved by itself, so a person always sees it. The log says
 `WhatsApp send uncertain`.
