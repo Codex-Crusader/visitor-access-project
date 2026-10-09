@@ -1,0 +1,34 @@
+# Checks the live app every hour in campus hours. A failed run means the app,
+# its database or its WhatsApp token does not work. GitHub sends an email for
+# a failed run. See application/docs/maintenance.md.
+name: Uptime
+
+on:
+  schedule:
+    # Every hour from 08:30 to 18:30 India time. Cron runs in UTC.
+    - cron: "0 3-13 * * *"
+  workflow_dispatch:
+    inputs:
+      url:
+        description: "Address to check instead of the HEALTH_URL variable"
+        required: false
+
+permissions: {}
+
+jobs:
+  health:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check /api/health
+        env:
+          # The address is a repository variable, so it is not in a public file.
+          BASE: ${{ inputs.url || vars.HEALTH_URL }}
+        run: |
+          if [ -z "$BASE" ]; then
+            echo "Set the repository variable HEALTH_URL to the app's address."
+            exit 1
+          fi
+          # A sleeping free server takes about a minute to wake, so wait up to
+          # 150 seconds, and try once more after 30 seconds.
+          curl --fail-with-body --silent --show-error --max-time 150 \
+            --retry 1 --retry-delay 30 --retry-all-errors "$BASE/api/health"

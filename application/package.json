@@ -1,0 +1,15 @@
+{
+  "name": "visitor-access-project",
+  "private": true,
+  "license": "UNLICENSED",
+  "description": "Tooling for the two web pages. The app itself uses no npm package.",
+  "scripts": {
+    "test": "node tests/test_form.js",
+    "lint": "eslint static tests/test_form.js"
+  },
+  "devDependencies": {
+    "@types/node": "26.6.3",
+    "eslint": "10.12.0",
+    "jsdom": "26.1.0"
+  }
+}

@@ -1,0 +1,77 @@
+# Render reads this file when you make the service as a Blueprint: New, then
+# Blueprint, see docs/setup.md, step 4. It then asks for each value marked
+# sync: false. The live demo service was made by hand, so Render does not read
+# this file for it, and the file is the record of its settings.
+services:
+  - type: web
+    name: visitor-access-sg
+    runtime: python
+    plan: free
+    # Next to the Neon database, and the nearest region to the campus.
+    region: singapore
+    # The app lives in application/, not at the repository root.
+    rootDir: application
+    buildCommand: pip install -r requirements.txt
+    # One worker only. The escalation timer is a thread inside the process,
+    # so a second worker would send every backup message twice. The worker
+    # also keeps the gate board and visitors' status in memory, which only its
+    # own writes keep correct. Eight threads: a WhatsApp send that hangs for
+    # its 15 s holds one thread, and the gate keeps working with the rest.
+    startCommand: gunicorn app:app --workers 1 --threads 8 --timeout 60
+    envVars:
+      # The Python the pinned packages in requirements.txt were tested on.
+      - key: PYTHON_VERSION
+        value: "3.14.3"
+      - key: META_TOKEN
+        sync: false
+      - key: META_PHONE_NUMBER_ID
+        sync: false
+      - key: META_VERIFY_TOKEN
+        sync: false
+      - key: META_APP_SECRET
+        sync: false
+      - key: MAIN_APPROVER
+        sync: false
+      - key: BACKUP_APPROVER
+        sync: false
+      - key: GUARD
+        sync: false
+      # Gets the admin key on request. Defaults to MAIN_APPROVER.
+      - key: ADMIN_PHONE
+        sync: false
+      - key: GATE_KEY
+        sync: false
+      # Different from GATE_KEY. Without it, the admin page stays locked.
+      - key: ADMIN_KEY
+        sync: false
+      # Optional. Each reason's main and backup approver, as JSON.
+      - key: APPROVERS
+        sync: false
+      - key: GATE_DESK_PHONE
+        sync: false
+      # The Neon connection string. Visits live there, so they stay when Render deploys again.
+      - key: DATABASE_URL
+        sync: false
+      - key: ESCALATE_MINUTES
+        value: "15"
+      # Auto-approval in working hours. These are the defaults.
+      - key: AUTO_APPROVE_MINUTES
+        value: "30"
+      - key: WORK_HOURS
+        value: "10-17"
+      - key: WORK_DAYS
+        value: "Mon,Tue,Wed,Thu,Fri,Sat"
+      - key: RETAIN_DAYS
+        value: "90"
+      # A pass works for this many hours after the request. The default.
+      - key: PASS_HOURS
+        value: "48"
+      # Cloudflare and Render's proxies sit in front, so read the caller's
+      # address from True-Client-IP, which Cloudflare sets. No other header.
+      - key: BEHIND_PROXY
+        value: "true"
+      - key: REQUESTS_PER_HOUR
+        value: "60"
+      # All new requests in one hour, from every address together.
+      - key: REQUESTS_PER_HOUR_ALL
+        value: "300"

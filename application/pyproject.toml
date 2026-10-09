@@ -1,0 +1,24 @@
+[project]
+name = "visitor-access-project"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = [
+    "flask",
+    "requests",
+    # Comes with requests. whatsapp.py reads its errors to tell a lost send from a failed one.
+    "urllib3",
+    "python-dotenv",
+    # The host runs the app under gunicorn. requirements.txt lists it too,
+    # and the two files have to agree.
+    "gunicorn",
+    "psycopg[binary]",
+    "psycopg-pool",
+    # Time zones for working hours. Not every server has them.
+    "tzdata",
+    # Checks and redraws each gate photo before it is stored.
+    "pillow",
+]
+
+[dependency-groups]
+# The tests start a throwaway Postgres from this package. The app never uses it.
+dev = ["pgserver"]

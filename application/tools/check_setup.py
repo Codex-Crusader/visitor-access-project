@@ -1,0 +1,93 @@
+"""Checks the .env values and sends one test message. Run this before a demo."""
+
+import sys
+from pathlib import Path
+
+# The app's modules are one folder up.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from typing import NoReturn
+
+
+def fail(message) -> NoReturn:
+    print(f"FAILED: {message}")
+    sys.exit(1)
+
+
+try:
+    from core import config
+except RuntimeError as missing:
+    fail(f"{missing}. Open .env and fill that value in.")
+
+# After config, so a missing setting reads as a sentence, not a stack trace.
+from services import whatsapp  # noqa: E402
+
+for name in ("MAIN_APPROVER", "BACKUP_APPROVER", "GATE_DESK_PHONE", "ADMIN_PHONE"):
+    value = getattr(config, name)
+    if not value.startswith("+"):
+        fail(f"{name} is {value}. It must start with a plus and the country code.")
+for reason, pair in config.APPROVERS.items():
+    for value in pair:
+        if not value.startswith("+"):
+            fail(f"APPROVERS gives {value} for {reason}. It must start with a plus.")
+
+print(f"Phone number ID {config.META_PHONE_NUMBER_ID}")
+print(f"Admin phone     {config.ADMIN_PHONE}")
+if whatsapp.same_number(config.ADMIN_PHONE, config.GUARD):
+    print("WARNING: ADMIN_PHONE is the gate desk number. Forgot admin key stays off"
+          " until ADMIN_PHONE is a different number.")
+print(f"Signature check {'on' if config.META_APP_SECRET else 'OFF: ALLOW_UNSIGNED_WEBHOOK is on.'}")
+if not config.META_APP_SECRET:
+    print("WARNING: never use ALLOW_UNSIGNED_WEBHOOK in production. Set META_APP_SECRET.")
+
+# Runs the migrations, so a wrong DATABASE_URL shows here, not at the first visit.
+from core import db  # noqa: E402
+from models import people  # noqa: E402
+
+try:
+    version = db.init()
+except Exception as error:
+    fail(f"Cannot use the database in DATABASE_URL. {error}")
+print(f"Database        reachable, schema version {version}")
+# The numbers in use, with any change made on the admin page.
+table = people.approver_table()
+for group in ("reasons", "offices"):
+    for name, (main, backup) in table[group].items():
+        print(f"  {name:<14} {main}, backup {backup}")
+print()
+
+# The template, as the real request uses: plain text can pass here and never arrive.
+SAMPLE = {"reference": "VR-0000", "name": "Test Visitor", "phone": "0000000000",
+          "address": "Test address", "reason": "Setup check", "visiting": "Nobody",
+          "guests": []}
+
+print(f"Sending a test message to {config.MAIN_APPROVER} ...")
+try:
+    if config.REQUEST_TEMPLATE:
+        print(f"Using the template {config.REQUEST_TEMPLATE} ({config.TEMPLATE_LANGUAGE})")
+        result = whatsapp.send_template(config.MAIN_APPROVER, whatsapp.template_values(SAMPLE))
+    else:
+        result = whatsapp.send(config.MAIN_APPROVER, "Test message from the visitor access app.")
+except Exception as error:
+    text = str(error)
+    if "132001" in text:
+        fail(
+            f"Meta has no approved template named {config.REQUEST_TEMPLATE}.\n"
+            "Check its status under WhatsApp Manager, then Message templates.\n"
+            f"{error}"
+        )
+    if "190" in text or "OAuth" in text:
+        fail(
+            "Meta rejected the token. Temporary tokens last 24 hours.\n"
+            "Generate a new one in the WhatsApp API Setup page and update META_TOKEN.\n"
+            f"{error}"
+        )
+    if "131030" in text:
+        fail(
+            "That number is not on the test recipient list.\n"
+            "Add it under Recipient in the WhatsApp API Setup page.\n"
+            f"{error}"
+        )
+    fail(text)
+
+print(f"Sent. Message id: {result['messages'][0]['id']}")
+print("Check your phone.")

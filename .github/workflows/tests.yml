@@ -1,0 +1,89 @@
+# Runs every test on every push and pull request. A red run means do not deploy.
+name: Tests
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  server:
+    name: Server tests (Python ${{ matrix.python }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # 3.11 is the oldest version pyproject.toml allows. 3.14 is what Render runs.
+        python: ["3.11", "3.14"]
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready --health-interval 5s
+          --health-timeout 5s --health-retries 10
+    defaults:
+      run:
+        working-directory: application
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python }}
+      - run: pip install -r requirements.txt
+      # Each server test file empties its database first. The stress test has its own.
+      - name: Make the test databases
+        env:
+          PGPASSWORD: postgres
+        run: |
+          for name in app_test concurrency_test; do
+            psql -h localhost -U postgres -c "CREATE DATABASE $name"
+          done
+      - name: tests/test_*.py
+        env:
+          TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/app_test
+        run: |
+          for file in tests/test_*.py; do
+            if [ "$file" = tests/test_concurrency.py ]; then continue; fi
+            echo "=== $file"
+            python "$file"
+          done
+      - name: tests/test_concurrency.py
+        env:
+          TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/concurrency_test
+        run: python tests/test_concurrency.py
+
+  pages:
+    name: Page tests and lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+      - name: ruff
+        working-directory: application
+        run: |
+          pip install ruff==0.16.2
+          ruff check .
+      - name: Install the page tools
+        working-directory: application
+        run: npm ci --no-audit --no-fund
+      - name: tests/test_form.js
+        working-directory: application
+        run: node tests/test_form.js
+      - name: eslint
+        working-directory: application
+        run: npx --no-install eslint static tests/test_form.js
+      - name: test_demo.js
+        env:
+          NODE_PATH: application/node_modules
+        run: node test_demo.js
