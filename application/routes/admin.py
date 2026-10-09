@@ -91,6 +91,9 @@ def read_bulk(payload):
     given = payload.get("references")
     if status is None or not isinstance(given, list) or not given:
         return None, None, "Choose the requests, and approve or decline."
+    # Refused before the first decision, so a bad one never stops the list halfway.
+    if any(checks.clean_text(str(ref)) is None for ref in given):
+        return None, None, "A reference has a character that is not allowed."
     references = list(dict.fromkeys(
         whatsapp.normalize_reference(str(ref)) or str(ref).upper() for ref in given))
     if len(references) > BULK_LIMIT:

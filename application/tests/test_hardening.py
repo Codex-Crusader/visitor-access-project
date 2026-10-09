@@ -345,6 +345,11 @@ for url, body in (("/api/admin/staff/remove", {"code": "\x00"}),
                   ("/api/admin/offices/remove", {"name": "\x00"}),
                   ("/api/admin/decide", {"decision": "approve", "references": ["\x00"]})):
     assert client.post(url, json=body, headers=ADMIN).status_code == 400, url
+# A bad reference stops the whole list first, so no approval goes without its log line.
+half = new_request()
+assert client.post("/api/admin/decide", headers=ADMIN, json={
+    "decision": "approve", "references": [half["reference"], "\x00"]}).status_code == 400
+assert visits.get(half["reference"])["status"] == "pending"
 limits.forget_hits()
 # Every value reaches SQL as a parameter, so SQL text is only text.
 db.forget_cache()

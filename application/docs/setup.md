@@ -62,6 +62,9 @@ https://github.com/Codex-Crusader/visitor-access-project. The file
 this layout. Render looks for the app in `application/`, and the setup
 fails if the app is at the top.
 
+The `LICENSE` file reserves all rights. Get written permission from the
+developer before you make a copy.
+
 1. Sign in to GitHub with the campus account.
 2. Open https://github.com/new/import, and type the project repository's
    address. Pick the campus account as the owner, and pick Private. The
