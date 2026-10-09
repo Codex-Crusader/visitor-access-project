@@ -236,7 +236,7 @@ function renderBoard() {
 
 const SUBTITLES = {
   pass: "Type the code on the visitor's pass, or tap a name below. For staff, tap Staff code.",
-  staff: "Type the staff member's 7-digit code. It records an entry, or an exit if they came in within 16 hours. The name shows for the face check.",
+  staff: "Type the staff member's 7-digit code. If they came in during the last 16 hours, it records their exit. If not, it records their entry. Check the name against the face.",
 };
 
 function render() {
@@ -422,8 +422,9 @@ function moveLine(p) {
 }
 
 // A scan records an entry, or an exit after an entry in the last 16 hours. The server decides. The name and
-// tag then show large, for the face check, until the guard types the next code: the box is
-// empty and ready, so there is no extra tap. A blacklisted number cannot enter, but can leave.
+// tag then show large, for the face check, until the guard types the next code or STAFF_SHOWN
+// passes: the box is empty and ready, so there is no extra tap. A blacklisted number cannot
+// enter, but can leave.
 function staffBanner(p) {
   const exit = p.kind === "exit";
   if (p.blacklisted && !exit) return banner(...BLACKLISTED);
@@ -482,6 +483,23 @@ async function recordStaff(code, action = "scan") {
   codeBox.value = "";
   render();
   codeBox.focus();
+  forgetStaffLater(mine);
+}
+
+// A staff result goes away on its own, so the next person in the queue never reads it as theirs.
+const STAFF_SHOWN = 60000;
+let staffTimer = 0;
+
+function forgetStaffLater(mine) {
+  clearTimeout(staffTimer);
+  staffTimer = setTimeout(() => { if (mine === latest) forgetStaff(); }, STAFF_SHOWN);
+}
+
+function forgetStaff() {
+  if (!person && !notice) return;
+  person = null;
+  notice = "";
+  render();
 }
 
 // A blacklisted number comes back with its name, so the banner can say who it is.
@@ -585,6 +603,8 @@ el("modes").onclick = e => {
   codeBox.focus();
 };
 codeBox.onkeydown = e => { if (e.key === "Enter") void look(); };
+// The next code starts: the last staff result is not about this person.
+codeBox.oninput = () => { if (mode === "staff" && codeBox.value) forgetStaff(); };
 boardBox.onclick = e => {
   const hit = e.target.closest("[data-ref]");
   if (hit) openPass(hit.dataset.ref);

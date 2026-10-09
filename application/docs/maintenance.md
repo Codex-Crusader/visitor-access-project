@@ -191,7 +191,7 @@ does not carry over to the next day.
 3. On the gate page, tap Staff code at the top. The background turns light
    green, and the phone shows the number keypad. Type the code and tap
    "Record entry or exit", or press Enter. The page shows which one it
-   recorded: "Entry recorded" on green, or "Exit recorded" on bright red. It
+   recorded: "Entry recorded" on green, or "Exit recorded" on dark gray. It
    also shows the name in large letters, with their tag, such as their
    department. A code typed in the Visitor pass mode works too, and switches
    the page to Staff code.
@@ -199,6 +199,9 @@ does not carry over to the next day.
    opposite, tap "Wrong? Change to entry" or "Wrong? Change to exit" under
    the name. On WhatsApp, send `IN 4569918` or `OUT 4569918`. Within 10
    minutes, this changes the wrong scan, so the log keeps no wrong row.
+   The result goes away when you type the next code, or after one minute.
+   If it went away, type the same code again: within 2 minutes the page
+   shows the same result, with the button.
 5. Read the name. If it is not the person in front of you, do not let them
    in, and tell the admin.
 6. The page stays in Staff code, with the code box empty, so type the next

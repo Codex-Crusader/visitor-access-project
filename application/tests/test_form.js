@@ -1208,7 +1208,7 @@ async function staffGateChecks() {
   ok("7 digits in visitor mode record the scan and switch to Staff code mode",
      calls.filter(([u]) => u === "/api/staff/1234567/scan").length === 2
      && desk.document.body.dataset.mode === "staff");
-  ok("the second scan is an exit, on a bright red banner", byId("out").textContent.includes("Exit recorded")
+  ok("the second scan is an exit, on a gray banner, not the red of a refusal", byId("out").textContent.includes("Exit recorded")
      && byId("out").textContent.includes("Dr Dev left at") && !!byId("out").querySelector(".state.out")
      && !byId("out").textContent.includes("WhatsApp"));
   ok("a wrong scan offers the other one", byId("fix").textContent.includes("Change to entry"));
@@ -1224,6 +1224,17 @@ async function staffGateChecks() {
   await desk.eval("look()");
   ok("a blacklisted code shows the banner and the name", byId("out").textContent.includes("On the blacklist")
      && byId("out").textContent.includes("Kavita") && !byId("out").textContent.includes("Entry recorded"));
+  // The result goes away: when the next code starts, and by itself after a minute.
+  byId("code").value = "7";
+  byId("code").dispatchEvent(new desk.Event("input"));
+  ok("typing the next code clears the last result", !byId("out").textContent.includes("Kavita")
+     && byId("code").value === "7");
+  desk.eval("person = {code: '1234567', name: 'Dr Dev', tag: '', kind: 'exit', at: '2026-10-09T09:40:00Z'}; render()");
+  desk.eval("forgetStaffLater(latest)");
+  ok("the result shows until then", byId("out").textContent.includes("Dr Dev"));
+  desk.eval("forgetStaff()");
+  ok("after STAFF_SHOWN it is gone", !byId("out").textContent.includes("Dr Dev")
+     && desk.eval("STAFF_SHOWN") === 60000);
 }
 
 // ------------------------------------------- staff, offices and admins
