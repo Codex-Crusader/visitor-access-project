@@ -70,13 +70,13 @@ def bulk_decide():
         return jsonify(error=problem), 400
 
     me = access.admin_caller()
-    done, skipped = [], []
-    for reference in references:
-        decided = visits.decide(reference, status, db.BY_ADMIN, me)
-        if decided:
-            done.append(decided)
-        else:
-            skipped.append({"reference": reference, "why": why_not_decided(reference, status)})
+    # Two database trips for the whole list: the decisions, then the reasons for the rest.
+    done = visits.decide_many(references, status, db.BY_ADMIN, me)
+    decided = {visit["reference"] for visit in done}
+    missed = [reference for reference in references if reference not in decided]
+    found = visits.by_references(missed) if missed else {}
+    skipped = [{"reference": reference, "why": why_not_decided(found.get(reference), status)}
+               for reference in missed]
     if status == db.APPROVED:
         notify.tell_guards_many(done)
     if done:
@@ -101,8 +101,8 @@ def read_bulk(payload):
     return status, references, None
 
 
-def why_not_decided(reference, status):
-    visit = visits.get(reference)
+def why_not_decided(visit, status):
+    """Why bulk decide skipped this visit, or None for a reference that does not exist."""
     if visit is None:
         return "No request has this reference."
     if visit["status"] == db.EXPIRED:

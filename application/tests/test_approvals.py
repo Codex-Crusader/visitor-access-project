@@ -4,6 +4,7 @@ Run: .venv\\Scripts\\python.exe tests\\test_approvals.py"""
 
 import contextlib
 import io
+import psycopg
 from datetime import datetime, timedelta, timezone
 
 # The kit comes first: it sets the settings and a clean database before the app loads.
@@ -546,6 +547,26 @@ log_now = client.get("/api/admin/summary", headers=ADMIN).get_json()["changes"]
 assert log_now[0]["action"] == "Declined 2 requests at once" and log_now[0]["by_whom"] == \
     "Uma +919600000021"
 assert log_now[1]["action"] == "Approved 3 requests at once"
+# One click costs the same database trips for 2 requests or 8: one UPDATE, one SELECT.
+def statements_for(count):
+    refs = [new_request()["reference"] for _ in range(count)] + ["VR-00000"]
+    seen = []
+    real_execute = psycopg.Cursor.execute
+
+    def counting(self, *args, **kwargs):
+        seen.append(1)
+        return real_execute(self, *args, **kwargs)
+
+    psycopg.Cursor.execute = counting
+    try:
+        client.post("/api/admin/decide", headers=UMA,
+                    json={"references": refs, "decision": "decline"})
+    finally:
+        psycopg.Cursor.execute = real_execute
+    return len(seen)
+
+
+assert statements_for(2) == statements_for(8), "bulk decide does not grow with the list"
 # A long list is split under WhatsApp's limit.
 many = [{**wave[0], "reference": f"VR-{n}", "name": "A long visitor name " * 3, "guests": []}
         for n in range(10000, 10100)]

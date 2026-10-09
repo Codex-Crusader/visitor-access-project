@@ -395,20 +395,38 @@ def mark_escalated(reference):
         )
 
 
-@db.writes
 def decide(reference, status, by, phone=None):
     """Record a decision. Returns the visit, or None if it was decided, expired, or is an
     approval for a number on the blacklist."""
+    decided = decide_many([reference], status, by, phone)
+    return decided[0] if decided else None
+
+
+@db.writes
+def decide_many(references, status, by, phone=None):
+    """decide() for many requests in one statement: one database trip and one cache clear.
+    Returns the visits that it decided, in the order of references."""
     # In the UPDATE, so a YES or an automatic approval that races the ban loses.
     listed = blacklist.not_listed("visits.phone") if status == db.APPROVED else ""
     with db.connect() as conn:
-        row = conn.execute(
+        rows = conn.execute(
             "UPDATE visits SET status = %s, decided_at = %s, decided_by = %s, decided_phone = %s"
-            " WHERE reference = %s AND status IN (%s, %s) AND created_at >= %s" + listed
+            " WHERE reference = ANY(%s) AND status IN (%s, %s) AND created_at >= %s" + listed
             + " RETURNING *",
-            (status, db.now(), by, phone, reference, *db.OPEN_STATUSES, pass_cutoff()),
-        ).fetchone()
-    return to_dict(row) if row is not None else None
+            (status, db.now(), by, phone, list(references), *db.OPEN_STATUSES, pass_cutoff()),
+        ).fetchall()
+    decided = {row["reference"]: to_dict(row) for row in rows}
+    return [decided[reference] for reference in references if reference in decided]
+
+
+@db.read
+def by_references(references):
+    """{reference: visit} for the ones that exist, in one query."""
+    with db.connect() as conn:
+        rows = conn.execute(
+            "SELECT * FROM visits WHERE reference = ANY(%s)", (list(references),)
+        ).fetchall()
+    return {row["reference"]: to_dict(row) for row in rows}
 
 
 @db.read

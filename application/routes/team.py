@@ -129,8 +129,8 @@ def add_holder(table):
     problems = {"name": name_problem} if name_problem else {}
     if not phone:
         problems["phone"] = PHONE_HINT.format(who=who)
-    elif clash(table, phone):
-        problems["phone"] = clash(table, phone)
+    elif clashes := clash(table, phone):
+        problems["phone"] = clashes
     if problems:
         return jsonify(error=f"Check the {who}'s details.", fields=problems), 400
     key = people.add_holder(table, name, phone)
@@ -153,8 +153,8 @@ def renew_holder_key(table):
     if refused:
         return refused
     phone = holder_from_payload(table)
-    if phone and guards_super(table, phone):
-        return guards_super(table, phone)
+    if phone and (refused := guards_super(table, phone)):
+        return refused
     key = people.renew_key(table, phone) if phone else None
     if key is None:
         return jsonify(error=f"No {WHO[table]} has that number."), 404
@@ -174,8 +174,8 @@ def remove_holder(table):
     me = access.admin_caller()
     if table == people.ADMINS and me == access.guard_label(people.holder_by_phone(table, phone)):
         return jsonify(error="You cannot delete yourself. Ask another admin."), 409
-    if guards_super(table, phone):
-        return guards_super(table, phone)
+    if refused := guards_super(table, phone):
+        return refused
     gone = people.holder_by_phone(table, phone)
     people.remove_holder(table, phone)
     changed(f"Deleted {A_WHO[table]}", access.guard_label(gone))
