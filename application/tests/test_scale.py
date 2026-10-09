@@ -369,7 +369,7 @@ def middle_cursor():
     return f"{row['created_at']}|{row['reference']}"
 
 
-def measure(call, explain):
+def measure(call, explain: psycopg.Connection) -> dict[str, Any]:
     """{statements, rows, pages, full, ms, each} for one call. ms is the median time."""
     _name, kind, prepare, run = call
     times, counts, statements = [], [], []

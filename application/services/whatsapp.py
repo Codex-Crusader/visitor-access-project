@@ -80,6 +80,23 @@ class Uncertain(RuntimeError):
     """Meta may have the message: no answer in time, or a fault on Meta's side."""
 
 
+class Refused(RuntimeError):
+    """Meta refused the message for good, such as a number or a template it does not allow.
+    The same message again gets the same answer."""
+
+
+# Meta's codes for "slow down" or "try again soon": a refusal with one of them is not final.
+RETRY_CODES = {1, 2, 4, 80007, 130429, 131000, 131016, 131048, 131056, 133004}
+
+
+def meta_error_code(response):
+    """The error code in Meta's answer, or None."""
+    try:
+        return response.json().get("error", {}).get("code")
+    except (ValueError, AttributeError):
+        return None
+
+
 def _post(to_phone, message):
     try:
         response = requests.post(
@@ -100,7 +117,8 @@ def _post(to_phone, message):
     if response.status_code >= 500:
         raise Uncertain(f"WhatsApp fault ({response.status_code}): {response.text}")
     if not response.ok:
-        raise RuntimeError(
+        final = response.status_code != 429 and meta_error_code(response) not in RETRY_CODES
+        raise (Refused if final else RuntimeError)(
             f"WhatsApp send failed ({response.status_code}): {response.text}"
         )
     try:

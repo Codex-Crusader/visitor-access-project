@@ -162,7 +162,7 @@ def new_request():
 
 
 def refused(*_args):
-    raise RuntimeError("WhatsApp send failed (404): template name does not exist")
+    raise whatsapp.Refused("WhatsApp send failed (404): template name does not exist")
 
 
 def approved():

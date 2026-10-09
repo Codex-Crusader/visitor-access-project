@@ -98,12 +98,12 @@ assert len(sent) == before_count, sent[before_count:]
 
 # Which answers from Meta are uncertain: no answer in time, or a fault on Meta's side.
 class MetaAnswer:
-    def __init__(self, http_status):
+    def __init__(self, http_status, code=None):
         self.status_code, self.ok, self.text = http_status, http_status < 400, "x"
+        self.body = {"error": {"code": code}} if code else {}
 
-    @staticmethod
-    def json():
-        return {}
+    def json(self):
+        return self.body
 
 
 def timed_out(*_args, **_kwargs):
@@ -139,7 +139,11 @@ try:
                              (broke_off, whatsapp.Uncertain),
                              (never_opened, whatsapp.requests.ConnectionError),
                              (lambda *_a, **_k: MetaAnswer(503), whatsapp.Uncertain),
-                             (lambda *_a, **_k: MetaAnswer(400), RuntimeError)):
+                             # A number Meta does not allow: final. Throttling: try again.
+                             (lambda *_a, **_k: MetaAnswer(400, 131030), whatsapp.Refused),
+                             (lambda *_a, **_k: MetaAnswer(400, 130429), RuntimeError),
+                             (lambda *_a, **_k: MetaAnswer(400, 4), RuntimeError),
+                             (lambda *_a, **_k: MetaAnswer(429), RuntimeError)):
         whatsapp.requests.post = answer
         try:
             # noinspection PyProtectedMember

@@ -316,11 +316,37 @@ ok("inside, the exit code offers Record exit", gOut().includes("Record exit"));
 gate.eval('visit = {...visit, code: "KT-4821", code_kind: "entry"}');
 gRender();
 ok("inside, the entry code offers no exit", !gOut().includes("Record exit") && gOut().includes("type the exit code"));
+// The visitor's phone died: no exit code. Two taps, then the exit goes by the reference.
+ok("inside with no exit code, it offers the exit without the code", gOut().includes("cannot show the exit code")
+   && !gOut().includes("Record the exit without the code"));
+gate.eval("askNoCode()");
+ok("one tap only asks, the second records", gOut().includes("Record the exit without the code"));
 // The guard may type the code any way. The page sends it in one form.
 ok("kt 4821 becomes KT-4821", gate.eval('tidy(" kt 4821 ")') === "KT-4821");
 ok("kt-4821 becomes KT-4821", gate.eval('tidy("kt-4821")') === "KT-4821");
 ok("four digits are still a reference", gate.eval('tidy("4022")') === "VR-4022");
 ok("I and O are not code letters", gate.eval('tidy("io4821")') === "IO4821");
+
+// The second tap sends the exit by the reference, and the next pass starts over.
+async function noCodeExitChecks() {
+  console.log("gate desk: a visitor who cannot show the exit code");
+  const noCodeCalls = [];
+  gate.eval('visit = {reference: "VR-4022", status: "inside", name: "Asha Rao", visiting: "S1", guests: []}');
+  gate.eval("askNoCode()");
+  const closed = {reference: "VR-4022", status: "closed", guests: [], exited_at: "2026-09-20T12:00:00Z"};
+  gate.fetch = (url, options) => {
+    noCodeCalls.push([url, options.method]);
+    const body = url.startsWith("/api/gate/board") ? {expected: [], inside: [], you: "Gate desk"} : closed;
+    return Promise.resolve({status: 200, ok: true, headers: {get: () => null}, json: () => Promise.resolve(body)});
+  };
+  gate.eval("exitWithoutCode()");
+  for (let i = 0; i < 4; i++) await new Promise(done => setTimeout(done, 0));
+  ok("the exit goes by the reference, and the pass closes",
+     noCodeCalls.some(([u, m]) => u === "/api/pass/VR-4022/exit" && m === "POST") && gOut().includes("Pass closed"));
+  gate.eval('visit = {reference: "VR-4023", status: "inside", name: "Ravi", visiting: "S1", guests: []}');
+  gRender();
+  ok("the next pass starts with one tap again", !gOut().includes("Record the exit without the code"));
+}
 
 // ------------------------------------------------ the gate desk board
 async function boardChecks() {
@@ -1801,7 +1827,7 @@ async function bulkChecks() {
      && plain.byId("bulk-note").textContent.includes("Only a super admin"));
 }
 
-void boardChecks().then(officeFormChecks).then(bulkChecks).then(tagChecks).then(worstCaseChecks).then(blacklistChecks).then(staffGateChecks).then(teamChecks).then(staleGateChecks).then(stalePollChecks).then(staleApproverChecks).then(offlinePassChecks).then(approverChecks).then(guardChecks).then(forgotChecks).then(sessionChecks).then(hardeningChecks).then(visitorAutoChecks).then(wrongKeyChecks).then(adminChecks).then(downloadChecks).then(() => {
+void noCodeExitChecks().then(boardChecks).then(officeFormChecks).then(bulkChecks).then(tagChecks).then(worstCaseChecks).then(blacklistChecks).then(staffGateChecks).then(teamChecks).then(staleGateChecks).then(stalePollChecks).then(staleApproverChecks).then(offlinePassChecks).then(approverChecks).then(guardChecks).then(forgotChecks).then(sessionChecks).then(hardeningChecks).then(visitorAutoChecks).then(wrongKeyChecks).then(adminChecks).then(downloadChecks).then(() => {
   console.log();
   console.log(failures ? `${failures} check(s) FAILED` : "all form checks passed");
   process.exit(failures ? 1 : 0);

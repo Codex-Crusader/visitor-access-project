@@ -89,7 +89,7 @@ def on_board(visit):
 
 @bp.get("/api/pass/<key>")
 def read_pass(key):
-    """A pass by its typed code, or by reference from the board. A reference records nothing.
+    """A pass by its typed code, or by reference from the board. Reading records nothing.
 
     A reference opens only a visit on the board, so a gate key cannot read the history by
     trying references one by one. Any other reference reads as no pass at all."""
@@ -139,12 +139,17 @@ def board_row(visit):
 
 @bp.post("/api/pass/<key>/<action>")
 def gate_action(key, action):
-    """Record an entry or exit with its own code. The reference is public, so it records nothing."""
+    """Record an entry or exit with its own code. The reference is public, so it never records an
+    entry. It records only the exit of a visitor inside, see exit_without_code()."""
     guard = access.gate_guard()
     if not guard:
         return jsonify(error="Wrong gate key"), 403
     if action not in NEEDS:
         return jsonify(error="Unknown action"), 404
+    # A reference first: an old one, as VR-4022, also has the shape of a gate code.
+    reference = whatsapp.normalize_reference(key)
+    if reference and action == db.EXIT:
+        return exit_without_code(reference, guard)
 
     code, visit, kind = by_typed_code(key)
     if visit is None:
@@ -161,6 +166,25 @@ def gate_action(key, action):
         why = REFUSALS[action].get(fresh["status"], BLACKLISTED)
         return jsonify(error=why, visit=typed_pass(fresh, code, kind)), 409
     return jsonify(typed_pass(done, code, kind))
+
+
+# Added to the guard's name on a visit let out without the exit code, for the admin page and log.
+NO_EXIT_CODE = "(without the exit code)"
+NOT_INSIDE = "Only a visitor who is inside now can be let out this way."
+
+
+def exit_without_code(reference, guard):
+    """The exit of a visitor who cannot show the exit code, such as a phone that died. An exit can
+    let nobody in, so the reference from the Inside list is enough. Counted as a lookup."""
+    if limits.too_many("pass-lookup", LOOKUPS_PER_MINUTE, 60, who=guard):
+        return jsonify(error="Too many lookups. Wait a minute."), 429
+    visit = visits.get(reference)
+    if visit is None:
+        return jsonify(error="No pass has that code. Type the code on the visitor's pass."), 404
+    done = entries.check_out(reference, f"{guard} {NO_EXIT_CODE}")
+    if done is None:
+        return jsonify(error=NOT_INSIDE, visit=gate_view(visits.get(reference))), 409
+    return jsonify(gate_view(done))
 
 
 def by_typed_code(key):

@@ -68,6 +68,11 @@ def escalate_due():
             # It may have arrived. Asking again each round could send it many times.
             log.warning("Asking about %s again is uncertain, marked as asked: %s",
                         visit["reference"], unsure)
+        except whatsapp.Refused as refused:
+            # Every round gets the same answer, so a retry every 30 seconds would never end.
+            log.error("Meta refused the reminder for %s, so it is marked as asked and is not"
+                      " sent again. Correct the backup's number or the template: %s",
+                      visit["reference"], refused)
         except Exception as failure:
             log.error("Could not ask the backup approver about %s: %s",
                              visit["reference"], failure)

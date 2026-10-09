@@ -280,7 +280,16 @@ assert client.post("/api/admin/offices/auto", headers=ADMIN,
 assert client.post("/api/admin/offices/auto", headers=ADMIN,
                    json={"name": "Exams", "auto_minutes": "x"}).status_code == 400
 assert client.post("/api/admin/offices/auto", json={"name": "Exams"}).status_code == 403
+# A request for Exams, made in working hours: it approves by itself after the office's 15.
+exams_made = datetime.now(timezone.utc).replace(microsecond=0)
+exams_visit = visits.create({**{key: payload[key] for key in ("name", "phone", "address")},
+                             "reason": config.OFFICE_REASON, "visiting": "Exams"}, [],
+                            timer.after(exams_made, 15), "Exams")
 client.post("/api/admin/offices/remove", headers=ADMIN, json={"name": "Exams"})
+# The office is gone: the request goes to "Other", with the time of "Other", 30 minutes.
+moved_to = visits.get(exams_visit["reference"])["auto_approve_at"]
+assert moved_to == timer.after(datetime.fromisoformat(exams_visit["created_at"]), 30), moved_to
+say(APPROVER, f"NO {exams_visit['reference']}")
 for case in (waits, out_of_hours):
     say(APPROVER, f"NO {case['reference']}")
 print("  default 30, 0 means never, open requests move, offices too, the change log says it")

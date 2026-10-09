@@ -83,8 +83,24 @@ try:
     db.forget_cache()
     caught.clear()
     timer.escalate_due()
+    assert any("refused the reminder" in line for line in caught), caught
+    assert not visits.due_for_escalation(), "a refusal is final: asked once, not every round"
+    wait = timer.seconds_to_next_round()
+    assert wait > timer.BACKGROUND_SECONDS, ("nothing is due: no wake every 30 seconds", wait)
+    # A message that never left is tried again in the next round.
+    with db.connect() as conn:
+        conn.execute("UPDATE visits SET status = 'pending' WHERE created_at = %s", (hour_ago,))
+    db.forget_cache()
+
+    def no_network(*_args):
+        raise whatsapp.requests.ConnectionError("no route to Meta")
+
+    whatsapp.send_template = no_network
+    caught.clear()
+    timer.escalate_due()
     assert any("backup approver" in line for line in caught), caught
-    assert visits.due_for_escalation(), "a failed escalation must stay due and be tried again"
+    assert visits.due_for_escalation(), "a send that never left stays due and is tried again"
+    whatsapp.send_template = refused
     with db.connect() as conn:
         conn.execute("UPDATE visits SET created_at = %s WHERE created_at = %s",
                      (db.now(), hour_ago))
@@ -419,7 +435,6 @@ entered = client.post(f"/api/pass/{entry2}/entry", headers=KEY, json=PHOTO)
 assert entered.status_code == 200 and entered.get_json()["status"] == "inside"
 assert exit2 not in entered.get_data(as_text=True)
 assert client.post(f"/api/pass/{entry2}/entry", headers=KEY, json=PHOTO).status_code == 409
-assert client.post(f"/api/pass/{ref2}/exit", headers=KEY).status_code == 404
 wrong_kind = client.post(f"/api/pass/{entry2}/exit", headers=KEY)
 assert wrong_kind.status_code == 409 and "entry code" in wrong_kind.get_json()["error"]
 left = client.post(f"/api/pass/{exit2}/exit", headers=KEY)
@@ -427,6 +442,22 @@ assert left.status_code == 200 and left.get_json()["status"] == "closed"
 for dead_code, action in ((entry2, "entry"), (exit2, "exit")):
     dead = client.post(f"/api/pass/{dead_code}/{action}", headers=KEY)
     assert dead.status_code == 409 and "closed" in dead.get_json()["error"]
+
+print("a visitor who cannot show the exit code is let out from the Inside list")
+# The phone died: the guard opens the visit from Inside now, by reference, and records the exit.
+dead_phone = approved()
+assert client.post(f"/api/pass/{dead_phone['reference']}/exit", headers=KEY).status_code == 409, \
+    "only a visitor inside can be let out this way"
+assert client.post(f"/api/pass/{dead_phone['reference']}/entry", headers=KEY,
+                   json=PHOTO).status_code == 404, "a reference never lets anyone in"
+client.post(f"/api/pass/{entry_of(dead_phone)}/entry", headers=KEY, json=PHOTO)
+let_out = client.post(f"/api/pass/{dead_phone['reference'].lower()}/exit", headers=KEY)
+assert let_out.status_code == 200 and let_out.get_json()["status"] == "closed", let_out.get_json()
+assert visits.get(dead_phone["reference"])["exited_by"].endswith("(without the exit code)")
+assert client.post(f"/api/pass/{dead_phone['reference']}/exit", headers=KEY).status_code == 409
+board_now = client.get("/api/gate/board", headers=KEY).get_json()
+assert dead_phone["reference"] not in str(board_now["inside"]), "off the Inside list"
+print("  let out by reference, marked in the log; a reference still never lets anyone in")
 
 print("a closed pass stops showing the visitor")
 # A closed pass answers with times only.

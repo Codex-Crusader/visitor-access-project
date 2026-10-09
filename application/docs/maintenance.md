@@ -65,8 +65,8 @@ the app answers "No request has reference" and decides nothing. Send any other m
 for you.
 
 If you do not answer in 15 minutes, the backup approver gets the same
-request. If the request approves by itself in less than 30 minutes, the
-backup gets it sooner: halfway to that time. If you have no backup, you get
+request. If the request approves by itself in less than twice that time,
+30 minutes, the backup gets it sooner: halfway to that time. If you have no backup, you get
 a reminder instead. The first reply
 decides. A reply after that changes nothing.
 
@@ -132,10 +132,23 @@ The page shows two lists:
 2. Expected: the approved passes that nobody has used yet and that have not
    expired.
 
-A tap on a name only shows the details. It records nothing. The lists refresh
+A tap on a name only shows the details. It records nothing, with one
+exception for a visitor who is inside, see below. The lists refresh
 every 30 seconds and after each entry or exit. The badge says Live while the
 lists are fresh and Offline after a refresh fails. The gate page has no
 download of the visit log. Only the admin page has one.
+
+If a visitor who is inside cannot show the exit code, for example because
+their phone is off, do these steps:
+
+1. Tap their name in Inside now.
+2. Tap "The visitor cannot show the exit code".
+3. If the visitor is leaving now, tap "Record the exit without the code".
+
+The admin page then shows the guard's name with "(without the exit code)".
+Only the gate page can do this. WhatsApp cannot. An entry always needs the
+entry code, because a reference is not a secret. An exit cannot let anybody
+in, so the reference is enough for it.
 
 ### On WhatsApp
 
@@ -173,6 +186,7 @@ WhatsApp stays in the guard's chat.
 | This pass is closed               | The visit is over. The code is dead                                                        |
 | Take a photo of the visitor first | Tap "Take a photo of the visitor". If the page has no photo button, reload the page        |
 | Wrong gate key                    | With your own key: send `KEY` from your phone. With the shared key: tap "Forgot gate key?" |
+| The visitor has no exit code      | Tap their name in Inside now, then "The visitor cannot show the exit code"                 |
 
 ### The allow list
 

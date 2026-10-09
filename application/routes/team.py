@@ -262,8 +262,11 @@ def add_office():
     if not people.add_office(name, main, backup, tag):
         return jsonify(error="Check the office's details.",
                        fields={"name": "An office has this name already."}), 400
-    # Open requests for a deleted office of this name go to this office's approver now.
-    resent = notify.resend_after_change(before, people.approver_table())
+    # Open requests for a deleted office of this name go to this office's approver now, with
+    # this office's time to approve by itself, which also sets when the backup is asked.
+    after = people.approver_table()
+    resent = notify.resend_after_change(before, after)
+    timer.retime_open_requests(after)
     changed("Added an office",
             f"{name}: {main}, backup {backup}" + tagged(tag) + notify.resent_words(resent))
     return jsonify(**lists(), resent=resent)
@@ -279,7 +282,10 @@ def remove_office():
     before = people.approver_table()
     if not people.remove_office(name):
         return jsonify(error="No office has that name."), 404
-    resent = notify.resend_after_change(before, people.approver_table())
+    # Its open requests now go to the "Other" pair, with the "Other" time.
+    after = people.approver_table()
+    resent = notify.resend_after_change(before, after)
+    timer.retime_open_requests(after)
     changed("Deleted an office", name + notify.resent_words(resent))
     return jsonify(**lists(), resent=resent)
 

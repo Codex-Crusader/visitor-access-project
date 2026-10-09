@@ -132,7 +132,7 @@ function entryStep() {
     ${photo ? "" : `<p class="sub">The entry needs a photo of the visitor.</p>`}`;
 }
 
-// Only the code from the visitor's pass records anything. A board tap shows who it is.
+// Only the code from the visitor's pass records an entry. A board tap shows who it is.
 const NEED = {
   approved: ["entry", null,
              "To record the entry, type the entry code on the visitor's pass."],
@@ -143,8 +143,28 @@ const NEED = {
 function nextStep(v) {
   const [kind, button, hint] = NEED[v.status] || [];
   if (!kind) return "";
-  if (v.code_kind !== kind) return `<p class="sub">${hint}</p>`;
+  if (v.code_kind !== kind) return `<p class="sub">${hint}</p>${kind === "exit" ? noCodeExit() : ""}`;
   return kind === "entry" ? entryStep() : button;
+}
+
+// A visitor inside whose exit code is gone, such as a phone that died. Two taps, so a mistap
+// never closes the visit of someone still inside. The log marks the exit.
+let sureNoCode = false;
+
+function noCodeExit() {
+  return sureNoCode
+    ? `<p class="sub">Only if the visitor is leaving now. The log marks the exit as without the exit code.</p>
+       <button class="btn" id="nocode-yes" onclick="exitWithoutCode()">Record the exit without the code</button>`
+    : `<button class="btn plain" id="nocode" onclick="askNoCode()">The visitor cannot show the exit code</button>`;
+}
+
+function askNoCode() {
+  sureNoCode = true;
+  render();
+}
+
+function exitWithoutCode() {
+  void act("exit", visit.reference);
 }
 const problem = t => banner("bad", "Cannot do that", t);
 const working = t => `<div class="state wait"><span class="spin"></span><div><h2>${x(t)}</h2><p>This can take up to a minute if the server was asleep.</p></div></div>`;
@@ -511,6 +531,7 @@ function staffRefused(err) {
 // Opens a pass by the code the guard typed, or by reference after a tap.
 async function show(passCode) {
   const mine = ++latest;
+  sureNoCode = false;
   visit = null;
   person = null;
   photo = "";
@@ -552,9 +573,11 @@ async function reread(code, mine) {
   } catch { /* keep the refusal */ }
 }
 
-async function act(action) {
+// The code from the pass, or the reference for an exit without the code.
+async function act(action, target = visit.code) {
   const mine = ++latest;
-  const code = visit.code;
+  const code = target;
+  sureNoCode = false;
   notice = "";
   busy = action === "entry" ? "Recording the entry" : "Recording the exit";
   render();
@@ -584,6 +607,7 @@ async function act(action) {
 
 // The next person is most often a visitor, so the page goes back to the pass.
 function clear_() {
+  sureNoCode = false;
   visit = null;
   person = null;
   photo = "";

@@ -93,7 +93,10 @@ A visit has four identifiers. Each one does one job.
 | Token      | 22 random characters | The visitor     | Reads the visitor's own request        |
 
 1. The reference has only 90,000 values, so it is not a secret. At the gate,
-   it shows who the visitor is and records nothing.
+   it shows who the visitor is, and it never records an entry. It can record
+   the exit of a visitor who is inside and cannot show the exit code, after
+   a second tap. An exit cannot let anybody in, and the log marks it as
+   "(without the exit code)".
 2. The entry and exit codes come from the Python `secrets` module, so one
    code tells nothing about the next. There are about 5.7 million codes. A
    code works only with the gate key.
