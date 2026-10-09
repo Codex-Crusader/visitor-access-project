@@ -336,7 +336,7 @@ limits.forget_hits()
 config.BEHIND_PROXY = True
 try:
     codes = [client.post("/api/forgot-key/admin",
-                         headers={"X-Forwarded-For": f"10.0.0.{n}"}).status_code
+                         headers={"True-Client-IP": f"10.0.0.{n}"}).status_code
              for n in range(11)]
 finally:
     config.BEHIND_PROXY = False
@@ -350,8 +350,20 @@ try:
             "True-Client-IP": "203.0.113.7",
             "X-Forwarded-For": "198.51.100.1, 203.0.113.7, 172.70.1.1, 10.1.2.3"}):
         assert limits.caller() == "203.0.113.7", limits.caller()
-    with application.app.test_request_context(headers={"X-Forwarded-For": "1.1.1.1, 10.1.2.3"}):
-        assert limits.caller() == "10.1.2.3", "without the header, the last entry still counts"
+    # Without the header, a forged X-Forwarded-For counts for nothing: all share one address.
+    with application.app.test_request_context(headers={"X-Forwarded-For": "1.1.1.1, 10.1.2.3"},
+                                              environ_base={"REMOTE_ADDR": "10.9.9.9"}):
+        assert limits.caller() == "10.9.9.9", limits.caller()
+    # Behind a server the university runs, the setting names its proxy's own header.
+    config.CLIENT_IP_HEADER = "X-Real-IP"
+    with application.app.test_request_context(headers={
+            "X-Real-IP": "198.51.100.4", "True-Client-IP": "6.6.6.6"}):
+        assert limits.caller() == "198.51.100.4", "a header the proxy does not set is ignored"
+    config.CLIENT_IP_HEADER = "X-Forwarded-For"
+    with application.app.test_request_context(headers={
+            "X-Forwarded-For": "6.6.6.6, 198.51.100.5", "True-Client-IP": "6.6.6.6"}):
+        assert limits.caller() == "198.51.100.5", "only the entry the proxy added counts"
+    config.CLIENT_IP_HEADER = ""
     # One visitor behind many Render proxies is one caller.
     statuses = [client.get("/api/health", headers={
         "True-Client-IP": "203.0.113.9", "X-Forwarded-For": f"203.0.113.9, 10.0.0.{proxy}"}

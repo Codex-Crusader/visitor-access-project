@@ -180,12 +180,16 @@ group, not one person. Raise it if a class tests the app at once.
 `BEHIND_PROXY` tells the app where to read the caller's address. On Render,
 Cloudflare sits in front of Render's own proxies. Cloudflare puts the
 visitor's address in the `True-Client-IP` header, and it replaces a value
-that the visitor sent, so the app reads that header. The last entry of
-`X-Forwarded-For` is one of Render's internal proxies. It changes from call
-to call, so it cannot identify a visitor. The app uses it only when
-`True-Client-IP` is missing. On your own machine, nothing sets these
-headers, and trust in them lets anyone invent an address. Set
-`BEHIND_PROXY` to `true` only behind a proxy.
+that the visitor sent, so the app reads that header. It reads no other
+header. The last entry of `X-Forwarded-For` is one of Render's internal
+proxies, and it changes from call to call, so it cannot identify a visitor.
+If `True-Client-IP` is missing, the app counts every visitor as one address
+and writes a warning in the log. That stops more requests than it should,
+but nobody can get past the limit with an invented address. On your own
+machine, nothing sets these headers, and trust in them lets anyone invent an
+address. Set `BEHIND_PROXY` to `true` only behind a proxy. Behind a
+different proxy, set `CLIENT_IP_HEADER` to the header that proxy sets, see
+[setup.md](setup.md).
 
 ## Privacy
 
@@ -324,8 +328,9 @@ Tell the people who decide about the campus about these limits.
 9. The visitor page and the gate page allow inline scripts, see "The web
    pages". The admin page does not.
 10. On the free Neon plan, the database can be restored only to a time in the
-    last 6 hours. The weekly Download logs is the longer backup, see
-    [maintenance.md](maintenance.md).
+    last 6 hours. The weekly `pg_dump` backup is the longer one, see "Back up
+    and restore the database" in [maintenance.md](maintenance.md). Download
+    logs is a record for people. The app cannot load it again.
 11. The approval message to the gate desk is plain text. WhatsApp delivers it
     only if the desk phone wrote to the app's number in the last 24 hours.
 12. A person on the allow list says their code aloud at the gate, so anyone

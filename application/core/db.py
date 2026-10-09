@@ -64,9 +64,9 @@ def connect() -> AbstractContextManager[Any]:
         if not _pools:
             _pools.append(ConnectionPool(
                 config.DATABASE_URL,
-                # Four gunicorn threads plus the timer.
+                # Eight gunicorn threads plus the timer, so a thread never waits for another.
                 min_size=2,
-                max_size=5,
+                max_size=9,
                 # A request waits at most 5 s for a connection.
                 timeout=5,
                 # A hung connect fails after 10 s. Keepalives find a dead connection in a minute.

@@ -108,17 +108,23 @@ def stored_photos():
     """(reference, JPEG bytes) for every gate page photo, 50 per database trip, for the ZIP."""
     after = ""
     while True:
-        with db.connect() as conn:
-            rows = conn.execute(
-                "SELECT reference, image FROM photos WHERE image IS NOT NULL AND reference > %s"
-                " ORDER BY reference LIMIT %s",
-                (after, PHOTO_BATCH),
-            ).fetchall()
+        rows = _photo_batch(after)
         for row in rows:
             yield row["reference"], bytes(row["image"])
         if len(rows) < PHOTO_BATCH:
             return
         after = rows[-1]["reference"]
+
+
+@db.read
+def _photo_batch(after):
+    """The 50 stored photos after the reference after."""
+    with db.connect() as conn:
+        return conn.execute(
+            "SELECT reference, image FROM photos WHERE image IS NOT NULL AND reference > %s"
+            " ORDER BY reference LIMIT %s",
+            (after, PHOTO_BATCH),
+        ).fetchall()
 
 
 @db.read

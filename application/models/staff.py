@@ -1,5 +1,7 @@
 """Staff and faculty on the allow list, and their entries and exits at the gate."""
 
+import heapq
+import itertools
 import re
 import secrets
 import sys
@@ -144,19 +146,40 @@ def _record_move(person, by, kind=None, may_enter=True):
 MOVE_FIELDS = "code, name, phone, entered_at, entered_by, kind"
 
 
+MOVES_BATCH = 1000
+
+
+def all_moves():
+    """Every staff move still kept, oldest first, 1,000 per database trip."""
+    after = None
+    while True:
+        rows = _move_batch(after)
+        yield from rows
+        if len(rows) < MOVES_BATCH:
+            return
+        after = (rows[-1]["entered_at"], rows[-1]["id"])
+
+
 @db.read
+def _move_batch(after):
+    """The 1,000 moves after the (entered_at, id) after, or the first 1,000."""
+    # With entered_at >= first, Postgres starts the batch from the time index.
+    where = " WHERE entered_at >= %s AND (entered_at, id) > (%s, %s)" if after else ""
+    with db.connect() as conn:
+        return conn.execute(
+            f"SELECT id, {MOVE_FIELDS} FROM staff_entries{where} ORDER BY entered_at, id LIMIT %s",
+            (*((after[0], *after) if after else ()), MOVES_BATCH),
+        ).fetchall()
+
+
 def all_visits():
     """Every staff visit still kept, see pair_visits(). For the CSV export."""
-    with db.connect() as conn:
-        # Streamed, so the scans are never all in memory at once.
-        moves = conn.cursor().stream(
-            f"SELECT {MOVE_FIELDS} FROM staff_entries ORDER BY entered_at, id")
-        return pair_visits(moves)
+    return pair_visits(all_moves())
 
 
-def shift_end(stamp):
+def shift_end(stamp, hours=SHIFT_HOURS):
     """The last moment an exit still belongs to the entry at stamp."""
-    end = datetime.fromisoformat(stamp) + timedelta(hours=SHIFT_HOURS)
+    end = datetime.fromisoformat(stamp) + timedelta(hours=hours)
     return end.isoformat(timespec="seconds")
 
 
@@ -168,23 +191,40 @@ def new_visit(move):
 
 def pair_visits(moves):
     """Each entry with the exit after it within SHIFT_HOURS, oldest first. An entry with no exit
-    in time, or an exit with no entry, is a row alone. moves come oldest first."""
-    rows, open_visits = [], {}
+    in time, or an exit with no entry, is a row alone. moves come oldest first.
+
+    A row is final once the moves are SHIFT_HOURS past its start, so only the rows of the last
+    SHIFT_HOURS are in memory: O(n log k) time for k of them, whatever the log's length."""
+    waiting, open_visits, order = [], {}, itertools.count()
     for move in moves:
+        final = shift_end(move["entered_at"], -SHIFT_HOURS)
+        while waiting and waiting[0][0] < final:
+            yield done(heapq.heappop(waiting)[2], open_visits)
         visit = open_visits.pop(move["code"], {})
-        if visit and (move["kind"] == db.ENTRY or move["entered_at"] > shift_end(visit["in"])):
-            rows.append(visit)
-            visit = {}
-        visit = visit or new_visit(move)
+        if not ends(visit, move):
+            visit = new_visit(move)
+            heapq.heappush(waiting, (move["entered_at"], next(order), visit))
         side = "in" if move["kind"] == db.ENTRY else "out"
         visit.update({side: move["entered_at"], f"{side}_by": sys.intern(move["entered_by"])})
         if side == "in":
             open_visits[visit["code"]] = visit
-        else:
-            rows.append(visit)
     # Only the last entry of each person can still be inside.
-    rows.extend({**visit, "open": True} for visit in open_visits.values())
-    return sorted(rows, key=lambda row: row["in"] or row["out"])
+    while waiting:
+        visit = heapq.heappop(waiting)[2]
+        yield {**visit, "open": True} if open_visits.get(visit["code"]) is visit else visit
+
+
+def ends(visit, move):
+    """True when move is the exit of this open visit, within its shift. {} is no visit."""
+    return (bool(visit) and move["kind"] == db.EXIT
+            and move["entered_at"] <= shift_end(visit["in"]))
+
+
+def done(visit, open_visits):
+    """A row no later move can change. An exit after it would be past its shift."""
+    if open_visits.get(visit["code"]) is visit:
+        del open_visits[visit["code"]]
+    return visit
 
 
 @db.cached

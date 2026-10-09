@@ -176,6 +176,18 @@ assert "VR-4022" in say(APPROVER, "vr 4022")
 visits.delete("VR-4022")
 print("  YES 4022 and a lookup of vr 4022 both reach VR-4022")
 
+print("a nearly full set of references still gives a new one")
+# At 90% full, a request needs about 10 tries. 20 tries failed 13 requests in 100 there.
+taken_ref = int(new_request()["reference"][3:])
+picks = iter([taken_ref] * 60)
+real_randint = visits.random.randint
+visits.random.randint = lambda low, high: next(picks, None) or real_randint(low, high)
+try:
+    assert new_request()["reference"] != f"VR-{taken_ref}"
+finally:
+    visits.random.randint = real_randint
+print("  60 taken references in a row, then a free one")
+
 print("privacy: the short code must not expose the visitor")
 # The code is only 4 digits. It must not be enough to read personal details.
 assert client.get(f"/api/pass/{code}").status_code == 403
@@ -783,7 +795,6 @@ print("rate limits on the public address")
 limits.forget_hits()
 
 # Creating requests is capped so a stranger cannot spam the approver's phone.
-codes_before = len(visits.all_visits())
 limit = config.REQUESTS_PER_HOUR
 statuses = [client.post("/api/requests", json=payload).status_code for _ in range(limit + 5)]
 assert statuses.count(201) == limit, statuses

@@ -15,8 +15,9 @@ services:
     # One worker only. The escalation timer is a thread inside the process,
     # so a second worker would send every backup message twice. The worker
     # also keeps the gate board and visitors' status in memory, which only its
-    # own writes keep correct.
-    startCommand: gunicorn app:app --workers 1 --threads 4 --timeout 60
+    # own writes keep correct. Eight threads: a WhatsApp send that hangs for
+    # its 15 s holds one thread, and the gate keeps working with the rest.
+    startCommand: gunicorn app:app --workers 1 --threads 8 --timeout 60
     envVars:
       # The Python the pinned packages in requirements.txt were tested on.
       - key: PYTHON_VERSION
@@ -65,9 +66,12 @@ services:
       # A pass works for this many hours after the request. The default.
       - key: PASS_HOURS
         value: "48"
-      # A proxy sits in front on Render, so read the caller's address from the
-      # last entry of X-Forwarded-For rather than trusting the first.
+      # Cloudflare and Render's proxies sit in front, so read the caller's
+      # address from True-Client-IP, which Cloudflare sets. No other header.
       - key: BEHIND_PROXY
         value: "true"
       - key: REQUESTS_PER_HOUR
         value: "60"
+      # All new requests in one hour, from every address together.
+      - key: REQUESTS_PER_HOUR_ALL
+        value: "300"

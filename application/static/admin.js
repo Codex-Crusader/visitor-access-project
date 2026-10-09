@@ -88,6 +88,7 @@ let editing = null;     // the reason whose approvers are being changed
 let fieldErrors = {};
 let draft = null;       // the numbers typed in the open editor
 let approverNote = "";
+let approverTone = "good";
 // Minutes before a working-hours request approves by itself, where no time is set. 0 is never.
 let autoDefault = 30;
 // The waiting requests for the Today page: the first page of them.
@@ -542,13 +543,27 @@ function renderApprovers() {
   el("approvers").innerHTML = `<table><thead><tr><th>Reason</th><th>Approver</th><th>Backup</th>
     <th>Approves by itself</th><th></th></tr></thead>
     <tbody>${approvers.map(approverRow).join("")}</tbody></table>`;
-  el("approver-note").innerHTML = approverNote ? `<div class="note good">${x(approverNote)}</div>` : "";
+  el("approver-note").innerHTML = approverNote
+    ? `<div class="note ${approverTone}">${x(approverNote)}</div>` : "";
   labelCells(el("approvers"));
   if (editing) {
     el("ap-save").onclick = () => void saveApprovers();
     el("ap-cancel").onclick = () => { editing = null; draft = null; fieldErrors = {}; renderApprovers(); };
   }
 }
+
+// What became of the open requests sent to a new approver, as a sentence, or "".
+function resentLine(r) {
+  if (!r || !(r.sent + r.failed + r.unsure)) return "";
+  let line = ` Open requests sent to the new approver: ${r.sent}.`;
+  if (r.failed) line += ` Not sent: ${r.failed}.`;
+  if (r.unsure) line += ` Not sure they arrived: ${r.unsure}.`;
+  if (r.failed || r.unsure) {
+    line += " Ask the approver to send any message to the app's number. The answer lists every request that waits.";
+  }
+  return line;
+}
+const resentTrouble = r => Boolean(r && (r.failed || r.unsure));
 
 async function saveApprovers() {
   const main1 = el("ap-main").value.trim(), backup = el("ap-backup").value.trim();
@@ -563,7 +578,9 @@ async function saveApprovers() {
   try {
     const saved = await call("/api/admin/approvers", {reason, main: main1, backup, auto_minutes: auto});
     approvers = saved.approvers;
-    approverNote = `Saved. New and open requests for ${reason} now go to these numbers.`;
+    approverNote = `Saved. New and open requests for ${reason} now go to these numbers.`
+      + resentLine(saved.resent);
+    approverTone = resentTrouble(saved.resent) ? "warn" : "good";
     if (editing === reason) { editing = null; draft = null; }
   } catch (err) {
     if (err instanceof WrongKey) return forgetKey(err.message);
@@ -975,11 +992,11 @@ async function add(kind) {
   el(`${prefix}-add`).disabled = true;
   const answer = await teamCall(kind, url, body);
   if (answer) {
-    let html = addedNote(kind, {...answer, name: answer.name || body.name});
+    let html = addedNote(kind, {...answer, name: answer.name || body.name}) + x(resentLine(answer.resent));
     // A new row the filter hides would look lost, so the note says why.
     const made = kind in views && team[kind].find(row => row[KEY_OF[kind]] === (answer.code || body.name));
     if (made && !shows(kind, made)) html += " It does not show below because of the tag or the search.";
-    notes[kind] = {tone: "good", html};
+    notes[kind] = {tone: resentTrouble(answer.resent) ? "warn" : "good", html};
     for (const [name] of fields) el(`${prefix}-${name}`).value = "";
     el(`${prefix}-form`).hidden = true;
     renderTeam();
@@ -990,8 +1007,10 @@ async function add(kind) {
 async function remove(kind, id, label) {
   const [body, line] = DELETES[kind];
   if (!(await confirmDelete(line(label)))) return;
-  if (await teamCall(kind, `${FORMS[kind].url}/remove`, body(id))) {
-    notes[kind] = {tone: "good", html: `Deleted ${x(label)}.`};
+  const answer = await teamCall(kind, `${FORMS[kind].url}/remove`, body(id));
+  if (answer) {
+    notes[kind] = {tone: resentTrouble(answer.resent) ? "warn" : "good",
+      html: `Deleted ${x(label)}.${x(resentLine(answer.resent))}`};
     renderTeam();
   }
 }

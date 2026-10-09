@@ -24,6 +24,7 @@ from core import limits
 from core import migrations
 from routes import pages
 from models import people
+from models import staff
 from services import timer
 from models import visits
 from services import whatsapp
@@ -291,6 +292,38 @@ with psycopg.connect(config.DATABASE_URL, autocommit=True) as killer:
     killer.execute("""SELECT pg_terminate_backend(pid) FROM pg_stat_activity
                       WHERE pid <> pg_backend_pid() AND datname = current_database()""")
 assert visits.get(kept_visit["reference"])["reference"] == kept_visit["reference"]
+
+# A download reads in batches. A connection lost between two of them is tried again.
+new_request()
+real_connect, real_batch, real_moves = db.connect, visits.EXPORT_BATCH, staff.MOVES_BATCH
+with db.connect() as conn:
+    conn.execute("INSERT INTO staff_entries (code, name, phone, entered_at, entered_by, kind)"
+                 " SELECT '1000001', 'S', '+91', %s, 'g', 'entry' FROM generate_series(1, 5)",
+                 (db.now(),))
+    whole = {"visits": conn.execute("SELECT COUNT(*) AS n FROM visits").fetchone()["n"],
+             "moves": conn.execute("SELECT COUNT(*) AS n FROM staff_entries").fetchone()["n"]}
+
+
+opened = []
+
+
+def drops_second_connection():
+    opened.append(1)
+    if len(opened) == 2:
+        raise psycopg.OperationalError("server closed the connection")
+    return real_connect()
+
+
+visits.EXPORT_BATCH = staff.MOVES_BATCH = 2
+db.connect = drops_second_connection
+try:
+    exported = [visit["reference"] for visit in visits.all_visits()]
+    opened.clear()
+    moves = list(staff.all_moves())
+finally:
+    db.connect, visits.EXPORT_BATCH, staff.MOVES_BATCH = real_connect, real_batch, real_moves
+assert len(exported) == len(set(exported)) == whole["visits"], (exported, whole)
+assert len(moves) == len({move["id"] for move in moves}) == whole["moves"], (len(moves), whole)
 
 # At start, a database that is still waking is tried again before giving up.
 real_migrate, real_waits = db.migrate, db.START_WAITS

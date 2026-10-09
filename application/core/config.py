@@ -171,6 +171,8 @@ REQUESTS_PER_HOUR = _int("REQUESTS_PER_HOUR", 60)
 REQUESTS_PER_HOUR_ALL = _int("REQUESTS_PER_HOUR_ALL", 300)
 # True behind Render's proxies, see limits.caller(). False locally, or anyone can fake an address.
 BEHIND_PROXY = _flag("BEHIND_PROXY")
+# The one header the proxy sets to the visitor's address. Empty: True-Client-IP with BEHIND_PROXY.
+CLIENT_IP_HEADER = os.getenv("CLIENT_IP_HEADER", "").strip()
 
 # Neon Postgres. Holds the database password: keep it out of git.
 DATABASE_URL = _required("DATABASE_URL")

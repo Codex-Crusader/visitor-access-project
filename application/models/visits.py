@@ -30,7 +30,8 @@ def to_dict(row):
     return visit
 
 
-CODE_ATTEMPTS = 20
+# 90,000 references: at 90% full, 100 tries fail about 3 times in 100,000.
+CODE_ATTEMPTS = 100
 # No I or O, which read as 1 and 0 on a phone screen.
 CODE_LETTERS = "".join(c for c in string.ascii_uppercase if c not in "IO")
 
@@ -176,17 +177,44 @@ def delete(reference):
         conn.execute("DELETE FROM gate_codes WHERE reference = %s", (reference,))
 
 
+EXPORT_BATCH = 500
+
+
+def all_visits(newest_first=False):
+    """Every visit with its photo time, oldest first, 500 per database trip. For the downloads:
+    the rows are never all in memory at once, and no connection stays open between trips.
+
+    Each row finds its photo by key. A join or an EXISTS let each batch read every photo."""
+    after = None
+    while True:
+        rows = _visit_batch(newest_first, after)
+        yield from (to_dict(row) for row in rows)
+        if len(rows) < EXPORT_BATCH:
+            return
+        after = (rows[-1]["created_at"], rows[-1]["reference"])
+
+
 @db.read
-def all_visits():
-    """Every visit, oldest first, with its photo time. For the CSV export."""
+def _visit_batch(newest_first, after):
+    """The 500 visits after the (created_at, reference) after, or the first 500."""
+    order, past = ("DESC", "<") if newest_first else ("", ">")
+    where = f" WHERE (created_at, reference) {past} (%s, %s)" if after else ""
     with db.connect() as conn:
-        rows = conn.execute(
-            "SELECT visits.*, photos.taken_at AS photo_at,"
-            " photos.image IS NOT NULL AS photo_stored FROM visits"
-            " LEFT JOIN photos ON photos.reference = visits.reference"
-            " ORDER BY visits.created_at"
+        return conn.execute(
+            "SELECT visits.*, (SELECT taken_at FROM photos"
+            "  WHERE photos.reference = visits.reference) AS photo_at,"
+            " COALESCE((SELECT image IS NOT NULL FROM photos"
+            "  WHERE photos.reference = visits.reference), FALSE) AS photo_stored"
+            f" FROM visits{where} ORDER BY created_at {order}, reference {order} LIMIT %s",
+            (*(after or ()), EXPORT_BATCH),
         ).fetchall()
-    return [to_dict(row) for row in rows]
+
+
+@db.read
+def count():
+    """How many visits are stored."""
+    with db.connect() as conn:
+        return conn.execute("SELECT COUNT(*) AS n FROM visits").fetchone()["n"]
 
 
 # The phone is read only to check the blacklist. The gate route drops it.

@@ -97,7 +97,7 @@ reads it as a Blueprint, so you type only the values that are yours.
 To make the service by hand instead, click New, then Web Service. Type the
 values from `render.yaml`: the Root Directory, the build command
 `pip install -r requirements.txt`, the start command
-`gunicorn app:app --workers 1 --threads 4 --timeout 60`, and every setting,
+`gunicorn app:app --workers 1 --threads 8 --timeout 60`, and every setting,
 also `BEHIND_PROXY` and `PYTHON_VERSION`.
 
 The app builds its database tables by itself the first time it starts.
@@ -106,6 +106,15 @@ Keep `--workers 1`. The timer that sends reminders runs inside the worker,
 so a second worker sends every reminder twice. The worker also keeps the
 gate board and the visitors' status in memory, and only its own writes
 clear them, so a second worker shows old lists.
+
+Keep `--threads 8`. Each thread serves one call at a time. A WhatsApp send
+waits for Meta for up to 15 seconds, and while Meta is slow, each send
+holds one thread. With 4 threads, 4 slow sends stop the gate page for up to
+15 seconds. With 8 threads, the gate keeps working.
+
+If the service was made with `--threads 4`, open the service on Render,
+then Settings. In Start Command, change `--threads 4` to `--threads 8`, then
+click Save Changes. Render then deploys again.
 
 ## Step 5: Connect WhatsApp to the app
 
@@ -171,11 +180,18 @@ does not have them.
     key. Keep the new key in a safe place as a spare.
 14. Move the database to a plan that keeps a restore history of 7 days or
     more, such as a paid Neon plan. The free plan keeps only 6 hours. Also
-    use Download logs each week, and keep both files on a locked device.
+    make a `pg_dump` backup each week, and test a restore once on a separate
+    database. See "Back up and restore the database" in
+    [maintenance.md](maintenance.md). Keep a copy of every setting in the
+    university's password manager.
 15. Move the app to a server that is always on: a paid Render plan, or a
     university server that IT approves. Do not use the free plan for real
     use. It sleeps after 15 minutes with no use, and the first request or
-    WhatsApp reply after that waits about a minute.
+    WhatsApp reply after that waits about a minute. On a university server,
+    set `CLIENT_IP_HEADER`, see "Settings".
+16. Get the security office's written approval of the outage procedure,
+    and the university's decision on automatic approval. See
+    [university-deployment.md](university-deployment.md).
 
 While a server setting still has a demo value, the admin page shows "Before
 real use" at the top, with each setting and what it changes. It names the
@@ -210,6 +226,7 @@ These have a default. Set the ones that apply to you.
 | `ADMIN_PHONE`            | Gets the admin key on request. Default: `MAIN_APPROVER`      |
 | `ADMIN_KEY`              | The admin page password, 20 characters or more               |
 | `BEHIND_PROXY`           | `true` on Render. Leave it unset on your own machine         |
+| `CLIENT_IP_HEADER`       | The visitor's address header. Empty on Render. See below     |
 | `ESCALATE_MINUTES`       | Minutes before the backup approver is asked. Default 15      |
 | `AUTO_APPROVE_MINUTES`   | Default minutes before automatic approval. 0 is off. 30      |
 | `WORK_HOURS`             | Working hours, in whole hours. Default `10-17`               |
@@ -256,6 +273,16 @@ admin key?" is refused, because a guard must never get the admin key.
 every visitor as the same caller, and 60 requests in one hour stop the whole
 campus. Render reads `render.yaml` only for a service made from a Blueprint,
 so set the value on the service's own Environment page.
+
+`CLIENT_IP_HEADER` names the one header that holds the visitor's address.
+The app reads no other header, because a visitor can send any header that
+the proxy does not replace. On Render, leave it empty: with `BEHIND_PROXY`
+set, the app reads `True-Client-IP`, which Cloudflare sets and replaces. On
+a university server behind nginx, add `proxy_set_header X-Real-IP
+$remote_addr;` to the nginx site and set `CLIENT_IP_HEADER=X-Real-IP`. For
+`X-Forwarded-For`, the app reads only the last entry, the one the proxy
+adds. If the header is missing, the log says "No ... header", and every
+visitor counts as one address until you correct the setting.
 
 `RETAIN_DAYS` and `PASS_HOURS` also appear in the visitor's privacy screen
 and pass. The pages read them from the server, so the text always matches.

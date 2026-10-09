@@ -40,11 +40,6 @@ def changed(action, detail):
     audit.record(access.admin_caller(), action, detail)
 
 
-def sent_line(count):
-    """The audit note for open requests sent to a new approver. Empty when none."""
-    return f". Open requests sent to the new approver: {count}" if count else ""
-
-
 def payload():
     return checks.json_object(request.get_json(silent=True))
 
@@ -269,8 +264,9 @@ def add_office():
                        fields={"name": "An office has this name already."}), 400
     # Open requests for a deleted office of this name go to this office's approver now.
     resent = notify.resend_after_change(before, people.approver_table())
-    changed("Added an office", f"{name}: {main}, backup {backup}" + tagged(tag) + sent_line(resent))
-    return jsonify(**lists())
+    changed("Added an office",
+            f"{name}: {main}, backup {backup}" + tagged(tag) + notify.resent_words(resent))
+    return jsonify(**lists(), resent=resent)
 
 
 @bp.post("/api/admin/offices/remove")
@@ -284,8 +280,8 @@ def remove_office():
     if not people.remove_office(name):
         return jsonify(error="No office has that name."), 404
     resent = notify.resend_after_change(before, people.approver_table())
-    changed("Deleted an office", name + sent_line(resent))
-    return jsonify(**lists())
+    changed("Deleted an office", name + notify.resent_words(resent))
+    return jsonify(**lists(), resent=resent)
 
 
 @bp.post("/api/admin/offices/auto")

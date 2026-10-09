@@ -733,13 +733,33 @@ both linters, and ends with a list of what passed. Each line must say
    different key, and that each visit names the guard who let the visitor
    in. The gate desk gets one message for each approval, and no guard gets
    one.
-3. `tests/test_form.js` loads the three pages in a real DOM with jsdom.
-4. `ruff` and `eslint` are the linters. Their settings files give the reason
+3. `tests/test_scale.py` fills the database with 2,000 and then 20,000 old
+   visits, and runs each call at both sizes. It counts the SQL statements and
+   the rows that each one reads, and the memory that each download holds. A
+   gate, visitor, staff, WhatsApp or timer call fails the check if it reads
+   more rows when the history grows. See "How the work grows".
+4. `tests/test_form.js` loads the three pages in a real DOM with jsdom.
+5. `ruff` and `eslint` are the linters. Their settings files give the reason
    for each rule that they turn off. The important one is `no-implicit-globals`. The
    pages have no build step, so each button calls a global function from an
    `onclick` attribute. The linters also limit complexity: a Python function
    can have at most 8 branches, and a page function at most 10. If a change
    goes over the limit, split the function into named parts.
+
+Two longer runs are not in `run_tests.py`. Run them before a release, or
+after a change to a query:
+
+```
+.venv\Scripts\python.exe tests\test_scale.py 2000,20000,200000
+.venv\Scripts\python.exe tests\load.py
+```
+
+The first runs the scale check up to 200,000 visits, in about 8 minutes.
+The second runs a busy campus at ten times the real traffic, for about 4
+minutes. It makes Meta hang, drops every database connection, and refuses
+new connections for 5 seconds. Then it checks that no request was made
+twice, no visitor got in twice, the timer still runs, and the server
+answers again. It prints the answer times for each phase.
 
 To use another Postgres for the tests, set `TEST_DATABASE_URL`. Each test
 file deletes every table in that database first, so never point it at the
@@ -829,11 +849,14 @@ The visits live in the Neon database. They stay when Render deploys a new
 version. The app deletes each visit `RETAIN_DAYS` after the request, 90 days
 by default, as the privacy screen promises.
 
-Download logs on the admin page saves the only copy that you control. Save it
-before a large change, and on a fixed day each week. Neon can restore the
-database to an earlier time, under Backup & Restore in the Neon console. On
-the free plan, that window is only 6 hours (the project's "History
-retention"). A mistake found the next day cannot be undone there.
+Download logs on the admin page saves a record for people to read. It is not
+a backup: the app cannot load it again, and it does not hold the allow list,
+the blacklist, the offices, the approvers, the guards or the admins. For a
+copy that the app can use again, see "Back up and restore the database"
+below. Neon can also restore the database to an earlier time, under Backup &
+Restore in the Neon console. On the free plan, that window is only 6 hours
+(the project's "History retention"). A mistake found the next day cannot be
+undone there.
 
 Download logs saves two files. The first is `staff-entries-<date>.csv`, the
 staff entry log. It has one row for each allow list visit: the date, the
@@ -887,6 +910,64 @@ photos sent 71 MB and used about 5 MB of memory.
 The app deletes each record after `RETAIN_DAYS`, but a downloaded ZIP keeps
 its copy. Keep the ZIP files on a locked device, and delete old ones as the
 campus's own rules say.
+
+## Back up and restore the database
+
+A backup is a file made with `pg_dump`. It holds the whole database: the
+visits and their gate photos, the passes, the allow list and its entries,
+the blacklist, the offices, the approvers set on the admin page, the guards,
+the admins, the automatic approval times and the change log. The keys of the
+guards and admins are in it as hashes, so they work again after a restore.
+
+The backup does not hold the settings on Render, such as `GATE_KEY`,
+`ADMIN_KEY`, `META_TOKEN` and `APPROVERS`. Keep a copy of every setting in
+the university's password manager, and update it after each change.
+
+To make a backup, University IT does these steps once a week, and before a
+large change:
+
+1. Install the PostgreSQL client tools on the computer that makes the backup.
+   Their version must be the same as the database's or newer. The Neon
+   console shows the database's version.
+2. In the Neon console, copy the connection string without connection
+   pooling. `pg_dump` does not work well through the pooler.
+3. Run this command, with the connection string in quotes:
+
+   ```
+   pg_dump --format=custom --no-owner --no-privileges --file visitor-access-<date>.dump "<connection string>"
+   ```
+
+4. Keep the file encrypted, for example in an encrypted folder that only IT
+   can open. It holds every visitor's details and photo.
+5. Delete backups that are older than `RETAIN_DAYS`. A backup keeps the data
+   that the app deletes on time, so an old backup breaks the promise of the
+   privacy screen.
+
+To restore, University IT does these steps:
+
+1. Make an empty database: a new branch in Neon with no data, or a new
+   database on the university's server.
+2. Load the backup into it:
+
+   ```
+   pg_restore --no-owner --no-privileges --exit-on-error --dbname "<new connection string>" visitor-access-<date>.dump
+   ```
+
+3. Put the new connection string in `DATABASE_URL` on Render, then restart
+   the service. The app checks the tables at the start and adds nothing that
+   is already there.
+4. Make sure that the restore is complete. Open `/api/health`. On the admin
+   page, look at the offices, the approvers, the allow list, the blacklist,
+   the guards and the admins. Open one visit and its photo. On the gate
+   page, sign in with a guard's own key.
+5. Changes made after the backup are lost. Read the paper log and the
+   WhatsApp chats for that time, and enter the missing changes again.
+
+This procedure was tested on 9 October 2026. A database with every kind of
+data was dumped, restored into a new database, and compared table by table.
+All 16 tables were the same. A separate copy of the app on the restored
+database accepted a guard's own key and an admin's own key, and showed the
+pass and the photo.
 
 ## The free plans
 
@@ -958,7 +1039,8 @@ so work that became due while the server slept is done on wake.
 
 ### The database connections
 
-On the server, two database connections stay open. A request waits 5 seconds
+On the server, two database connections stay open, and up to 9 open when
+the server is busy: one for each of the 8 threads and one for the timer. A request waits 5 seconds
 at most for a connection. A read whose connection breaks runs once more. A
 change to the database never runs twice, because its COMMIT can land when
 the reply is lost.
@@ -985,18 +1067,20 @@ starts, goes to the database.
 | One admin page, first or fiftieth   | O(log n + 50) | Starts after the last row of the last page |
 | Admin counts by status              | O(n)          | One pass over an index                     |
 | Admin search                        | O(n) at worst | Reads rows until the page is full          |
-| CSV export                          | O(n)          | It returns every row                       |
+| CSV export and log ZIP              | O(n)          | 500 rows a trip. Memory stays flat         |
 | Allow list or office search         | O(m)          | m people; only 200 rows go on the page     |
 | Staff scan, entry or exit           | O(log s)      | One query on the code and time index       |
 | Staff today, after a staff scan     | O(t log t)    | t scans in 16 hours; else from memory      |
 | Staff today search and chips        | O(p)          | p people today; 25 rows go on the page     |
-| Staff entry log CSV                 | O(s log s)    | One pass pairs entries and exits, one sort |
+| Staff entry log CSV                 | O(s log t)    | One pass. Only 16 hours of rows in memory  |
 | Admin summary, every 60 s           | O(1) queries  | From memory; unchanged, it is an empty 304 |
 | Approval notice on WhatsApp         | O(1)          | One message, to the gate desk only         |
 
 A reference has five digits, so there are 90,000 references. A new request
-picks one at random and tries again if it is taken. The free storage fills
-long before the references run out, see "The free plans". Admin search reads every row when
+picks one at random and tries again if it is taken, up to 100 times. At 90%
+full, a request needs about 10 tries, and fewer than 1 in 10,000 fails. Keep
+`RETAIN_DAYS` multiplied by the visits in one day under 80,000. The free
+storage fills long before that, see "The free plans". Admin search reads every row when
 the word is rare. A trigram index (`pg_trgm`) can fix that, but the test
 database does not have it, and the tests must use the same schema as
 production. The retention period keeps n small, so the search stays fast.
@@ -1023,6 +1107,26 @@ often. All but four read an index and take under 1 millisecond:
 
 n is the number of visits and k the number of visits past `RETAIN_DAYS`.
 The retention period keeps n near the visits of 90 days.
+
+Measured on 9 October 2026 with `tests/test_scale.py` at 2,000, 20,000 and
+200,000 visits. Each gate, visitor, staff, WhatsApp and timer call ran the
+same statements and read the same rows at all three sizes. Only the admin
+counts, the admin search and the downloads read more rows, in proportion to
+n. Before this date, the visit log ZIP held 772 MB of memory at 200,000
+visits, and the visit log CSV held 544 MB. A Render instance with 512 MB
+stops at that point. Now each CSV holds about 2 MB at every size. The ZIP
+held about 21 MB at 200,000 visits with 20,000 photos. A ZIP keeps the list
+of its files until the end, about 1 KB for each photo, so 90,000 photos add
+about 90 MB.
+
+Measured on the same day with `tests/load.py`, with 4 gate lanes that scan
+staff codes. With `--threads 4`, a Meta hang of 15 seconds on every send
+stopped the gate board for up to 13.5 seconds, and the visitor pages for up
+to 14 seconds. With `--threads 8`, the gate board answered in under 30 ms
+(p95) during the same hang. A dropped database connection made no call fail.
+While the database refused new connections for 5 seconds, a few calls failed,
+and the next calls worked. No request was made twice, and no visitor got in
+twice.
 
 If you change rows outside the app, for example a restore in the Neon
 console, restart the service on Render. The server keeps some reads in

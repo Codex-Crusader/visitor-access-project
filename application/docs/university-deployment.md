@@ -38,6 +38,12 @@ in 30 minutes is approved automatically. An admin can change that time for
 each reason and each office on the admin page, or set it to 0, so that a
 person must always decide.
 
+Automatic approval is a convenience, not a security check. No person looks
+at a request that is approved this way. The blacklist still applies, and the
+guard still checks the face and the pass. Before the pilot, the university
+decides whether to keep automatic approval, and for which reasons and
+offices. `AUTO_APPROVE_MINUTES=0` turns it off for all of them.
+
 The app is designed for weak mobile signal. The visitor page and its pass
 work with no signal, and the pages check for news less often when the signal
 is bad. Every decision and entry is one database step, so two guards or two
@@ -61,8 +67,11 @@ approvers cannot record the same thing twice.
 | Meta, database and hosting accounts, owned by the university | University IT                             |
 | Server settings, keys and the WhatsApp token                 | University IT                             |
 | Weekly download of the logs, kept on a locked device         | A super admin                             |
+| Weekly database backup, kept encrypted, and the settings     | University IT                             |
 | Approvers, offices, allow list and blacklist                 | Admins                                    |
 | Guards, their keys, and the paper log for outages            | Security office                           |
+| Written approval of the outage procedure, before the pilot   | Security office                           |
+| The printed blacklist at the gate                            | Admins, with the security office          |
 | Answering requests within 15 minutes                         | Each approver                             |
 | A test of the outage procedure each term                     | Security office and IT                    |
 | Changes to the code after handover                           | To be agreed, see "Authorship and rights" |
@@ -170,14 +179,17 @@ person deletes them, and a phone backup to a personal cloud keeps them too.
 
 ## Backups and recovery
 
-1. A super admin uses Download logs each week, and keeps the two files on a
-   locked device. On the free database this is the only backup older than 6
-   hours.
-2. On a paid database, the university also gets the database's own restore
-   history.
-3. To restore, the host restores the database to a time before the problem,
-   then restarts the app. See "Where the data lives" in
-   [maintenance.md](maintenance.md).
+1. University IT makes a database backup each week with `pg_dump`, and
+   keeps it encrypted. The backup holds all the data: visits, photos,
+   passes, the allow list, the blacklist, offices, approvers, guards, admins
+   and the change log. See "Back up and restore the database" in
+   [maintenance.md](maintenance.md) for the commands.
+2. University IT keeps a copy of every server setting in the university's
+   password manager. The backup does not hold them.
+3. A super admin also uses Download logs each week. Those files are a record
+   for people to read. The app cannot load them again.
+4. On a paid database, the university also gets the database's own restore
+   history, to a time a few minutes before a problem.
 
 The targets to agree on before the pilot:
 
@@ -187,10 +199,13 @@ The targets to agree on before the pilot:
 | Time to be back up (RTO)    | About an hour     | About an hour      |
 | Who restores                | University IT     | University IT      |
 
-Test a restore once before the pilot: restore a copy of the database to a new
-branch in Neon, point a test copy of the app at it, and check that the
-visits, the passes, the blacklist, the allow list and the change log are
-there.
+Test a restore once before the pilot, on a separate test database, never on
+the live one. Load the latest backup into a new Neon branch, point a test
+copy of the app at it, and make sure that each of these is there: the
+visits and their photos, the passes, the allow list, the blacklist, the
+offices, the approvers, the guards, the admins and the change log. Sign in
+with a guard's own key and an admin's own key. Write down how long the
+restore took, and compare it with the time-to-be-back-up target above.
 
 ## When the system is down
 
@@ -212,7 +227,10 @@ was checked, guard's name, time out.
 3. Staff and faculty: check them as the security office decides, for example
    by the campus ID card. Write their name and time.
 4. The blacklist does not work offline. Keep a printed copy of the
-   blacklist at the gate, and print a new one after each change.
+   blacklist at the gate. The admin who changes the blacklist prints a new
+   copy the same day, writes the date on it, and gives it to the gate. The
+   guard shreds the old copy, because it holds names and phone numbers. A
+   copy can be a few hours old, so a person added since then is not on it.
 5. When the system works again, and a visitor from the paper log with a
    pass code leaves, the guard first records the entry: the entry code and a
    photo, as for a new entry. The visitor's pass then shows the exit code,
@@ -231,6 +249,10 @@ was checked, guard's name, time out.
 If only WhatsApp is down, the gate page still works for passes that are
 already approved. New requests cannot reach approvers. Use step 2 for new
 visitors.
+
+This procedure lets people in without the app, so the security office must
+approve it in writing before the pilot. The security office can change any
+step, for example how a guard checks a visitor with no pass.
 
 Test this procedure once each term: turn off the gate phone's data and walk
 through steps 1 to 8.
@@ -272,6 +294,9 @@ for a decision:
 1. Week 1: University IT sets up the accounts, the server and the WhatsApp
    number, using [setup.md](setup.md). Admins add the approvers, two or three
    offices, the guards of one gate, and about 20 staff on the allow list.
+   University IT makes the first backup and tests a restore. The security
+   office approves the outage procedure in writing. The university decides
+   on automatic approval.
 2. Weeks 2 and 3: one gate uses the app for visitors, and keeps the current
    method next to it. The guards use the paper log once, as a test.
 3. Week 4: the people involved review the results against the criteria
@@ -289,8 +314,11 @@ The pilot passes when, over its two weeks:
 4. Approvers get each request on WhatsApp, and staff get each entry message.
 5. Admins add a guard, an office and a blacklisted number with no help.
 6. The uptime check shows no failure that lasted more than 15 minutes.
-7. The outage test with the paper log is done once.
-8. A record older than `RETAIN_DAYS` is gone from the database.
+7. The outage test with the paper log is done once, on the procedure that
+   the security office approved.
+8. A restore from a backup was tested on a separate database, and every
+   kind of data was there.
+9. A record older than `RETAIN_DAYS` is gone from the database.
 
 ## Authorship and rights
 

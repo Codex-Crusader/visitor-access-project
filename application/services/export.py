@@ -6,6 +6,7 @@ import csv
 import html
 import io
 import re
+import time
 import zipfile
 from datetime import datetime, timezone
 from typing import Any
@@ -113,25 +114,34 @@ def read(row, how) -> Any:
     return how(row) if callable(how) else row.get(how)
 
 
-def csv_text(columns, rows):
-    """A CSV that Excel opens with every letter right: it starts with the UTF-8 mark."""
+PIECE_ROWS = 500
+
+
+def csv_pieces(columns, rows):
+    """A CSV that Excel opens with every letter right: it starts with the UTF-8 mark.
+
+    In pieces of 500 rows, so a download streams and never holds the whole file."""
     buffer = io.StringIO()
     buffer.write("﻿")
     writer = csv.writer(buffer)
     writer.writerow([heading for heading, _ in columns])
-    for row in rows:
+    for number, row in enumerate(rows, 1):
         writer.writerow([safe_cell(read(row, how)) for _, how in columns])
-    return buffer.getvalue()
+        if number % PIECE_ROWS == 0:
+            yield buffer.getvalue()
+            buffer.seek(0)
+            buffer.truncate()
+    yield buffer.getvalue()
 
 
 def staff_entries_csv():
-    """Every staff visit still kept, oldest first, one row each."""
-    return csv_text(ALLOW_COLUMNS, staff.all_visits())
+    """Every staff visit still kept, oldest first, one row each, in pieces."""
+    return csv_pieces(ALLOW_COLUMNS, staff.all_visits())
 
 
-def visit_rows():
-    """Every visit, oldest first."""
-    return visits.all_visits()
+def visit_rows(newest_first=False):
+    """Every visit, oldest first, read in batches."""
+    return visits.all_visits(newest_first)
 
 
 def file_name(name, extension):
@@ -175,27 +185,36 @@ h2{margin:0 0 6px;font-size:1.05rem}
 """
 
 
-def visits_page(rows, stamp):
-    """One page with every visit and its photo, newest first. Every value is escaped."""
+def visit_card(visit):
+    """One visit on the page, beside its photo. Every value is escaped."""
+    values = {heading: str(read(visit, how) or "") for heading, how in VISIT_COLUMNS}
+    if visit["photo_stored"]:
+        picture = (f'<img class="photo" loading="lazy" src="{photo_file(visit["reference"])}"'
+                   f' alt="{html.escape(visit["name"])} at the gate">')
+    else:
+        why = "Photo in the guard's WhatsApp chat" if visit["photo_at"] else "No photo"
+        picture = f'<div class="photo">{why}</div>'
+    shown = "".join(f"<dt>{html.escape(k)}</dt><dd>{html.escape(v)}</dd>"
+                    for k, v in values.items() if v and k not in ("Reference", "Name"))
+    return (f'<div class="visit">{picture}<div><h2>{html.escape(visit["name"])}'
+            f' · {html.escape(visit["reference"])}</h2><dl>{shown}</dl></div></div>')
+
+
+def visits_page(rows, count, stamp):
+    """One page with every visit and its photo, newest first, in pieces of 500 visits. rows
+    come newest first."""
+    yield (f'<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">'
+           f'<meta name="viewport" content="width=device-width,initial-scale=1">'
+           f"<title>Visit log</title><style>{PAGE_STYLE}</style></head><body>"
+           f"<h1>Visit log</h1><p class=\"sub\">{count} visits, newest first. Downloaded"
+           f" {html.escape(stamp)}. Times are {html.escape(ZONE)} time.</p>")
     cards = []
-    for visit in reversed(rows):
-        values = {heading: str(read(visit, how) or "") for heading, how in VISIT_COLUMNS}
-        if visit["photo_stored"]:
-            picture = (f'<img class="photo" loading="lazy" src="{photo_file(visit["reference"])}"'
-                       f' alt="{html.escape(visit["name"])} at the gate">')
-        else:
-            why = "Photo in the guard's WhatsApp chat" if visit["photo_at"] else "No photo"
-            picture = f'<div class="photo">{why}</div>'
-        shown = "".join(f"<dt>{html.escape(k)}</dt><dd>{html.escape(v)}</dd>"
-                        for k, v in values.items() if v and k not in ("Reference", "Name"))
-        cards.append(f'<div class="visit">{picture}<div><h2>{html.escape(visit["name"])}'
-                     f' · {html.escape(visit["reference"])}</h2><dl>{shown}</dl></div></div>')
-    return (f'<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">'
-            f'<meta name="viewport" content="width=device-width,initial-scale=1">'
-            f"<title>Visit log</title><style>{PAGE_STYLE}</style></head><body>"
-            f"<h1>Visit log</h1><p class=\"sub\">{len(rows)} visits, newest first. Downloaded"
-            f" {html.escape(stamp)}. Times are {html.escape(ZONE)} time.</p>"
-            + "".join(cards) + "</body></html>")
+    for visit in rows:
+        cards.append(visit_card(visit))
+        if len(cards) == PIECE_ROWS:
+            yield "".join(cards)
+            cards.clear()
+    yield "".join(cards) + "</body></html>"
 
 
 class _Chunks:
@@ -219,26 +238,41 @@ class _Chunks:
 
 def zip_parts():
     """The ZIP, piece by piece: the notes, the page, the CSV files, then one photo at a time.
+    The visits are read in batches, so the memory it needs does not grow with the log.
 
     The text files are compressed, often to a tenth. Photos are already JPEG, so they are
     stored as they are."""
+    # The compressor holds some text back, so a piece can be empty. Only data goes out.
+    return (part for part in _zip_bytes() if part)
+
+
+def _zip_bytes():
     stamp = local(datetime.now(timezone.utc).isoformat(timespec="seconds"))
-    rows = visit_rows()
     sink = _Chunks()
     texts = (
-        ("README.txt", README.format(stamp=stamp, zone=ZONE)),
-        ("visits.html", visits_page(rows, stamp)),
-        ("visits.csv", csv_text(ZIP_VISIT_COLUMNS, rows)),
-        ("blocked-attempts.csv", csv_text(BLOCKED_COLUMNS, blacklist.all_attempts())),
-        ("admin-changes.csv", csv_text(CHANGE_COLUMNS, audit.everything())),
+        ("README.txt", [README.format(stamp=stamp, zone=ZONE)]),
+        ("visits.html", visits_page(visit_rows(newest_first=True), visits.count(), stamp)),
+        ("visits.csv", csv_pieces(ZIP_VISIT_COLUMNS, visit_rows())),
+        ("blocked-attempts.csv", csv_pieces(BLOCKED_COLUMNS, blacklist.all_attempts())),
+        ("admin-changes.csv", csv_pieces(CHANGE_COLUMNS, audit.everything())),
     )
     # ZipFile only writes to the sink, so the writable part of a file is enough.
     # noinspection PyTypeChecker
     with zipfile.ZipFile(sink, "w", zipfile.ZIP_STORED) as archive:
-        for name, text in texts:
-            archive.writestr(name, text, compress_type=zipfile.ZIP_DEFLATED)
-        yield sink.take()
+        for name, pieces in texts:
+            with archive.open(text_entry(name), "w") as file:
+                for piece in pieces:
+                    file.write(piece.encode())
+                    yield sink.take()
         for reference, image in entries.stored_photos():
             archive.writestr(photo_file(reference), image)
             yield sink.take()
     yield sink.take()
+
+
+def text_entry(name):
+    """A compressed text file in the ZIP, dated now, as writestr() dates one."""
+    info = zipfile.ZipInfo(name, date_time=time.localtime()[:6])
+    info.compress_type = zipfile.ZIP_DEFLATED
+    info.external_attr = 0o600 << 16
+    return info

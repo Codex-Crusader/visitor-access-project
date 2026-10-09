@@ -238,12 +238,12 @@ def set_approvers():
     after = people.approver_table()
     resent = notify.resend_after_change(before, after)
     moved = timer.retime_open_requests(after) if sent else 0
-    detail = (f"{reason}: from {old_main}, backup {old_backup}, to {main}, backup {backup}."
-              f" Open requests sent to them: {resent}")
+    detail = (f"{reason}: from {old_main}, backup {old_backup}, to {main}, backup {backup}"
+              + notify.resent_words(resent))
     if sent and minutes != before["auto"]["reasons"].get(reason):
         detail += f". Approves by itself: {team.auto_words(minutes)}" + team.moved_line(moved)
     audit.record(access.admin_caller(), "Changed the approvers", detail)
-    return jsonify(approvers=approver_rows(after))
+    return jsonify(approvers=approver_rows(after), resent=resent)
 
 
 FORGOT_PER_HOUR = 3
@@ -275,16 +275,21 @@ def forgot_key(which):
 
 @bp.get("/api/admin/export.csv")
 def admin_export_csv():
-    """The whole visit log, with who decided and which guard let each visitor in and out."""
+    """The whole visit log, with who decided and which guard let each visitor in and out.
+    It streams: the rows are read and sent in batches."""
     refused = access.admin_refusal() or access.super_refusal()
     if refused:
         return refused
-    return Response(
-        export.csv_text(export.VISIT_COLUMNS, export.visit_rows()),
+    # noinspection PyTypeChecker
+    response = Response(
+        stream_with_context(export.csv_pieces(export.VISIT_COLUMNS, export.visit_rows())),
         mimetype="text/csv; charset=utf-8",
         headers={"Content-Disposition":
                  f'attachment; filename="{export.file_name("visits", "csv")}"'},
     )
+    # Personal details: no browser or proxy keeps a copy.
+    response.headers["Cache-Control"] = "no-store"
+    return response
 
 
 @bp.get("/api/admin/staff-entries.csv")
@@ -293,8 +298,9 @@ def admin_staff_entries_csv():
     refused = access.admin_refusal() or access.super_refusal()
     if refused:
         return refused
+    # noinspection PyTypeChecker
     response = Response(
-        export.staff_entries_csv(),
+        stream_with_context(export.staff_entries_csv()),
         mimetype="text/csv; charset=utf-8",
         headers={"Content-Disposition":
                  f'attachment; filename="{export.file_name("staff-entries", "csv")}"'},
@@ -311,7 +317,6 @@ def admin_export_zip():
     refused = access.admin_refusal() or access.super_refusal()
     if refused:
         return refused
-    # noinspection PyTypeChecker
     # noinspection PyTypeChecker
     response = Response(
         stream_with_context(export.zip_parts()),

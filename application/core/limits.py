@@ -1,5 +1,6 @@
 """How often one caller may use the public addresses."""
 
+import logging
 import threading
 import time
 from collections import deque
@@ -7,6 +8,8 @@ from collections import deque
 from flask import request
 
 from core import config
+
+log = logging.getLogger("app")
 
 # (bucket, caller) -> times of allowed calls, oldest first. O(1) per call on average.
 _hits = {}
@@ -19,16 +22,28 @@ HARD_MAX_CALLERS = 50000
 KEEP_SECONDS = 3600  # the longest window any limit uses
 
 
+def client_ip_header():
+    """The header that holds the visitor's address, or "" when no proxy is in front."""
+    return config.CLIENT_IP_HEADER or ("True-Client-IP" if config.BEHIND_PROXY else "")
+
+
+_warned = []
+
+
 def caller():
-    """The visitor's address. Behind Render, True-Client-IP from Cloudflare: the last
-    X-Forwarded-For entry is a Render proxy that changes per call, and the first can be forged."""
-    if config.BEHIND_PROXY:
-        visitor = request.headers.get("True-Client-IP", "").strip()
-        if visitor:
-            return visitor
-        forwarded = request.headers.get("X-Forwarded-For", "")
-        if forwarded:
-            return forwarded.split(",")[-1].strip()
+    """The visitor's address, from the one header the proxy sets, else the connection's.
+
+    No other header is read: a header the proxy does not set is the visitor's to forge.
+    In X-Forwarded-For the proxy adds the address it saw last, so only the last entry counts."""
+    header = client_ip_header()
+    if header:
+        found = request.headers.get(header, "").split(",")[-1].strip()
+        if found:
+            return found
+        if not _warned:
+            _warned.append(header)
+            log.warning("No %s header: every visitor counts as one address. Check"
+                        " CLIENT_IP_HEADER.", header)
     return request.remote_addr or "?"
 
 

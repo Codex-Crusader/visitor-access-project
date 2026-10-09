@@ -177,6 +177,7 @@ def set_delivery(main, backup):
     set_answer = client.post("/api/admin/approvers", headers=ADMIN,
                              json={"reason": "Delivery", "main": main, "backup": backup})
     assert set_answer.status_code == 200, set_answer.get_data(as_text=True)
+    return set_answer.get_json()
 
 
 def went_to(phone, reference):
@@ -203,6 +204,24 @@ assert any("Open requests sent to them: 1" in change["detail"] for change in aud
 # The approver change log keeps the numbers before the change.
 assert any("Delivery: from +919300000003, backup +919300000002, to +919300000003, backup"
            " +919300000001" in change["detail"] for change in audit.everything())
+
+
+# A send Meta refuses and one with no answer are counted apart, for the admin page.
+def refused_or_lost(_to, values, _name=None):
+    if values[0] == waiting:
+        raise RuntimeError("WhatsApp send failed (400): invalid number")
+    raise whatsapp.Uncertain("No answer from WhatsApp in 15 s")
+
+
+kept_template = whatsapp.send_template
+whatsapp.send_template = refused_or_lost
+try:
+    counted = set_delivery(first, second)["resent"]
+finally:
+    whatsapp.send_template = kept_template
+assert counted == {"sent": 0, "failed": 1, "unsure": 1}, counted
+assert any("Open requests sent to them: 0, not sent: 1, may not have arrived: 1"
+           in change["detail"] for change in audit.everything()), "the change log says so too"
 # A deleted office's open requests go to the approvers for Other, and are sent to them.
 client.post("/api/admin/offices", headers=ADMIN,
             json={"name": "Hostel Office", "main": "+919300000004", "backup": ""})

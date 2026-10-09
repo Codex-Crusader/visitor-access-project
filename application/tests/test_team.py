@@ -504,14 +504,14 @@ client.post("/api/admin/blacklist/remove", json={"phone": EVE_PHONE}, headers=AD
 
 # The staff log has one row per visit: each entry with the exit after it on the same day.
 YESTERDAY = db.ago(1)
-day_rows = staff.pair_visits([
+day_rows = list(staff.pair_visits([
     {"code": "1", "name": "A", "phone": "+91", "entered_at": YESTERDAY, "entered_by": "g",
      "kind": "entry"},
     {"code": "2", "name": "B", "phone": "+91", "entered_at": YESTERDAY, "entered_by": "g",
      "kind": "exit"},
     {"code": "1", "name": "A", "phone": "+91", "entered_at": db.now(), "entered_by": "g",
      "kind": "entry"},
-])
+]))
 cells = {(row["name"], export.local(row["in"] or row["out"], "%Y-%m-%d")):
          [export.read(row, how) for _, how in export.ALLOW_COLUMNS] for row in day_rows}
 yesterday, today_date = export.local(YESTERDAY, "%Y-%m-%d"), export.local(db.now(), "%Y-%m-%d")
@@ -553,7 +553,7 @@ assert eve_rows and all(re.fullmatch(r"\d\d:\d\d", r[f"Exit time ({export.ZONE})
                         for r in eve_rows), eve_rows
 assert "allow-list-entries.csv" not in zipfile.ZipFile(io.BytesIO(
     client.get("/api/admin/export.zip", headers=ADMIN).get_data())).namelist(), "a separate log"
-assert len(allow_rows) == len(staff.all_visits()) > 3, "every visit, not the last 100"
+assert len(allow_rows) == len(list(staff.all_visits())) > 3, "every visit, not the last 100"
 assert '="+919500000001"' in [r["WhatsApp number"] for r in allow_rows], "shown as text"
 assert f"Gate desk {config.GUARD}" in allow_csv and access.DESK_KEY in allow_csv
 assert "'=HYPERLINK(1)" in allow_csv, "a formula name gets a quote in front"
@@ -837,7 +837,10 @@ plain_admin = client.post("/api/admin/admins", headers=ADMIN,
 plain_key = {"X-Admin-Key": plain_admin["key"]}
 for log_path in ("/api/admin/export.zip", "/api/admin/export.csv", "/api/admin/staff-entries.csv"):
     assert client.get(log_path, headers=plain_key).status_code == 409, log_path
-    assert client.get(log_path, headers=ADMIN).status_code == 200, log_path
+    log_answer = client.get(log_path, headers=ADMIN)
+    assert log_answer.status_code == 200, log_path
+    assert log_answer.headers["Cache-Control"] == "no-store", "no copy of personal details kept"
+    log_answer.close()  # a streamed answer holds its request until it is closed
 # Admins and faces are for super admins only: a regular admin gets 409 for each.
 for admin_path, admin_body in (("/api/admin/admins", {"name": "X", "phone": "+919300000010"}),
                                ("/api/admin/admins/new-key", {"phone": "+919300000009"}),

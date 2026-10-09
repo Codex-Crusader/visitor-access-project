@@ -161,6 +161,8 @@ imports only from the folders before it in that list, and `routes/` imports from
 | `tests/test_*.py`                         | Run the whole flow with WhatsApp stubbed out, one topic a file         |
 | `tests/kit.py`                            | The settings, clean database and helpers that the tests share          |
 | `tests/test_concurrency.py`               | Makes many calls at once to check the races                            |
+| `tests/test_scale.py`                     | Checks that the gate and timer calls do not grow with the history      |
+| `tests/load.py`                           | A busy campus with Meta and the database failing, not in run_tests.py  |
 | `tests/test_form.js`                      | Checks the three pages in a real DOM with jsdom                        |
 | `tests/testdb.py`                         | Starts a throwaway Postgres for the Python tests                       |
 | `tools/check_setup.py`                    | Checks your settings and sends one test message                        |

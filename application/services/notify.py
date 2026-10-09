@@ -15,8 +15,13 @@ log = logging.getLogger("app")
 SENDS_AT_ONCE = 8
 
 
+# What became of each resent request: sent, refused by Meta, or no answer in time.
+SENT, FAILED, UNSURE = "sent", "failed", "unsure"
+
+
 def resend_after_change(before, after):
-    """Send each open request whose approver changed to the new one. Returns how many went.
+    """Send each open request whose approver changed to the new one. Returns how many of them
+    were sent, failed, and may have arrived, as {"sent": n, "failed": n, "unsure": n}.
 
     Waiting: the new approver. Asked again: the new backup, or a reminder to an approver who is
     their own backup."""
@@ -32,14 +37,31 @@ def resend_after_change(before, after):
         request, pair, ask = job
         try:
             log_template_problem(ask(request, pair))
-            return True
+            return SENT
+        except whatsapp.Uncertain as unsure:
+            log.warning("Sending %s to its new approver is uncertain: %s",
+                        request["reference"], unsure)
+            return UNSURE
         except Exception as failure:
             log.error("Could not send %s to its new approver: %s", request["reference"], failure)
-            return False
+            return FAILED
 
     # Together: one slow answer from Meta does not add up per request.
     with ThreadPoolExecutor(max_workers=SENDS_AT_ONCE) as pool:
-        return sum(pool.map(send, to_send))
+        outcomes = list(pool.map(send, to_send))
+    return {outcome: outcomes.count(outcome) for outcome in (SENT, FAILED, UNSURE)}
+
+
+def resent_words(counts):
+    """The change log's note on the open requests sent to a new approver. Empty when none."""
+    if not any(counts.values()):
+        return ""
+    words = f". Open requests sent to them: {counts[SENT]}"
+    if counts[FAILED]:
+        words += f", not sent: {counts[FAILED]}"
+    if counts[UNSURE]:
+        words += f", may not have arrived: {counts[UNSURE]}"
+    return words
 
 
 def tell_guards(visit, skip=()):
