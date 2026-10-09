@@ -134,6 +134,11 @@ caught.clear()
 lost_status["entry"][0]["changes"][0]["value"]["statuses"][0]["status"] = "delivered"
 client.post("/webhook/whatsapp", json=lost_status)
 assert caught == [], caught
+# A reason with a line break stays on one log line, so it cannot forge a second one.
+lost_status["entry"][0]["changes"][0]["value"]["statuses"][0].update(
+    status="failed", errors=[{"code": 1, "title": "lost\r\nINFO Admin key changed"}])
+client.post("/webhook/whatsapp", json=lost_status)
+assert caught and all("\n" not in line and "\r" not in line for line in caught), caught
 print("  template first, plain text as the fallback, and every lost message logged")
 
 # Input guards.
