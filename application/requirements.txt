@@ -9,7 +9,7 @@ psycopg[binary]==3.3.6
 psycopg-binary==3.3.6
 psycopg-pool==3.3.3
 tzdata==2026.5
-pillow==12.3.0
+pillow==13.0.0
 urllib3==2.8.0
 # What the packages above need, pinned too.
 blinker==1.9.0
