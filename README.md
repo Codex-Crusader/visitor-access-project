@@ -2,9 +2,7 @@
 
 # Campus Visitor Access
 
-> **Written up in full:
-** [codex-crusader.github.io/projects/campus-visitor-access/](https://codex-crusader.github.io/projects/campus-visitor-access/)
-> covers the problem, the architecture, the results and what it deliberately does not do.
+> **Written up in full:** [University guest access UX case study: 97% done, 44% understood](https://codex-crusader.github.io/writing/campus-visitor-access-ux-study/)
 
 > **Run the app:** [setup](application/docs/setup.md) · [maintenance](application/docs/maintenance.md) · [safety](application/docs/safety.md)
 
