@@ -9,8 +9,6 @@
 **A product ideation study of the visitor entry system at Vijaybhoomi University, from research to a tested, working
 prototype**
 
-[![Read the study](https://img.shields.io/badge/read_the_study-live_site-2ea44f?style=for-the-badge&logo=githubpages&logoColor=white)](https://codex-crusader.github.io/visitor-access-project/)
-[![Try the demo](https://img.shields.io/badge/try_the_demo-v2_app-c0231e?style=for-the-badge&logo=html5&logoColor=white)](https://codex-crusader.github.io/visitor-access-project/demo/)
 [![Prototype](https://img.shields.io/badge/prototype-figma-a259ff?style=for-the-badge&logo=figma&logoColor=white)](https://www.figma.com/design/h8PuevXEBAWSfShzmBR5ba/Campus-Visitor-Access?node-id=0-1)
 
 ![HTML5](https://img.shields.io/badge/HTML5-E34F26?style=flat-square&logo=html5&logoColor=white)
@@ -123,8 +121,7 @@ and daily use.
 Fieldwork ran from 31 July to 5 August 2026. The usability test ran on 16 and 17 September 2026.
 All participants are anonymous. The classmates are named only by their project topic.
 
-The [study site](https://codex-crusader.github.io/visitor-access-project/) holds every phase in
-order, with the evidence behind each change.
+The study page, `index.html`, holds every phase in order, with the evidence behind each change.
 
 ## What is in the repository
 
