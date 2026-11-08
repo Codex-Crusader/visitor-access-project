@@ -12,7 +12,6 @@ prototype**
 [![Read the study](https://img.shields.io/badge/read_the_study-live_site-2ea44f?style=for-the-badge&logo=githubpages&logoColor=white)](https://codex-crusader.github.io/visitor-access-project/)
 [![Try the demo](https://img.shields.io/badge/try_the_demo-v2_app-c0231e?style=for-the-badge&logo=html5&logoColor=white)](https://codex-crusader.github.io/visitor-access-project/demo/)
 [![Prototype](https://img.shields.io/badge/prototype-figma-a259ff?style=for-the-badge&logo=figma&logoColor=white)](https://www.figma.com/design/h8PuevXEBAWSfShzmBR5ba/Campus-Visitor-Access?node-id=0-1)
-[![Deploy status](https://img.shields.io/github/actions/workflow/status/Codex-Crusader/visitor-access-project/deploy.yml?branch=main&style=for-the-badge&label=pages%20deploy&logo=githubactions&logoColor=white)](https://github.com/Codex-Crusader/visitor-access-project/actions/workflows/deploy.yml)
 
 ![HTML5](https://img.shields.io/badge/HTML5-E34F26?style=flat-square&logo=html5&logoColor=white)
 ![CSS](https://img.shields.io/badge/CSS-1572B6?style=flat-square&logo=css&logoColor=white)
@@ -136,7 +135,6 @@ order, with the evidence behind each change.
 | `demo/index.html`              | The v2 app as one file, with no outside files or libraries     |
 | `application/`                 | The Flask app, the WhatsApp approval flow and the gate desk    |
 | `images/`                      | Current-system screenshots, maps, tree test sheets, wireframes |
-| `.github/workflows/deploy.yml` | Publishes the site to GitHub Pages on every push to `main`     |
 
 > [!NOTE]
 > The six phone screens in the problem section are captures of the live system from the outside
@@ -153,18 +151,6 @@ a field.
 
 The Flask app is a separate program with its own setup. See
 [`application/docs/setup.md`](application/docs/setup.md).
-
-## Publishing
-
-Every push to `main` runs [`deploy.yml`](.github/workflows/deploy.yml). It uploads the repository
-root as a Pages artifact. There is no build step and no `gh-pages` branch. On a new repository,
-make it public first, because a free account does not serve Pages from a private repository. Then
-set Source to **GitHub Actions** under Settings, then Pages, before the first push.
-
-> [!WARNING]
-> If Pages was never enabled, the first workflow run fails, because the default token cannot
-> create the Pages site. Pages is also case sensitive while your laptop is probably not:
-> `Journey-Map.png` and `journey-map.png` are two different files on the server.
 
 ## License
 

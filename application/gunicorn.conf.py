@@ -1,5 +1,5 @@
-"""Gunicorn settings. Render uses --preload, so the worker opens the database and starts the
-timer after the fork: a connection or thread made in the master breaks in the worker."""
+"""Gunicorn settings. The worker opens the database and starts the timer after the fork, so this
+works with or without --preload: a connection or thread made in the master breaks in the worker."""
 
 # noinspection PyPackageRequirements
 from gunicorn.glogging import Logger
